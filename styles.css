@@ -246,6 +246,13 @@ body.reordering { user-select: none; }
   outline: none;
 }
 .message-menu button.destructive { color: #d33b3b; }
+.message-menu button:disabled {
+  opacity: .38;
+  cursor: default;
+}
+.message-menu button:disabled:hover, .message-menu button:disabled:focus-visible {
+  background: transparent;
+}
 
 .composer-panel {
   position: fixed;
@@ -488,7 +495,6 @@ dialog::backdrop { background: rgba(0,0,0,.45); backdrop-filter: blur(3px); }
   .doc-title { width: 42vw; }
   .message-card { max-width: 67%; }
   .message-menu-button { opacity: .38; }
-  .drag-handle { opacity: .30; }
   .find-grid { grid-template-columns: 1fr; }
   .shortcut-hint { display: none; }
   .participant-edit-row { grid-template-columns: 1fr auto auto; }

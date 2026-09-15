@@ -1,4 +1,4 @@
-const CACHE = 'threadwriter-v0.6.1';
+const CACHE = 'threadwriter-v0.6.2';
 const ASSETS = ['./', './index.html', './styles.css', './app.js', './manifest.webmanifest', './icon.svg'];
 
 self.addEventListener('install', event => {

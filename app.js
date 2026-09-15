@@ -223,13 +223,6 @@
       const actions = document.createElement('div');
       actions.className = 'message-actions';
 
-      const dragHandle = document.createElement('button');
-      dragHandle.type = 'button';
-      dragHandle.className = 'drag-handle';
-      dragHandle.textContent = '↕';
-      dragHandle.setAttribute('aria-label', `Drag to reorder ${p.name} message`);
-      initializeDragHandle(dragHandle, row);
-
       const menuButton = document.createElement('button');
       menuButton.type = 'button';
       menuButton.className = 'message-menu-button';
@@ -245,8 +238,12 @@
       const edit = makeToolButton('Edit', () => { closeMessageMenus(); startEditMessage(msg.id, bubble); });
       const swap = makeToolButton('Change speaker', () => { closeMessageMenus(); cycleMessageSpeaker(msg.id); });
       const timestamp = makeToolButton(msg.displayTimestamp ? 'Edit timestamp…' : 'Add timestamp…', () => { closeMessageMenus(); openTimestampDialog(msg.id); });
+      const moveUp = makeToolButton('Move up', () => { closeMessageMenus(); moveMessage(msg.id, -1); });
+      const moveDown = makeToolButton('Move down', () => { closeMessageMenus(); moveMessage(msg.id, 1); });
+      moveUp.disabled = index === 0;
+      moveDown.disabled = index === state.messages.length - 1;
       const del = makeToolButton('Delete', () => { closeMessageMenus(); deleteMessage(msg.id); }, true);
-      menu.append(edit, swap, timestamp, del);
+      menu.append(edit, swap, timestamp, moveUp, moveDown, del);
 
       menuButton.addEventListener('click', e => {
         e.stopPropagation();
@@ -258,7 +255,7 @@
       });
       menu.addEventListener('click', e => e.stopPropagation());
 
-      actions.append(dragHandle, menuButton, menu);
+      actions.append(menuButton, menu);
       bubbleWrap.append(bubble, actions);
       card.appendChild(bubbleWrap);
 
@@ -277,68 +274,16 @@
     return b;
   }
 
-  function initializeDragHandle(handle, row) {
-    let pointerId = null;
-    let dragging = false;
-    let startY = 0;
+  function moveMessage(id, direction) {
+    const index = state.messages.findIndex(message => message.id === id);
+    if (index < 0) return;
+    const target = index + direction;
+    if (target < 0 || target >= state.messages.length) return;
 
-    const finish = () => {
-      if (!dragging) return;
-      dragging = false;
-      document.body.classList.remove('reordering');
-      row.classList.remove('dragging');
-      const orderedIds = [...els.thread.querySelectorAll('.message-row')].map(el => el.dataset.messageId);
-      if (orderedIds.length === state.messages.length) {
-        const byId = new Map(state.messages.map(message => [message.id, message]));
-        state.messages = orderedIds.map(id => byId.get(id)).filter(Boolean);
-        scheduleSave();
-      }
-      renderThread();
-    };
-
-    handle.addEventListener('pointerdown', e => {
-      if (e.pointerType === 'mouse' && e.button !== 0) return;
-      e.preventDefault();
-      e.stopPropagation();
-      pointerId = e.pointerId;
-      startY = e.clientY;
-      dragging = true;
-      document.body.classList.add('reordering');
-      row.classList.add('dragging');
-      handle.setPointerCapture?.(pointerId);
-    });
-
-    handle.addEventListener('pointermove', e => {
-      if (!dragging || e.pointerId !== pointerId) return;
-      e.preventDefault();
-      if (Math.abs(e.clientY - startY) < 2) return;
-
-      // Reorder by vertical position rather than elementFromPoint(). The drag handle
-      // lives just outside the bubble, and some browsers report the dragged row or
-      // page background at that X coordinate, making the old hit-test unreliable.
-      const candidates = [...els.thread.querySelectorAll('.message-row')].filter(candidate => candidate !== row);
-      let inserted = false;
-      for (const candidate of candidates) {
-        const rect = candidate.getBoundingClientRect();
-        if (e.clientY < rect.top + rect.height / 2) {
-          els.thread.insertBefore(row, candidate);
-          inserted = true;
-          break;
-        }
-      }
-      if (!inserted) els.thread.appendChild(row);
-
-      const edge = 76;
-      if (e.clientY < edge) window.scrollBy(0, -16);
-      else if (e.clientY > window.innerHeight - edge) window.scrollBy(0, 16);
-    });
-
-    handle.addEventListener('pointerup', e => {
-      if (e.pointerId !== pointerId) return;
-      handle.releasePointerCapture?.(pointerId);
-      finish();
-    });
-    handle.addEventListener('pointercancel', finish);
+    const [message] = state.messages.splice(index, 1);
+    state.messages.splice(target, 0, message);
+    scheduleSave();
+    renderThread();
   }
 
   function positionMessageMenu(menu, button, row) {

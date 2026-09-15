@@ -1,4 +1,4 @@
-# ThreadWriter v0.6.1
+# ThreadWriter v0.6.2
 
 A small local-first dialogue editor that looks and behaves like a message thread, but can also switch into a plain transcript-style drafting view.
 
@@ -18,7 +18,7 @@ A small local-first dialogue editor that looks and behaves like a message thread
 - Viewport-safe mobile message menus
 - Optional editable timestamps, including free-form story labels such as “two hours later”
 - Timestamped messages create a visual time-break before the new message beat
-- Drag handles for reordering messages
+- Move Up / Move Down controls in each message menu for reliable one-step reordering
 - Find & Replace across message text, including next/previous navigation and case-sensitive search
 - Optional centered scene header for chapter names, dates, channels, AI-session labels, interstitial jokes, etc.
 - Four simple header-font families: Rounded, Sans, Serif, and Mono
@@ -49,16 +49,22 @@ Then open `http://localhost:8000/` in your browser. Service-worker/offline insta
 GitHub Pages is also a good fit: place these files at the publishing root and add the resulting site to an iPhone/iPad Home Screen if desired.
 
 
+## Fixed in v0.6.2
+
+- Replaced drag-to-reorder with dependable **Move up** and **Move down** commands in each message's `…` menu.
+- The first message disables **Move up** and the last message disables **Move down**, so the controls make their limits clear.
+- Bumped the offline/PWA cache so hosted copies can pick up the change cleanly.
+
 ## Fixed in v0.6.1
 
-- Fixed drag-to-reorder on browsers where the drag handle's off-bubble position made pointer hit-testing unreliable. Reordering now follows the pointer's vertical position directly.
-- Bumped the offline/PWA cache so hosted copies can pick up the fix cleanly.
+- Attempted a cross-browser drag-to-reorder fix by following pointer position directly. In real-world browser testing this remained unreliable, so v0.6.2 replaces drag reordering with explicit one-step movement controls.
+- Bumped the offline/PWA cache for that maintenance release.
 
 ## New in v0.6
 
-### Drag to reorder
+### Reorder messages
 
-Each message now has a small `↕` drag handle beside its `…` menu. Drag a message up or down to change its position. Speaker grouping is recalculated automatically after the move.
+Use **Move up** or **Move down** in a message's `…` menu to shift it one position at a time. Speaker grouping is recalculated automatically after every move. This deliberately favors predictable behavior across desktop and mobile browsers over drag-and-drop gestures.
 
 ### Find & Replace
 
