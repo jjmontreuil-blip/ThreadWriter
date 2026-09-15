@@ -18,11 +18,21 @@
       </div>
       <div class="toolbar no-print">
         <button id="participantsBtn" title="Manage participants">People</button>
+        <button id="headerBtn" title="Add or edit an optional scene header">Header</button>
+        <label class="style-control" title="Conversation style">
+          <span class="sr-only">Conversation style</span>
+          <select id="conversationStyle" aria-label="Conversation style">
+            <option value="chat">Mobile Chat</option>
+            <option value="transcript">Transcript</option>
+          </select>
+        </label>
+        <button id="findBtn" title="Find and replace message text">Find</button>
         <button id="newBtn" title="Start a new thread">New</button>
         <button id="importBtn" title="Import a Threadwriter project">Import</button>
         <button id="exportProjectBtn" title="Export editable project file">Project</button>
         <button id="exportDocxBtn" title="Choose a DOCX export style">DOCX</button>
         <button id="exportTxtBtn" title="Export plain text transcript">TXT</button>
+        <button id="exportPngBtn" title="Export the rendered thread as a PNG image">PNG</button>
         <button id="printBtn" title="Print or save as PDF">PDF</button>
         <input id="fileInput" type="file" accept="application/json,.threadwriter,.json" hidden />
       </div>
@@ -89,6 +99,65 @@
         <div class="timestamp-actions-right">
           <button type="button" id="removeTimestampBtn">Remove</button>
           <button type="button" id="saveTimestampBtn" class="primary-action">Save</button>
+        </div>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="headerDialog">
+    <div class="dialog-card">
+      <div class="dialog-head">
+        <h2>Scene header</h2>
+        <button type="button" id="closeHeaderDialogBtn" class="icon-btn" aria-label="Close">×</button>
+      </div>
+      <p class="dialog-copy">Optional centered text above the conversation. Use it for a scene title, date, channel name, AI session label, or a tiny dramatic interstitial.</p>
+      <label class="timestamp-field-label" for="headerInput">Header text</label>
+      <textarea id="headerInput" class="header-input" rows="3" maxlength="240" placeholder="e.g. CHIRP // SESSION 03 · September 15 · #cricket-internal"></textarea>
+      <label class="timestamp-field-label" for="headerFont">Header font</label>
+      <select id="headerFont" class="header-font-select">
+        <option value="rounded">Rounded</option>
+        <option value="sans">Sans</option>
+        <option value="serif">Serif</option>
+        <option value="mono">Mono</option>
+      </select>
+      <div class="timestamp-actions">
+        <button type="button" id="removeHeaderBtn">Remove header</button>
+        <div class="timestamp-actions-right">
+          <button type="button" id="saveHeaderBtn" class="primary-action">Save</button>
+        </div>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="findDialog">
+    <div class="dialog-card">
+      <div class="dialog-head">
+        <h2>Find &amp; Replace</h2>
+        <button type="button" id="closeFindDialogBtn" class="icon-btn" aria-label="Close">×</button>
+      </div>
+      <p class="dialog-copy">Searches message text. Participant names can be changed globally from People.</p>
+      <div class="find-grid">
+        <label>
+          <span>Find</span>
+          <input id="findInput" type="text" autocomplete="off" />
+        </label>
+        <label>
+          <span>Replace with</span>
+          <input id="replaceInput" type="text" autocomplete="off" />
+        </label>
+      </div>
+      <div class="find-options">
+        <label><input id="caseSensitiveFind" type="checkbox" /> Case sensitive</label>
+        <span id="findStatus" class="find-status">Enter text to search.</span>
+      </div>
+      <div class="find-actions">
+        <div>
+          <button type="button" id="findPrevBtn">Previous</button>
+          <button type="button" id="findNextBtn">Next</button>
+        </div>
+        <div>
+          <button type="button" id="replaceCurrentBtn">Replace</button>
+          <button type="button" id="replaceAllBtn" class="primary-action">Replace all</button>
         </div>
       </div>
     </div>

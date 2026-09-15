@@ -1,8 +1,11 @@
 (() => {
   const STORAGE_KEY = 'threadwriter.project.v1';
   const defaultState = () => ({
-    version: 1,
+    version: 2,
     title: 'Untitled Thread',
+    sceneHeader: '',
+    headerFont: 'rounded',
+    conversationStyle: 'chat',
     activeParticipantId: 'p1',
     participants: [
       { id: 'p1', name: 'Participant 1', side: 'left', color: '#d9e6ff' },
@@ -14,6 +17,7 @@
   let state = loadState();
   let saveTimer = null;
   let timestampMessageId = null;
+  const findState = { query: '', replacement: '', caseSensitive: false, matches: [], current: 0 };
 
   const els = {
     title: document.getElementById('docTitle'),
@@ -23,6 +27,9 @@
     composer: document.getElementById('composer'),
     send: document.getElementById('sendBtn'),
     participantsBtn: document.getElementById('participantsBtn'),
+    headerBtn: document.getElementById('headerBtn'),
+    conversationStyle: document.getElementById('conversationStyle'),
+    findBtn: document.getElementById('findBtn'),
     dialog: document.getElementById('participantsDialog'),
     editor: document.getElementById('participantsEditor'),
     template: document.getElementById('participantEditorTemplate'),
@@ -38,22 +45,64 @@
     portableDocxBtn: document.getElementById('portableDocxBtn'),
     richDocxBtn: document.getElementById('richDocxBtn'),
     exportTxtBtn: document.getElementById('exportTxtBtn'),
+    exportPngBtn: document.getElementById('exportPngBtn'),
     printBtn: document.getElementById('printBtn'),
     timestampDialog: document.getElementById('timestampDialog'),
     timestampInput: document.getElementById('timestampInput'),
     closeTimestampDialogBtn: document.getElementById('closeTimestampDialogBtn'),
     useMessageTimeBtn: document.getElementById('useMessageTimeBtn'),
     removeTimestampBtn: document.getElementById('removeTimestampBtn'),
-    saveTimestampBtn: document.getElementById('saveTimestampBtn')
+    saveTimestampBtn: document.getElementById('saveTimestampBtn'),
+    headerDialog: document.getElementById('headerDialog'),
+    headerInput: document.getElementById('headerInput'),
+    headerFont: document.getElementById('headerFont'),
+    closeHeaderDialogBtn: document.getElementById('closeHeaderDialogBtn'),
+    removeHeaderBtn: document.getElementById('removeHeaderBtn'),
+    saveHeaderBtn: document.getElementById('saveHeaderBtn'),
+    findDialog: document.getElementById('findDialog'),
+    closeFindDialogBtn: document.getElementById('closeFindDialogBtn'),
+    findInput: document.getElementById('findInput'),
+    replaceInput: document.getElementById('replaceInput'),
+    caseSensitiveFind: document.getElementById('caseSensitiveFind'),
+    findStatus: document.getElementById('findStatus'),
+    findPrevBtn: document.getElementById('findPrevBtn'),
+    findNextBtn: document.getElementById('findNextBtn'),
+    replaceCurrentBtn: document.getElementById('replaceCurrentBtn'),
+    replaceAllBtn: document.getElementById('replaceAllBtn')
   };
+
+  function normalizeState(project) {
+    const base = defaultState();
+    if (!project || !Array.isArray(project.participants) || !Array.isArray(project.messages)) throw new Error('Bad project');
+    const allowedFonts = new Set(['rounded', 'sans', 'serif', 'mono']);
+    return {
+      ...project,
+      version: 2,
+      title: typeof project.title === 'string' ? project.title : base.title,
+      sceneHeader: typeof project.sceneHeader === 'string' ? project.sceneHeader : '',
+      headerFont: allowedFonts.has(project.headerFont) ? project.headerFont : 'rounded',
+      conversationStyle: project.conversationStyle === 'transcript' ? 'transcript' : 'chat',
+      activeParticipantId: project.activeParticipantId || project.participants[0]?.id || null,
+      participants: project.participants.map((p, index) => ({
+        id: p.id || `p${index + 1}`,
+        name: typeof p.name === 'string' && p.name.trim() ? p.name : `Participant ${index + 1}`,
+        side: p.side === 'right' ? 'right' : 'left',
+        color: /^#?[0-9a-fA-F]{6}$/.test(String(p.color || '')) ? (String(p.color).startsWith('#') ? p.color : `#${p.color}`) : '#e5e5ea'
+      })),
+      messages: project.messages.map((m, index) => ({
+        ...m,
+        id: m.id || `m${Date.now()}-${index}`,
+        text: typeof m.text === 'string' ? m.text : String(m.text ?? ''),
+        createdAt: m.createdAt || new Date().toISOString()
+      }))
+    };
+  }
 
   function loadState() {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return defaultState();
-      const parsed = JSON.parse(raw);
-      if (!Array.isArray(parsed.participants) || !Array.isArray(parsed.messages)) throw new Error('Bad project');
-      return parsed;
+      return normalizeState(JSON.parse(raw));
     } catch {
       return defaultState();
     }
@@ -81,6 +130,7 @@
   function render() {
     ensureActiveParticipant();
     els.title.value = state.title || 'Untitled Thread';
+    els.conversationStyle.value = state.conversationStyle || 'chat';
     renderSpeakers();
     renderThread();
   }
@@ -100,6 +150,24 @@
 
   function renderThread() {
     els.thread.innerHTML = '';
+    els.thread.classList.toggle('style-transcript', state.conversationStyle === 'transcript');
+
+    if (state.sceneHeader) {
+      const header = document.createElement('div');
+      header.className = `scene-header font-${state.headerFont || 'rounded'}`;
+      header.textContent = state.sceneHeader;
+      header.tabIndex = 0;
+      header.title = 'Edit scene header';
+      header.addEventListener('click', openHeaderDialog);
+      header.addEventListener('keydown', e => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          openHeaderDialog();
+        }
+      });
+      els.thread.appendChild(header);
+    }
+
     if (!state.messages.length) {
       const empty = document.createElement('div');
       empty.className = 'empty-state';
@@ -107,21 +175,29 @@
       els.thread.appendChild(empty);
       return;
     }
+
+    if (findState.query) findState.matches = computeFindMatches();
+    const matchingIds = new Set(findState.matches.map(match => match.messageId));
+    const currentMatch = findState.matches[findState.current];
+
     state.messages.forEach((msg, index) => {
       const p = getParticipant(msg.speakerId);
       if (!p) return;
 
       const previous = state.messages[index - 1];
       const continuesSpeaker = previous?.speakerId === msg.speakerId;
+      const showSpeakerLabel = state.conversationStyle === 'transcript' || !continuesSpeaker;
 
       const row = document.createElement('article');
       row.className = `message-row ${p.side}${continuesSpeaker ? ' continuation' : ' speaker-start'}${msg.displayTimestamp ? ' timestamped' : ''}`;
+      if (matchingIds.has(msg.id)) row.classList.add('find-match');
+      if (currentMatch?.messageId === msg.id) row.classList.add('find-current');
       row.dataset.messageId = msg.id;
 
       const card = document.createElement('div');
       card.className = 'message-card';
 
-      if (!continuesSpeaker) {
+      if (showSpeakerLabel) {
         const label = document.createElement('div');
         label.className = 'speaker-label';
         label.textContent = p.name;
@@ -146,6 +222,13 @@
 
       const actions = document.createElement('div');
       actions.className = 'message-actions';
+
+      const dragHandle = document.createElement('button');
+      dragHandle.type = 'button';
+      dragHandle.className = 'drag-handle';
+      dragHandle.textContent = '↕';
+      dragHandle.setAttribute('aria-label', `Drag to reorder ${p.name} message`);
+      initializeDragHandle(dragHandle, row);
 
       const menuButton = document.createElement('button');
       menuButton.type = 'button';
@@ -175,7 +258,7 @@
       });
       menu.addEventListener('click', e => e.stopPropagation());
 
-      actions.append(menuButton, menu);
+      actions.append(dragHandle, menuButton, menu);
       bubbleWrap.append(bubble, actions);
       card.appendChild(bubbleWrap);
 
@@ -194,6 +277,65 @@
     return b;
   }
 
+  function initializeDragHandle(handle, row) {
+    let pointerId = null;
+    let dragging = false;
+    let startY = 0;
+
+    const finish = () => {
+      if (!dragging) return;
+      dragging = false;
+      document.body.classList.remove('reordering');
+      row.classList.remove('dragging');
+      const orderedIds = [...els.thread.querySelectorAll('.message-row')].map(el => el.dataset.messageId);
+      if (orderedIds.length === state.messages.length) {
+        const byId = new Map(state.messages.map(message => [message.id, message]));
+        state.messages = orderedIds.map(id => byId.get(id)).filter(Boolean);
+        scheduleSave();
+      }
+      renderThread();
+    };
+
+    handle.addEventListener('pointerdown', e => {
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      pointerId = e.pointerId;
+      startY = e.clientY;
+      dragging = true;
+      document.body.classList.add('reordering');
+      row.classList.add('dragging');
+      handle.setPointerCapture?.(pointerId);
+    });
+
+    handle.addEventListener('pointermove', e => {
+      if (!dragging || e.pointerId !== pointerId) return;
+      e.preventDefault();
+      if (Math.abs(e.clientY - startY) < 2) return;
+
+      const under = document.elementFromPoint(e.clientX, e.clientY)?.closest('.message-row');
+      if (under && under !== row && under.parentElement === els.thread) {
+        const rect = under.getBoundingClientRect();
+        if (e.clientY < rect.top + rect.height / 2) {
+          els.thread.insertBefore(row, under);
+        } else {
+          els.thread.insertBefore(row, under.nextSibling);
+        }
+      }
+
+      const edge = 76;
+      if (e.clientY < edge) window.scrollBy(0, -16);
+      else if (e.clientY > window.innerHeight - edge) window.scrollBy(0, 16);
+    });
+
+    handle.addEventListener('pointerup', e => {
+      if (e.pointerId !== pointerId) return;
+      handle.releasePointerCapture?.(pointerId);
+      finish();
+    });
+    handle.addEventListener('pointercancel', finish);
+  }
+
   function positionMessageMenu(menu, button, row) {
     if (!window.matchMedia('(max-width: 700px)').matches) return;
 
@@ -204,12 +346,18 @@
     const viewHeight = vv?.height || window.innerHeight;
     const pad = 8;
     const gap = 5;
+    const buttonRect = button.getBoundingClientRect();
 
+    // A transformed message-actions parent changes the containing block for CSS fixed
+    // positioning. Move the open mobile popover to <body> so viewport clamping is real.
+    menu._threadwriterHome = menu.parentElement;
+    menu._threadwriterButton = button;
+    document.body.appendChild(menu);
     menu.style.position = 'fixed';
     menu.style.right = 'auto';
     menu.style.bottom = 'auto';
+    menu.style.zIndex = '100';
 
-    const buttonRect = button.getBoundingClientRect();
     const menuWidth = menu.offsetWidth;
     const menuHeight = menu.offsetHeight;
 
@@ -231,13 +379,17 @@
     menu.style.right = '';
     menu.style.top = '';
     menu.style.bottom = '';
+    menu.style.zIndex = '';
+    if (menu._threadwriterHome?.isConnected) menu._threadwriterHome.appendChild(menu);
+    delete menu._threadwriterHome;
   }
 
   function closeMessageMenus() {
     document.querySelectorAll('.message-menu:not([hidden])').forEach(menu => {
       menu.hidden = true;
+      menu._threadwriterButton?.setAttribute('aria-expanded', 'false');
+      delete menu._threadwriterButton;
       clearMessageMenuPosition(menu);
-      menu.parentElement?.querySelector('.message-menu-button')?.setAttribute('aria-expanded', 'false');
     });
   }
 
@@ -356,6 +508,167 @@
     if (e.key === 'Enter') {
       e.preventDefault();
       els.saveTimestampBtn.click();
+    }
+  });
+
+  function openHeaderDialog() {
+    els.headerInput.value = state.sceneHeader || '';
+    els.headerFont.value = state.headerFont || 'rounded';
+    els.removeHeaderBtn.disabled = !state.sceneHeader;
+    els.headerDialog.showModal();
+    requestAnimationFrame(() => els.headerInput.focus());
+  }
+
+  function closeHeaderDialog() {
+    if (els.headerDialog.open) els.headerDialog.close();
+  }
+
+  els.headerBtn.addEventListener('click', openHeaderDialog);
+  els.closeHeaderDialogBtn.addEventListener('click', closeHeaderDialog);
+  els.saveHeaderBtn.addEventListener('click', () => {
+    state.sceneHeader = els.headerInput.value.trim();
+    state.headerFont = els.headerFont.value;
+    scheduleSave();
+    renderThread();
+    closeHeaderDialog();
+  });
+  els.removeHeaderBtn.addEventListener('click', () => {
+    state.sceneHeader = '';
+    state.headerFont = els.headerFont.value;
+    scheduleSave();
+    renderThread();
+    closeHeaderDialog();
+  });
+
+  els.conversationStyle.addEventListener('change', () => {
+    state.conversationStyle = els.conversationStyle.value === 'transcript' ? 'transcript' : 'chat';
+    scheduleSave();
+    renderThread();
+  });
+
+  function computeFindMatches() {
+    const query = findState.query;
+    if (!query) return [];
+    const needle = findState.caseSensitive ? query : query.toLocaleLowerCase();
+    const matches = [];
+    state.messages.forEach(message => {
+      const haystack = findState.caseSensitive ? message.text : message.text.toLocaleLowerCase();
+      let from = 0;
+      while (from <= haystack.length) {
+        const at = haystack.indexOf(needle, from);
+        if (at === -1) break;
+        matches.push({ messageId: message.id, start: at, length: query.length });
+        from = at + Math.max(1, query.length);
+      }
+    });
+    return matches;
+  }
+
+  function refreshFindMatches({ preserveCurrent = true, scroll = false } = {}) {
+    const oldMatch = preserveCurrent ? findState.matches[findState.current] : null;
+    findState.query = els.findInput.value;
+    findState.replacement = els.replaceInput.value;
+    findState.caseSensitive = els.caseSensitiveFind.checked;
+    findState.matches = computeFindMatches();
+
+    if (!findState.matches.length) {
+      findState.current = 0;
+    } else if (oldMatch) {
+      const same = findState.matches.findIndex(match => match.messageId === oldMatch.messageId && match.start === oldMatch.start);
+      findState.current = same >= 0 ? same : Math.min(findState.current, findState.matches.length - 1);
+    } else {
+      findState.current = Math.min(findState.current, findState.matches.length - 1);
+    }
+
+    if (!findState.query) els.findStatus.textContent = 'Enter text to search.';
+    else if (!findState.matches.length) els.findStatus.textContent = 'No matches.';
+    else els.findStatus.textContent = `${findState.current + 1} of ${findState.matches.length} matches`;
+
+    renderThread();
+    if (scroll) scrollToCurrentFindMatch();
+  }
+
+  function scrollToCurrentFindMatch() {
+    const match = findState.matches[findState.current];
+    if (!match) return;
+    const row = [...els.thread.querySelectorAll('.message-row')].find(el => el.dataset.messageId === match.messageId);
+    row?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  function stepFind(direction) {
+    refreshFindMatches({ preserveCurrent: true });
+    if (!findState.matches.length) return;
+    findState.current = (findState.current + direction + findState.matches.length) % findState.matches.length;
+    els.findStatus.textContent = `${findState.current + 1} of ${findState.matches.length} matches`;
+    renderThread();
+    scrollToCurrentFindMatch();
+  }
+
+  function replaceCurrentFind() {
+    refreshFindMatches({ preserveCurrent: true });
+    const match = findState.matches[findState.current];
+    if (!match) return;
+    const message = state.messages.find(item => item.id === match.messageId);
+    if (!message) return;
+    message.text = message.text.slice(0, match.start) + els.replaceInput.value + message.text.slice(match.start + match.length);
+    scheduleSave();
+    findState.matches = computeFindMatches();
+    if (findState.current >= findState.matches.length) findState.current = Math.max(0, findState.matches.length - 1);
+    renderThread();
+    refreshFindMatches({ preserveCurrent: false, scroll: true });
+  }
+
+  function replaceAllFind() {
+    refreshFindMatches({ preserveCurrent: true });
+    if (!findState.query || !findState.matches.length) return;
+    const escaped = findState.query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const flags = findState.caseSensitive ? 'g' : 'gi';
+    const regex = new RegExp(escaped, flags);
+    let count = 0;
+    state.messages.forEach(message => {
+      message.text = message.text.replace(regex, () => {
+        count += 1;
+        return els.replaceInput.value;
+      });
+    });
+    scheduleSave();
+    findState.matches = [];
+    findState.current = 0;
+    renderThread();
+    refreshFindMatches({ preserveCurrent: false });
+    els.findStatus.textContent = `Replaced ${count} ${count === 1 ? 'match' : 'matches'}.`;
+  }
+
+  function openFindDialog() {
+    els.findDialog.showModal();
+    requestAnimationFrame(() => {
+      els.findInput.focus();
+      els.findInput.select();
+      refreshFindMatches({ preserveCurrent: false });
+    });
+  }
+
+  function closeFindDialog() {
+    if (els.findDialog.open) els.findDialog.close();
+    findState.query = '';
+    findState.matches = [];
+    findState.current = 0;
+    renderThread();
+  }
+
+  els.findBtn.addEventListener('click', openFindDialog);
+  els.closeFindDialogBtn.addEventListener('click', closeFindDialog);
+  els.findInput.addEventListener('input', () => refreshFindMatches({ preserveCurrent: false }));
+  els.replaceInput.addEventListener('input', () => { findState.replacement = els.replaceInput.value; });
+  els.caseSensitiveFind.addEventListener('change', () => refreshFindMatches({ preserveCurrent: false }));
+  els.findPrevBtn.addEventListener('click', () => stepFind(-1));
+  els.findNextBtn.addEventListener('click', () => stepFind(1));
+  els.replaceCurrentBtn.addEventListener('click', replaceCurrentFind);
+  els.replaceAllBtn.addEventListener('click', replaceAllFind);
+  els.findInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      stepFind(e.shiftKey ? -1 : 1);
     }
   });
 
@@ -482,8 +795,7 @@
     if (!file) return;
     try {
       const parsed = JSON.parse(await file.text());
-      if (!Array.isArray(parsed.participants) || !Array.isArray(parsed.messages)) throw new Error('Not a Threadwriter project');
-      state = parsed;
+      state = normalizeState(parsed);
       scheduleSave();
       render();
     } catch (err) {
@@ -501,6 +813,8 @@
     const txt = buildTranscript();
     downloadBlob(new Blob([txt], { type: 'text/plain;charset=utf-8' }), `${safeName(state.title)}.txt`);
   });
+
+  els.exportPngBtn.addEventListener('click', exportPng);
 
   els.exportDocxBtn.addEventListener('click', () => els.docxDialog.showModal());
   els.closeDocxDialogBtn.addEventListener('click', () => els.docxDialog.close());
@@ -527,6 +841,7 @@
 
   function buildTranscript() {
     const lines = [state.title || 'Untitled Thread', ''];
+    if (state.sceneHeader) lines.push(state.sceneHeader, '');
     state.messages.forEach(m => {
       const p = getParticipant(m.speakerId);
       const stamp = m.displayTimestamp ? ` [${m.displayTimestamp}]` : '';
@@ -543,6 +858,199 @@
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+
+  function headerCanvasFont(size, weight = 700) {
+    const family = {
+      serif: 'Georgia, serif',
+      sans: 'Arial, sans-serif',
+      mono: 'Consolas, monospace',
+      rounded: '"Arial Rounded MT Bold", "Trebuchet MS", sans-serif'
+    }[state.headerFont] || '"Trebuchet MS", sans-serif';
+    return `${weight} ${size}px ${family}`;
+  }
+
+  function wrapCanvasText(ctx, text, maxWidth) {
+    const result = [];
+    const paragraphs = String(text).split('\n');
+
+    const splitLongToken = token => {
+      const pieces = [];
+      let current = '';
+      for (const char of token) {
+        const next = current + char;
+        if (current && ctx.measureText(next).width > maxWidth) {
+          pieces.push(current);
+          current = char;
+        } else current = next;
+      }
+      if (current) pieces.push(current);
+      return pieces;
+    };
+
+    paragraphs.forEach((paragraph, paragraphIndex) => {
+      if (!paragraph.length) {
+        result.push('');
+        return;
+      }
+      const rawTokens = paragraph.split(/\s+/);
+      const tokens = rawTokens.flatMap(token => ctx.measureText(token).width > maxWidth ? splitLongToken(token) : [token]);
+      let line = '';
+      tokens.forEach(token => {
+        const test = line ? `${line} ${token}` : token;
+        if (line && ctx.measureText(test).width > maxWidth) {
+          result.push(line);
+          line = token;
+        } else line = test;
+      });
+      if (line) result.push(line);
+      if (paragraphIndex < paragraphs.length - 1 && paragraph === '') result.push('');
+    });
+    return result.length ? result : [''];
+  }
+
+  function roundedRectPath(ctx, x, y, width, height, radius) {
+    const r = Math.min(radius, width / 2, height / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + width, y, x + width, y + height, r);
+    ctx.arcTo(x + width, y + height, x, y + height, r);
+    ctx.arcTo(x, y + height, x, y, r);
+    ctx.arcTo(x, y, x + width, y, r);
+    ctx.closePath();
+  }
+
+  function paintPngThread(ctx, draw = false) {
+    const W = 1080;
+    const left = 72;
+    const right = 72;
+    const contentWidth = W - left - right;
+    const maxBubbleWidth = contentWidth * 0.67;
+    let y = 64;
+
+    ctx.textBaseline = 'top';
+    ctx.textAlign = 'left';
+
+    ctx.font = '700 36px "Trebuchet MS", Arial, sans-serif';
+    const titleLines = wrapCanvasText(ctx, state.title || 'Untitled Thread', contentWidth);
+    if (draw) {
+      ctx.fillStyle = '#17171b';
+      titleLines.forEach((line, index) => ctx.fillText(line, left, y + index * 44));
+    }
+    y += titleLines.length * 44 + 30;
+
+    if (state.sceneHeader) {
+      ctx.font = headerCanvasFont(29, 700);
+      const headerLines = wrapCanvasText(ctx, state.sceneHeader, contentWidth - 120);
+      if (draw) {
+        ctx.fillStyle = '#292930';
+        ctx.textAlign = 'center';
+        headerLines.forEach((line, index) => ctx.fillText(line, W / 2, y + index * 38));
+        ctx.textAlign = 'left';
+      }
+      y += headerLines.length * 38 + 34;
+    }
+
+    state.messages.forEach((message, index) => {
+      const participant = getParticipant(message.speakerId);
+      if (!participant) return;
+      const previous = state.messages[index - 1];
+      const continues = previous?.speakerId === message.speakerId;
+      const transcript = state.conversationStyle === 'transcript';
+
+      if (message.displayTimestamp && index > 0) y += 26;
+      else if (index > 0) y += transcript ? 18 : (continues ? 8 : 18);
+
+      const side = participant.side === 'right' ? 'right' : 'left';
+      const showSpeaker = transcript || !continues;
+
+      if (showSpeaker) {
+        ctx.font = transcript ? '800 16px Arial, sans-serif' : '600 17px Arial, sans-serif';
+        const name = transcript ? participant.name.toLocaleUpperCase() : participant.name;
+        if (draw) {
+          ctx.fillStyle = '#6d6d78';
+          ctx.textAlign = transcript || side === 'left' ? 'left' : 'right';
+          ctx.fillText(name, transcript || side === 'left' ? left : W - right, y);
+          ctx.textAlign = 'left';
+        }
+        y += 23;
+      }
+
+      if (message.displayTimestamp) {
+        ctx.font = '500 15px Arial, sans-serif';
+        if (draw) {
+          ctx.fillStyle = '#777780';
+          ctx.textAlign = transcript || side === 'left' ? 'left' : 'right';
+          ctx.fillText(message.displayTimestamp, transcript || side === 'left' ? left : W - right, y);
+          ctx.textAlign = 'left';
+        }
+        y += 22;
+      }
+
+      ctx.font = '400 26px Arial, sans-serif';
+      if (transcript) {
+        const lines = wrapCanvasText(ctx, message.text, contentWidth - 10);
+        if (draw) {
+          ctx.fillStyle = '#17171b';
+          lines.forEach((line, lineIndex) => ctx.fillText(line, left, y + lineIndex * 35));
+        }
+        y += Math.max(1, lines.length) * 35;
+        return;
+      }
+
+      const padX = 20;
+      const padY = 15;
+      const maxInner = maxBubbleWidth - padX * 2;
+      const lines = wrapCanvasText(ctx, message.text, maxInner);
+      const measured = Math.max(1, ...lines.map(line => ctx.measureText(line || ' ').width));
+      const bubbleWidth = Math.max(92, Math.min(maxBubbleWidth, measured + padX * 2));
+      const bubbleHeight = Math.max(58, lines.length * 35 + padY * 2);
+      const x = side === 'right' ? W - right - bubbleWidth : left;
+
+      if (draw) {
+        ctx.fillStyle = participant.color || '#e5e5ea';
+        roundedRectPath(ctx, x, y, bubbleWidth, bubbleHeight, 23);
+        ctx.fill();
+        ctx.fillStyle = '#151518';
+        lines.forEach((line, lineIndex) => ctx.fillText(line, x + padX, y + padY + lineIndex * 35));
+      }
+      y += bubbleHeight;
+    });
+
+    return y + 72;
+  }
+
+  function exportPng() {
+    try {
+      const measure = document.createElement('canvas');
+      measure.width = 1080;
+      measure.height = 100;
+      const measureCtx = measure.getContext('2d');
+      const height = Math.ceil(paintPngThread(measureCtx, false));
+      const maxHeight = 15000;
+      if (height > maxHeight) {
+        alert('This thread is too tall for a reliable single PNG in some browsers. Use PDF for this one for now; split-image export is on the roadmap.');
+        return;
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = 1080;
+      canvas.height = Math.max(280, height);
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = state.conversationStyle === 'transcript' ? '#ffffff' : '#f4f4f7';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      paintPngThread(ctx, true);
+      canvas.toBlob(blob => {
+        if (!blob) {
+          alert('PNG export failed in this browser. PDF export is still available.');
+          return;
+        }
+        downloadBlob(blob, `${safeName(state.title)}.png`);
+      }, 'image/png');
+    } catch (err) {
+      console.error(err);
+      alert('PNG export failed in this browser. PDF export is still available.');
+    }
   }
 
   function xmlEscape(s) {
@@ -599,9 +1107,25 @@
   </w:style>
 </w:styles>`;
 
+  function wordHeaderFontName() {
+    return { rounded: 'Aptos', sans: 'Arial', serif: 'Georgia', mono: 'Consolas' }[state.headerFont] || 'Aptos';
+  }
+
+  function wordSceneHeaderParagraph() {
+    if (!state.sceneHeader) return '';
+    const font = wordHeaderFontName();
+    const runProps = `<w:rPr><w:rFonts w:ascii="${font}" w:hAnsi="${font}"/><w:b/><w:sz w:val="26"/><w:szCs w:val="26"/></w:rPr>`;
+    const runs = String(state.sceneHeader).split('\n').map((line, index) => {
+      const br = index ? `<w:r>${runProps}<w:br/></w:r>` : '';
+      return `${br}<w:r>${runProps}<w:t xml:space="preserve">${xmlEscape(line)}</w:t></w:r>`;
+    }).join('');
+    return `<w:p><w:pPr><w:jc w:val="center"/><w:spacing w:before="40" w:after="300"/></w:pPr>${runs}</w:p>`;
+  }
+
   async function buildPortableDocx() {
     const paragraphs = [];
     paragraphs.push(`<w:p><w:pPr><w:pStyle w:val="Title"/></w:pPr><w:r><w:t>${xmlEscape(state.title || 'Untitled Thread')}</w:t></w:r></w:p>`);
+    if (state.sceneHeader) paragraphs.push(wordSceneHeaderParagraph());
     for (const m of state.messages) {
       const p = getParticipant(m.speakerId);
       const timestampRun = m.displayTimestamp ? `<w:r><w:rPr><w:i/><w:color w:val="6D6D78"/><w:sz w:val="19"/><w:szCs w:val="19"/></w:rPr><w:t xml:space="preserve">  ${xmlEscape(m.displayTimestamp)}</w:t></w:r>` : '';
@@ -702,14 +1226,24 @@
 </w:tbl>`;
   }
 
+  function richTranscriptMessage(message, participant) {
+    const name = participant?.name || 'Unknown';
+    const timestamp = message.displayTimestamp
+      ? `<w:r><w:rPr><w:color w:val="7A7A84"/><w:sz w:val="17"/><w:szCs w:val="17"/></w:rPr><w:t xml:space="preserve">  ${xmlEscape(message.displayTimestamp)}</w:t></w:r>`
+      : '';
+    return `<w:p><w:pPr><w:spacing w:before="180" w:after="45"/></w:pPr><w:r><w:rPr><w:b/><w:smallCaps/><w:color w:val="6D6D78"/><w:sz w:val="18"/><w:szCs w:val="18"/></w:rPr><w:t>${xmlEscape(name)}</w:t></w:r>${timestamp}</w:p>
+<w:p><w:pPr><w:spacing w:before="0" w:after="90"/></w:pPr>${richTextRuns(message.text)}</w:p>`;
+  }
+
   async function buildRichDocx() {
     const blocks = [];
     blocks.push(`<w:p><w:pPr><w:pStyle w:val="Title"/></w:pPr><w:r><w:t>${xmlEscape(state.title || 'Untitled Thread')}</w:t></w:r></w:p>`);
+    if (state.sceneHeader) blocks.push(wordSceneHeaderParagraph());
     state.messages.forEach((m, index) => {
       const p = getParticipant(m.speakerId);
       const previous = state.messages[index - 1];
       const continuesSpeaker = previous?.speakerId === m.speakerId;
-      blocks.push(richMessageTable(m, p, continuesSpeaker));
+      blocks.push(state.conversationStyle === 'transcript' ? richTranscriptMessage(m, p) : richMessageTable(m, p, continuesSpeaker));
     });
 
     const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

@@ -1,6 +1,6 @@
-# Threadwriter v0.5.2
+# ThreadWriter v0.6
 
-A small local-first dialogue editor that looks and behaves like an instant-message thread.
+A small local-first dialogue editor that looks and behaves like a message thread, but can also switch into a plain transcript-style drafting view.
 
 ## Current features
 
@@ -13,23 +13,31 @@ A small local-first dialogue editor that looks and behaves like an instant-messa
 - Touch-friendly participant buttons for mobile
 - Local autosave in the browser
 - Editable native `.threadwriter` JSON project export/import
-- Two `.docx` export modes with no external libraries: Portable transcript and Rich chat-layout
+- Consecutive messages from the same participant are visually grouped
+- Compact per-message overflow menu for edit, speaker reassignment, optional timestamp, and delete
+- Viewport-safe mobile message menus
+- Optional editable timestamps, including free-form story labels such as “two hours later”
+- Timestamped messages create a visual time-break before the new message beat
+- Drag handles for reordering messages
+- Find & Replace across message text, including next/previous navigation and case-sensitive search
+- Optional centered scene header for chapter names, dates, channels, AI-session labels, interstitial jokes, etc.
+- Four simple header-font families: Rounded, Sans, Serif, and Mono
+- Conversation Styles: **Mobile Chat** and **Transcript**
+- PNG image export for shareable rendered conversations
+- Two `.docx` export modes with no external libraries: Portable transcript and Rich layout
 - Plain `.txt` transcript export
 - Print stylesheet for browser Print / Save as PDF
-- Consecutive messages from the same participant are visually grouped under one speaker label
-- Compact per-message overflow menu for edit, speaker reassignment, optional timestamp, and delete
-- Phone-sized screens keep the compact per-message popover, with viewport-aware positioning so it stays onscreen
-- Optional editable per-message timestamps, including free-form story labels such as “two hours later”
-- Timestamped messages gain a little extra spacing before them, with the timestamp displayed above the bubble
-- Timestamps carry through TXT, Portable DOCX, Rich DOCX, and Print/PDF exports
+- Headers, timestamps, and Transcript style carry through the relevant exports
 - Installable PWA behavior when served over HTTP/HTTPS
 
 ## Running it
 
 ### Easiest desktop test
-Open `index.html` directly in a modern browser. Editing, autosave, DOCX/TXT export, and Print/PDF should work.
+
+Open `index.html` directly in a modern browser. Editing, autosave, PNG/DOCX/TXT export, and Print/PDF should work.
 
 ### For installable/offline PWA behavior
+
 Serve the folder locally, for example:
 
 ```bash
@@ -38,29 +46,79 @@ python -m http.server 8000
 
 Then open `http://localhost:8000/` in your browser. Service-worker/offline installation features require HTTP/HTTPS rather than `file://`.
 
+GitHub Pages is also a good fit: place these files at the publishing root and add the resulting site to an iPhone/iPad Home Screen if desired.
+
+## New in v0.6
+
+### Drag to reorder
+
+Each message now has a small `↕` drag handle beside its `…` menu. Drag a message up or down to change its position. Speaker grouping is recalculated automatically after the move.
+
+### Find & Replace
+
+The **Find** button searches message text and highlights matching messages. You can step through matches, replace the current match, replace all matches, and optionally use case-sensitive search.
+
+Participant names are intentionally not altered by Find & Replace; rename a participant once in **People** and every message assigned to that participant updates automatically.
+
+### Scene headers
+
+**Header** adds optional centered text above the conversation. It can function as a chapter/scene title, date marker, channel name, CHIRP session label, transcript heading, or narrative interstitial. The header can use Rounded, Sans, Serif, or Mono typography.
+
+### Conversation Styles
+
+v0.6 introduces the first two presentation families:
+
+- **Mobile Chat**: the familiar ThreadWriter left/right bubble layout.
+- **Transcript**: the same underlying conversation presented as speaker-labelled dialogue blocks without literal message bubbles.
+
+This is a presentation choice, not a separate document type. You can switch back and forth without changing the underlying text.
+
+### PNG export
+
+**PNG** creates a clean, shareable long image of the rendered thread, including the document title, optional scene header, timestamps, participant colors, and the selected Conversation Style.
+
+For now, extremely long threads that would exceed a browser-safe single-image height should use PDF. Split-image export remains a possible future addition.
+
+### PWA updates
+
+The service worker now prefers fresh network files when online and falls back to its cache when offline. This should make GitHub Pages / Home Screen installs less prone to clinging to an older release after an update.
+
 ## DOCX export modes
 
-**Portable DOCX** exports ordinary paragraphs with bold speaker names. It is the safest choice when the next step is substantial editing in Word, LibreOffice, Pages, or Google Docs.
+**Portable DOCX** exports ordinary paragraphs with speaker names. It is the safest choice when the next step is substantial editing in Word, LibreOffice, Pages, or Google Docs.
 
-**Rich DOCX** preserves the thread's left/right message layout, participant colors, speaker grouping, and message-bubble feel using ordinary editable Word tables. It intentionally uses shaded table cells rather than floating drawing shapes, so the file remains much more portable across word processors. Rounded bubble corners are not preserved because that would require less-compatible drawing objects.
+**Rich DOCX** preserves the active presentation style. Mobile Chat uses editable Word tables for left/right layout and participant colors; Transcript uses ordinary speaker-labelled blocks. Scene headers and timestamps are retained.
 
-## v0.5.2 changes
+Rich chat bubbles intentionally use shaded table cells rather than floating drawing shapes, so the file remains much more portable across word processors. Rounded bubble corners are not preserved in DOCX because that would require less-compatible drawing objects.
 
-- Message bubbles now top out at about two-thirds of the available thread width, leaving more breathing room on the opposite side
-- Phone message actions return to the compact ellipsis popover used on desktop
-- Mobile popovers are positioned beside the ellipsis and clamped to the visible viewport so they cannot disappear off an edge
-- Timestamps now sit above their message bubble rather than below it
-- If a timestamp appears on the first message in a speaker run, the speaker label and timestamp both appear above the bubble
-- Timestamp spacing now reads as one clean pause before the new message beat, without creating a spacing island after it
-- Rich DOCX uses the same timestamp-above-bubble order
-- PWA updates now activate more promptly instead of waiting for the previous service worker to release control
+## Project-file compatibility
+
+v0.6 project files add fields for the scene header and Conversation Style, but older `.threadwriter` files remain importable. Missing v0.6 settings are filled with sensible defaults on import.
 
 ## Possible future ideas
 
-- Optional image attachments and faux link previews
-- Scene / chapter organization
-- Drag-to-reorder messages
-- Markdown export
-- Automatic backups / version history
-- Find/replace
-- Dialogue-only drafting mode separate from literal texting mode
+### Core / reliability
+
+- Automatic backups and lightweight version history
+- JPG export
+- Split/subdivided image export for very long threads
+
+### Projects
+
+- Multiple scenes / chapters inside one project
+- Project-wide search
+
+### Authoring tools
+
+- Under-message annotations for actions, metrics, read receipts, or system notes
+- Single-image attachments
+- Faux link previews
+
+### Presentation
+
+- Additional generic Conversation Styles such as Work Chat, AI / Terminal, and Retro IM
+- Image captions / alt text
+- Optional participant avatars
+- Optional word-balloon tails
+
+The guiding rule remains: ThreadWriter should make fictional digital conversations easier to write, not become a full messaging platform with a novel trapped inside it.
