@@ -128,6 +128,13 @@
         card.appendChild(label);
       }
 
+      if (msg.displayTimestamp) {
+        const timestamp = document.createElement('div');
+        timestamp.className = 'message-timestamp';
+        timestamp.textContent = msg.displayTimestamp;
+        card.appendChild(timestamp);
+      }
+
       const bubbleWrap = document.createElement('div');
       bubbleWrap.className = 'bubble-wrap';
 
@@ -164,19 +171,13 @@
         closeMessageMenus();
         menu.hidden = !opening;
         menuButton.setAttribute('aria-expanded', String(opening));
+        if (opening) requestAnimationFrame(() => positionMessageMenu(menu, menuButton, row));
       });
       menu.addEventListener('click', e => e.stopPropagation());
 
       actions.append(menuButton, menu);
       bubbleWrap.append(bubble, actions);
       card.appendChild(bubbleWrap);
-
-      if (msg.displayTimestamp) {
-        const timestamp = document.createElement('div');
-        timestamp.className = 'message-timestamp';
-        timestamp.textContent = msg.displayTimestamp;
-        card.appendChild(timestamp);
-      }
 
       row.appendChild(card);
       els.thread.appendChild(row);
@@ -193,9 +194,49 @@
     return b;
   }
 
+  function positionMessageMenu(menu, button, row) {
+    if (!window.matchMedia('(max-width: 700px)').matches) return;
+
+    const vv = window.visualViewport;
+    const viewLeft = vv?.offsetLeft || 0;
+    const viewTop = vv?.offsetTop || 0;
+    const viewWidth = vv?.width || window.innerWidth;
+    const viewHeight = vv?.height || window.innerHeight;
+    const pad = 8;
+    const gap = 5;
+
+    menu.style.position = 'fixed';
+    menu.style.right = 'auto';
+    menu.style.bottom = 'auto';
+
+    const buttonRect = button.getBoundingClientRect();
+    const menuWidth = menu.offsetWidth;
+    const menuHeight = menu.offsetHeight;
+
+    let left = row.classList.contains('right')
+      ? buttonRect.left - menuWidth - gap
+      : buttonRect.right + gap;
+    left = Math.max(viewLeft + pad, Math.min(left, viewLeft + viewWidth - menuWidth - pad));
+
+    let top = buttonRect.top + (buttonRect.height - menuHeight) / 2;
+    top = Math.max(viewTop + pad, Math.min(top, viewTop + viewHeight - menuHeight - pad));
+
+    menu.style.left = `${Math.round(left)}px`;
+    menu.style.top = `${Math.round(top)}px`;
+  }
+
+  function clearMessageMenuPosition(menu) {
+    menu.style.position = '';
+    menu.style.left = '';
+    menu.style.right = '';
+    menu.style.top = '';
+    menu.style.bottom = '';
+  }
+
   function closeMessageMenus() {
     document.querySelectorAll('.message-menu:not([hidden])').forEach(menu => {
       menu.hidden = true;
+      clearMessageMenuPosition(menu);
       menu.parentElement?.querySelector('.message-menu-button')?.setAttribute('aria-expanded', 'false');
     });
   }
@@ -204,6 +245,10 @@
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') closeMessageMenus();
   });
+  window.addEventListener('resize', closeMessageMenus);
+  window.addEventListener('scroll', closeMessageMenus, { passive: true });
+  window.visualViewport?.addEventListener('resize', closeMessageMenus);
+  window.visualViewport?.addEventListener('scroll', closeMessageMenus);
 
   function startEditMessage(id, bubble) {
     const msg = state.messages.find(m => m.id === id);
@@ -583,7 +628,7 @@
     const longest = Math.max(1, ...lines.map(line => line.length));
     const total = Math.max(1, String(text).length);
     const visualLength = Math.max(longest, Math.min(72, Math.ceil(total * 0.7)));
-    return Math.max(20, Math.min(68, Math.round(18 + visualLength * 0.78)));
+    return Math.max(20, Math.min(67, Math.round(18 + visualLength * 0.78)));
   }
 
   function richTextRuns(text) {
@@ -620,11 +665,11 @@
   function timestampCell(width, text, side) {
     return `<w:tc>
       <w:tcPr><w:tcW w:w="${width}" w:type="dxa"/><w:tcBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/></w:tcBorders></w:tcPr>
-      <w:p><w:pPr><w:jc w:val="${side === 'right' ? 'right' : 'left'}"/><w:spacing w:before="35" w:after="0"/></w:pPr><w:r><w:rPr><w:color w:val="7A7A84"/><w:sz w:val="16"/><w:szCs w:val="16"/></w:rPr><w:t>${xmlEscape(text)}</w:t></w:r></w:p>
+      <w:p><w:pPr><w:jc w:val="${side === 'right' ? 'right' : 'left'}"/><w:spacing w:before="0" w:after="35"/></w:pPr><w:r><w:rPr><w:color w:val="7A7A84"/><w:sz w:val="16"/><w:szCs w:val="16"/></w:rPr><w:t>${xmlEscape(text)}</w:t></w:r></w:p>
     </w:tc>`;
   }
 
-  function richMessageTable(message, participant, continuesSpeaker, previousHadTimestamp = false) {
+  function richMessageTable(message, participant, continuesSpeaker) {
     const CONTENT_WIDTH = 10080;
     const bubbleWidth = Math.round(CONTENT_WIDTH * estimateBubblePercent(message.text) / 100);
     const spacerWidth = CONTENT_WIDTH - bubbleWidth;
@@ -637,10 +682,10 @@
     const labelRow = continuesSpeaker ? '' : `<w:tr><w:trPr><w:cantSplit/></w:trPr>${labelCell(name, side)}</w:tr>`;
     const bubbleRow = `<w:tr><w:trPr><w:cantSplit/></w:trPr>${side === 'left' ? `${bubbleCell(bubbleWidth, message.text, fill)}${emptyCell(spacerWidth)}` : `${emptyCell(spacerWidth)}${bubbleCell(bubbleWidth, message.text, fill)}`}</w:tr>`;
     const timestampRow = message.displayTimestamp ? `<w:tr><w:trPr><w:cantSplit/></w:trPr>${side === 'left' ? `${timestampCell(bubbleWidth, message.displayTimestamp, side)}${emptyCell(spacerWidth)}` : `${emptyCell(spacerWidth)}${timestampCell(bubbleWidth, message.displayTimestamp, side)}`}</w:tr>` : '';
-    // A timestamp should read as a gap BEFORE this message, not extra air after it.
+    // A timestamp is part of the new message beat and sits above the bubble.
     const gap = message.displayTimestamp
       ? (continuesSpeaker ? 220 : 260)
-      : (continuesSpeaker ? (previousHadTimestamp ? 0 : 35) : 115);
+      : (continuesSpeaker ? 35 : 115);
 
     return `<w:p><w:pPr><w:spacing w:before="0" w:after="${gap}"/></w:pPr></w:p>
 <w:tbl>
@@ -652,8 +697,8 @@
   </w:tblPr>
   ${grid}
   ${labelRow}
-  ${bubbleRow}
   ${timestampRow}
+  ${bubbleRow}
 </w:tbl>`;
   }
 
@@ -664,7 +709,7 @@
       const p = getParticipant(m.speakerId);
       const previous = state.messages[index - 1];
       const continuesSpeaker = previous?.speakerId === m.speakerId;
-      blocks.push(richMessageTable(m, p, continuesSpeaker, Boolean(previous?.displayTimestamp)));
+      blocks.push(richMessageTable(m, p, continuesSpeaker));
     });
 
     const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

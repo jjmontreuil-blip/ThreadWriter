@@ -1,6 +1,9 @@
-const CACHE = 'threadwriter-v0.5.1';
+const CACHE = 'threadwriter-v0.5.2';
 const ASSETS = ['./', './index.html', './styles.css', './app.js', './manifest.webmanifest', './icon.svg'];
-self.addEventListener('install', event => event.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS))));
+self.addEventListener('install', event => {
+  self.skipWaiting();
+  event.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)));
+});
 self.addEventListener('activate', event => event.waitUntil((async () => {
   const keys = await caches.keys();
   await Promise.all(keys.filter(key => key.startsWith('threadwriter-') && key !== CACHE).map(key => caches.delete(key)));

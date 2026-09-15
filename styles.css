@@ -91,7 +91,7 @@ button { cursor: pointer; }
 .message-row.continuation { margin-top: -7px; }
 .message-row.left { justify-content: flex-start; }
 .message-row.right { justify-content: flex-end; }
-.message-card { max-width: min(78%, 610px); }
+.message-card { max-width: min(67%, 610px); }
 .speaker-label {
   font-size: 12px;
   color: var(--muted);
@@ -114,18 +114,18 @@ button { cursor: pointer; }
 }
 .bubble[contenteditable="true"] { outline: 2px solid currentColor; outline-offset: 2px; }
 .message-timestamp {
-  margin: 4px 10px 0;
+  margin: 0 10px 4px;
   color: var(--muted);
   font-size: 10.5px;
   line-height: 1.25;
   letter-spacing: .01em;
 }
 .message-row.right .message-timestamp { text-align: right; }
-/* A timestamp marks a fresh beat in the conversation. Put the breathing room BEFORE
-   the timestamped message, then tuck the next same-speaker message back in close. */
+.speaker-label + .message-timestamp { margin-top: -1px; }
+/* A timestamp is a new beat: give it a little air BEFORE the timestamp/message pair.
+   The timestamp itself sits above the bubble, so the conversation can resume tightly below. */
 .message-row + .message-row.timestamped { margin-top: 22px; }
 .message-row + .message-row.timestamped.continuation { margin-top: 22px; }
-.message-row.timestamped + .message-row.continuation { margin-top: -7px; }
 
 .message-actions {
   position: absolute;
@@ -358,7 +358,7 @@ dialog::backdrop { background: rgba(0,0,0,.45); backdrop-filter: blur(3px); }
   .toolbar { gap: 4px; }
   .toolbar button { padding: 6px 8px; font-size: 12px; }
   .doc-title { width: 42vw; }
-  .message-card { max-width: 84%; }
+  .message-card { max-width: 67%; }
   .message-menu-button { opacity: .38; }
   .shortcut-hint { display: none; }
   .participant-edit-row { grid-template-columns: 1fr auto auto; }
@@ -367,28 +367,18 @@ dialog::backdrop { background: rgba(0,0,0,.45); backdrop-filter: blur(3px); }
 }
 
 
-/* On phones, message actions become a bottom action sheet so they cannot open offscreen. */
+/* Phones use the same compact popover as desktop. JavaScript positions it beside the
+   ellipsis and clamps/flips it to stay inside the visible viewport. */
 @media (max-width: 700px) {
-  .message-actions {
-    top: calc(50% - 14px);
-    transform: none;
-  }
   .message-menu {
-    position: fixed;
     z-index: 30;
-    left: 12px !important;
-    right: 12px !important;
-    top: auto;
-    bottom: max(12px, env(safe-area-inset-bottom));
-    min-width: 0;
-    padding: 7px;
-    border-radius: 16px;
-    box-shadow: 0 14px 38px rgba(0,0,0,.22);
+    min-width: 118px;
+    max-width: calc(100vw - 16px);
   }
   .message-menu button {
-    min-height: 44px;
-    padding: 10px 12px;
-    font-size: 15px;
+    min-height: 38px;
+    padding: 8px 9px;
+    font-size: 12px;
   }
 }
 @media print {
@@ -400,7 +390,7 @@ dialog::backdrop { background: rgba(0,0,0,.45); backdrop-filter: blur(3px); }
   .doc-title { width: 100%; color: black; font-size: 20pt; }
   .save-status { display: none; }
   .thread { width: 100%; max-width: none; padding: 0; }
-  .message-card { max-width: 72%; break-inside: avoid; }
+  .message-card { max-width: 67%; break-inside: avoid; }
   .bubble { -webkit-print-color-adjust: exact; print-color-adjust: exact; border: 1px solid #bbb; }
   .message-actions { display: none; }
 }
