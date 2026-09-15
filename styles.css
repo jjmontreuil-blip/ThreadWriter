@@ -122,6 +122,9 @@ button { cursor: pointer; }
 }
 .message-row.right .message-timestamp { text-align: right; }
 .message-row.timestamped + .message-row.continuation { margin-top: 2px; }
+/* A timestamp marks a fresh beat in the conversation: give that message a little breathing room from what came before. */
+.message-row + .message-row.timestamped { margin-top: 11px; }
+.message-row + .message-row.timestamped.continuation { margin-top: 11px; }
 
 .message-actions {
   position: absolute;
@@ -362,6 +365,31 @@ dialog::backdrop { background: rgba(0,0,0,.45); backdrop-filter: blur(3px); }
   .remove-participant { grid-column: 1 / -1; }
 }
 
+
+/* On phones, message actions become a bottom action sheet so they cannot open offscreen. */
+@media (max-width: 700px) {
+  .message-actions {
+    top: calc(50% - 14px);
+    transform: none;
+  }
+  .message-menu {
+    position: fixed;
+    z-index: 30;
+    left: 12px !important;
+    right: 12px !important;
+    top: auto;
+    bottom: max(12px, env(safe-area-inset-bottom));
+    min-width: 0;
+    padding: 7px;
+    border-radius: 16px;
+    box-shadow: 0 14px 38px rgba(0,0,0,.22);
+  }
+  .message-menu button {
+    min-height: 44px;
+    padding: 10px 12px;
+    font-size: 15px;
+  }
+}
 @media print {
   :root { color-scheme: light; --bg: white; --text: black; --muted: #555; }
   body { background: white; }
