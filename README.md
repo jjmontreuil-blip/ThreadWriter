@@ -1,4 +1,4 @@
-# ThreadWriter v0.6
+# ThreadWriter v0.6.1
 
 A small local-first dialogue editor that looks and behaves like a message thread, but can also switch into a plain transcript-style drafting view.
 
@@ -47,6 +47,12 @@ python -m http.server 8000
 Then open `http://localhost:8000/` in your browser. Service-worker/offline installation features require HTTP/HTTPS rather than `file://`.
 
 GitHub Pages is also a good fit: place these files at the publishing root and add the resulting site to an iPhone/iPad Home Screen if desired.
+
+
+## Fixed in v0.6.1
+
+- Fixed drag-to-reorder on browsers where the drag handle's off-bubble position made pointer hit-testing unreliable. Reordering now follows the pointer's vertical position directly.
+- Bumped the offline/PWA cache so hosted copies can pick up the fix cleanly.
 
 ## New in v0.6
 

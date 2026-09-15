@@ -313,15 +313,20 @@
       e.preventDefault();
       if (Math.abs(e.clientY - startY) < 2) return;
 
-      const under = document.elementFromPoint(e.clientX, e.clientY)?.closest('.message-row');
-      if (under && under !== row && under.parentElement === els.thread) {
-        const rect = under.getBoundingClientRect();
+      // Reorder by vertical position rather than elementFromPoint(). The drag handle
+      // lives just outside the bubble, and some browsers report the dragged row or
+      // page background at that X coordinate, making the old hit-test unreliable.
+      const candidates = [...els.thread.querySelectorAll('.message-row')].filter(candidate => candidate !== row);
+      let inserted = false;
+      for (const candidate of candidates) {
+        const rect = candidate.getBoundingClientRect();
         if (e.clientY < rect.top + rect.height / 2) {
-          els.thread.insertBefore(row, under);
-        } else {
-          els.thread.insertBefore(row, under.nextSibling);
+          els.thread.insertBefore(row, candidate);
+          inserted = true;
+          break;
         }
       }
+      if (!inserted) els.thread.appendChild(row);
 
       const edge = 76;
       if (e.clientY < edge) window.scrollBy(0, -16);
