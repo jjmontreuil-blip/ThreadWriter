@@ -624,7 +624,7 @@
     </w:tc>`;
   }
 
-  function richMessageTable(message, participant, continuesSpeaker) {
+  function richMessageTable(message, participant, continuesSpeaker, previousHadTimestamp = false) {
     const CONTENT_WIDTH = 10080;
     const bubbleWidth = Math.round(CONTENT_WIDTH * estimateBubblePercent(message.text) / 100);
     const spacerWidth = CONTENT_WIDTH - bubbleWidth;
@@ -637,7 +637,10 @@
     const labelRow = continuesSpeaker ? '' : `<w:tr><w:trPr><w:cantSplit/></w:trPr>${labelCell(name, side)}</w:tr>`;
     const bubbleRow = `<w:tr><w:trPr><w:cantSplit/></w:trPr>${side === 'left' ? `${bubbleCell(bubbleWidth, message.text, fill)}${emptyCell(spacerWidth)}` : `${emptyCell(spacerWidth)}${bubbleCell(bubbleWidth, message.text, fill)}`}</w:tr>`;
     const timestampRow = message.displayTimestamp ? `<w:tr><w:trPr><w:cantSplit/></w:trPr>${side === 'left' ? `${timestampCell(bubbleWidth, message.displayTimestamp, side)}${emptyCell(spacerWidth)}` : `${emptyCell(spacerWidth)}${timestampCell(bubbleWidth, message.displayTimestamp, side)}`}</w:tr>` : '';
-    const gap = continuesSpeaker ? 35 : 115;
+    // A timestamp should read as a gap BEFORE this message, not extra air after it.
+    const gap = message.displayTimestamp
+      ? (continuesSpeaker ? 220 : 260)
+      : (continuesSpeaker ? (previousHadTimestamp ? 0 : 35) : 115);
 
     return `<w:p><w:pPr><w:spacing w:before="0" w:after="${gap}"/></w:pPr></w:p>
 <w:tbl>
@@ -661,7 +664,7 @@
       const p = getParticipant(m.speakerId);
       const previous = state.messages[index - 1];
       const continuesSpeaker = previous?.speakerId === m.speakerId;
-      blocks.push(richMessageTable(m, p, continuesSpeaker));
+      blocks.push(richMessageTable(m, p, continuesSpeaker, Boolean(previous?.displayTimestamp)));
     });
 
     const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
