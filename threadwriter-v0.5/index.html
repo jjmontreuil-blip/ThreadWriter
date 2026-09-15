@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#f4f4f7" />
+  <title>Threadwriter</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="title-wrap">
+        <input id="docTitle" class="doc-title" value="Untitled Thread" aria-label="Document title" />
+        <div id="saveStatus" class="save-status">Saved locally</div>
+      </div>
+      <div class="toolbar no-print">
+        <button id="participantsBtn" title="Manage participants">People</button>
+        <button id="newBtn" title="Start a new thread">New</button>
+        <button id="importBtn" title="Import a Threadwriter project">Import</button>
+        <button id="exportProjectBtn" title="Export editable project file">Project</button>
+        <button id="exportDocxBtn" title="Choose a DOCX export style">DOCX</button>
+        <button id="exportTxtBtn" title="Export plain text transcript">TXT</button>
+        <button id="printBtn" title="Print or save as PDF">PDF</button>
+        <input id="fileInput" type="file" accept="application/json,.threadwriter,.json" hidden />
+      </div>
+    </header>
+
+    <main id="thread" class="thread" aria-live="polite"></main>
+
+    <footer class="composer-panel no-print">
+      <div id="speakerStrip" class="speaker-strip" aria-label="Participants"></div>
+      <div class="composer-row">
+        <textarea id="composer" rows="2" placeholder="Write a message…" aria-label="Message composer"></textarea>
+        <button id="sendBtn" class="send-btn" aria-label="Add message">Send</button>
+      </div>
+      <div class="shortcut-hint">Enter = new message · Shift+Enter = line break · Tab / Shift+Tab = switch speaker</div>
+    </footer>
+  </div>
+
+  <dialog id="participantsDialog">
+    <form method="dialog" class="dialog-card" id="participantsForm">
+      <div class="dialog-head">
+        <h2>Participants</h2>
+        <button value="cancel" class="icon-btn" aria-label="Close">×</button>
+      </div>
+      <div id="participantsEditor" class="participants-editor"></div>
+      <div class="dialog-actions">
+        <button type="button" id="addParticipantBtn">Add participant</button>
+        <button value="save" id="saveParticipantsBtn">Done</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="docxDialog">
+    <div class="dialog-card">
+      <div class="dialog-head">
+        <h2>Export DOCX</h2>
+        <button type="button" id="closeDocxDialogBtn" class="icon-btn" aria-label="Close">×</button>
+      </div>
+      <p class="dialog-copy">Choose whether this copy should favor maximum portability or preserve the visual rhythm of the thread.</p>
+      <div class="docx-options">
+        <button type="button" id="portableDocxBtn" class="docx-option">
+          <strong>Portable DOCX</strong>
+          <span>Plain speaker-and-dialogue paragraphs. Best for moving the draft into another word processor.</span>
+        </button>
+        <button type="button" id="richDocxBtn" class="docx-option primary-option">
+          <strong>Rich DOCX</strong>
+          <span>Preserves speaker grouping, participant colors, and left/right message layout with editable Word tables.</span>
+        </button>
+      </div>
+    </div>
+  </dialog>
+
+
+  <dialog id="timestampDialog">
+    <div class="dialog-card">
+      <div class="dialog-head">
+        <h2>Message timestamp</h2>
+        <button type="button" id="closeTimestampDialogBtn" class="icon-btn" aria-label="Close">×</button>
+      </div>
+      <p class="dialog-copy">Add any time marker you want to this message. It can be a clock time, a date, or something story-like such as “two hours later.” Leave it blank to remove the timestamp.</p>
+      <label class="timestamp-field-label" for="timestampInput">Timestamp</label>
+      <input id="timestampInput" class="timestamp-input" type="text" maxlength="80" placeholder="e.g. 11:42 PM · Tuesday 8:16 AM · two hours later" />
+      <div class="timestamp-actions">
+        <button type="button" id="useMessageTimeBtn">Use message time</button>
+        <div class="timestamp-actions-right">
+          <button type="button" id="removeTimestampBtn">Remove</button>
+          <button type="button" id="saveTimestampBtn" class="primary-action">Save</button>
+        </div>
+      </div>
+    </div>
+  </dialog>
+
+  <template id="participantEditorTemplate">
+    <div class="participant-edit-row">
+      <input class="participant-name" maxlength="40" aria-label="Participant name" />
+      <select class="participant-side" aria-label="Bubble alignment">
+        <option value="left">Left</option>
+        <option value="right">Right</option>
+      </select>
+      <input class="participant-color" type="color" aria-label="Bubble color" />
+      <button type="button" class="remove-participant">Remove</button>
+    </div>
+  </template>
+
+  <script src="app.js"></script>
+</body>
+</html>

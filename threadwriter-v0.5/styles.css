@@ -1,0 +1,405 @@
+:root {
+  color-scheme: light dark;
+  --bg: #f4f4f7;
+  --panel: rgba(255,255,255,.92);
+  --text: #17171b;
+  --muted: #6d6d78;
+  --border: #d9d9df;
+  --field: #fff;
+  --bubble-text: #151518;
+  --shadow: 0 8px 30px rgba(0,0,0,.08);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #101014;
+    --panel: rgba(26,26,31,.94);
+    --text: #f4f4f5;
+    --muted: #a2a2ae;
+    --border: #3a3a43;
+    --field: #1b1b21;
+    --bubble-text: #111116;
+    --shadow: 0 8px 30px rgba(0,0,0,.35);
+  }
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  font-family: ui-rounded, "SF Pro Rounded", "Segoe UI", system-ui, -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+button, input, textarea, select { font: inherit; }
+button { cursor: pointer; }
+
+.app-shell {
+  min-height: 100dvh;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+}
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: max(10px, env(safe-area-inset-top)) 14px 10px;
+  background: var(--panel);
+  backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--border);
+}
+.title-wrap { min-width: 180px; }
+.doc-title {
+  width: min(56vw, 520px);
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: clamp(18px, 3vw, 25px);
+  font-weight: 760;
+  outline: none;
+}
+.save-status { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.toolbar { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.toolbar button, .dialog-actions button, .icon-btn, .remove-participant {
+  border: 1px solid var(--border);
+  background: var(--field);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 7px 10px;
+}
+
+.thread {
+  width: min(100%, 820px);
+  margin: 0 auto;
+  padding: 26px 16px 190px;
+}
+.empty-state {
+  color: var(--muted);
+  text-align: center;
+  padding: 16vh 20px 0;
+  line-height: 1.5;
+}
+.message-row {
+  display: flex;
+  margin: 11px 0;
+}
+.message-row.continuation { margin-top: -7px; }
+.message-row.left { justify-content: flex-start; }
+.message-row.right { justify-content: flex-end; }
+.message-card { max-width: min(78%, 610px); }
+.speaker-label {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 0 10px 4px;
+}
+.message-row.right .speaker-label { text-align: right; }
+.bubble-wrap {
+  position: relative;
+}
+.bubble {
+  position: relative;
+  padding: 10px 13px;
+  border-radius: 18px;
+  background: var(--bubble-color, #dfe7ff);
+  color: var(--bubble-text);
+  line-height: 1.42;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  box-shadow: 0 1px 0 rgba(0,0,0,.05);
+}
+.bubble[contenteditable="true"] { outline: 2px solid currentColor; outline-offset: 2px; }
+.message-timestamp {
+  margin: 4px 10px 0;
+  color: var(--muted);
+  font-size: 10.5px;
+  line-height: 1.25;
+  letter-spacing: .01em;
+}
+.message-row.right .message-timestamp { text-align: right; }
+.message-row.timestamped + .message-row.continuation { margin-top: 2px; }
+/* A timestamp marks a fresh beat in the conversation: give that message a little breathing room from what came before. */
+.message-row + .message-row.timestamped { margin-top: 11px; }
+.message-row + .message-row.timestamped.continuation { margin-top: 11px; }
+
+.message-actions {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 3;
+}
+.message-row.left .message-actions { right: -34px; }
+.message-row.right .message-actions { left: -34px; }
+.message-menu-button {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 20px;
+  line-height: 22px;
+  opacity: 0;
+  transition: opacity .12s ease, background .12s ease;
+}
+.message-card:hover .message-menu-button,
+.message-card:focus-within .message-menu-button,
+.message-menu-button[aria-expanded="true"] {
+  opacity: .72;
+}
+.message-menu-button:hover, .message-menu-button:focus-visible {
+  opacity: 1;
+  background: color-mix(in srgb, var(--field) 86%, transparent);
+  outline: none;
+}
+.message-menu {
+  position: absolute;
+  top: 31px;
+  min-width: 132px;
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--field);
+  box-shadow: var(--shadow);
+}
+.message-row.left .message-menu { left: 0; }
+.message-row.right .message-menu { right: 0; }
+.message-menu[hidden] { display: none; }
+.message-menu button {
+  display: block;
+  width: 100%;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  padding: 7px 9px;
+  text-align: left;
+  font-size: 12px;
+}
+.message-menu button:hover, .message-menu button:focus-visible {
+  background: color-mix(in srgb, var(--muted) 14%, transparent);
+  outline: none;
+}
+.message-menu button.destructive { color: #d33b3b; }
+
+.composer-panel {
+  position: fixed;
+  z-index: 6;
+  left: 0; right: 0; bottom: 0;
+  padding: 8px 12px max(9px, env(safe-area-inset-bottom));
+  background: var(--panel);
+  backdrop-filter: blur(18px);
+  border-top: 1px solid var(--border);
+  box-shadow: var(--shadow);
+}
+.speaker-strip {
+  width: min(100%, 820px);
+  margin: 0 auto 7px;
+  display: flex;
+  gap: 7px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+.speaker-chip {
+  flex: 0 0 auto;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  padding: 7px 11px;
+  background: var(--chip-color, #ddd);
+  color: #111;
+  font-weight: 700;
+}
+.speaker-chip.active {
+  border-color: var(--text);
+  box-shadow: 0 0 0 2px var(--panel);
+}
+.composer-row {
+  width: min(100%, 820px);
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: end;
+}
+#composer {
+  resize: none;
+  max-height: 28vh;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 11px 13px;
+  background: var(--field);
+  color: var(--text);
+  outline: none;
+}
+#composer:focus { box-shadow: 0 0 0 3px rgba(80,120,255,.18); }
+.send-btn {
+  min-width: 70px;
+  height: 44px;
+  border: 0;
+  border-radius: 15px;
+  background: #4169e1;
+  color: white;
+  font-weight: 800;
+}
+.shortcut-hint {
+  width: min(100%, 820px);
+  margin: 5px auto 0;
+  color: var(--muted);
+  font-size: 11px;
+  text-align: center;
+}
+
+dialog {
+  width: min(680px, calc(100vw - 24px));
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 0;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+dialog::backdrop { background: rgba(0,0,0,.45); backdrop-filter: blur(3px); }
+.dialog-card { padding: 16px; }
+.dialog-head, .dialog-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.dialog-head h2 { margin: 0; }
+.icon-btn { font-size: 22px; line-height: 1; padding: 4px 9px; }
+.participants-editor { display: grid; gap: 9px; margin: 16px 0; }
+.participant-edit-row {
+  display: grid;
+  grid-template-columns: minmax(100px, 1fr) auto auto auto;
+  gap: 7px;
+  align-items: center;
+}
+.participant-edit-row input, .participant-edit-row select {
+  min-width: 0;
+  border: 1px solid var(--border);
+  background: var(--field);
+  color: var(--text);
+  border-radius: 9px;
+  padding: 8px;
+}
+.participant-color { width: 48px; height: 38px; padding: 3px !important; }
+
+.dialog-copy {
+  margin: 12px 0 14px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+.docx-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.docx-option {
+  min-height: 118px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--field);
+  color: var(--text);
+  padding: 14px;
+  text-align: left;
+}
+.docx-option strong, .docx-option span { display: block; }
+.docx-option strong { margin-bottom: 6px; font-size: 15px; }
+.docx-option span { color: var(--muted); font-size: 12px; line-height: 1.45; }
+.docx-option:hover, .docx-option:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(80,120,255,.15);
+}
+.primary-option { border-width: 2px; }
+.timestamp-field-label {
+  display: block;
+  margin: 4px 0 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+.timestamp-input {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 11px;
+  background: var(--field);
+  color: var(--text);
+  outline: none;
+}
+.timestamp-input:focus { box-shadow: 0 0 0 3px rgba(80,120,255,.16); }
+.timestamp-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 14px;
+}
+.timestamp-actions-right { display: flex; gap: 8px; }
+.timestamp-actions button {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 11px;
+  background: var(--field);
+  color: var(--text);
+}
+.timestamp-actions .primary-action {
+  border-color: #4169e1;
+  background: #4169e1;
+  color: white;
+  font-weight: 800;
+}
+
+
+@media (max-width: 700px) {
+  .topbar { align-items: flex-start; }
+  .toolbar { gap: 4px; }
+  .toolbar button { padding: 6px 8px; font-size: 12px; }
+  .doc-title { width: 42vw; }
+  .message-card { max-width: 84%; }
+  .message-menu-button { opacity: .38; }
+  .shortcut-hint { display: none; }
+  .participant-edit-row { grid-template-columns: 1fr auto auto; }
+  .docx-options { grid-template-columns: 1fr; }
+  .remove-participant { grid-column: 1 / -1; }
+}
+
+
+/* On phones, message actions become a bottom action sheet so they cannot open offscreen. */
+@media (max-width: 700px) {
+  .message-actions {
+    top: calc(50% - 14px);
+    transform: none;
+  }
+  .message-menu {
+    position: fixed;
+    z-index: 30;
+    left: 12px !important;
+    right: 12px !important;
+    top: auto;
+    bottom: max(12px, env(safe-area-inset-bottom));
+    min-width: 0;
+    padding: 7px;
+    border-radius: 16px;
+    box-shadow: 0 14px 38px rgba(0,0,0,.22);
+  }
+  .message-menu button {
+    min-height: 44px;
+    padding: 10px 12px;
+    font-size: 15px;
+  }
+}
+@media print {
+  :root { color-scheme: light; --bg: white; --text: black; --muted: #555; }
+  body { background: white; }
+  .no-print { display: none !important; }
+  .app-shell { display: block; }
+  .topbar { position: static; background: white; border: 0; padding: 0 0 18px; }
+  .doc-title { width: 100%; color: black; font-size: 20pt; }
+  .save-status { display: none; }
+  .thread { width: 100%; max-width: none; padding: 0; }
+  .message-card { max-width: 72%; break-inside: avoid; }
+  .bubble { -webkit-print-color-adjust: exact; print-color-adjust: exact; border: 1px solid #bbb; }
+  .message-actions { display: none; }
+}
