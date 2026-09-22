@@ -1,5 +1,5 @@
 (() => {
-  const APP_VERSION = '0.6.6';
+  const APP_VERSION = '0.7';
   const LEGACY_STORAGE_KEY = 'threadwriter.project.v1';
   const LIBRARY_KEY = 'threadwriter.library.v1';
   const DOCUMENT_PREFIX = 'threadwriter.document.v1.';
@@ -34,6 +34,12 @@
     composer: document.getElementById('composer'),
     wordCount: document.getElementById('wordCount'),
     send: document.getElementById('sendBtn'),
+    textMenuBtn: document.getElementById('textMenuBtn'),
+    textMenu: document.getElementById('textMenu'),
+    fileMenuBtn: document.getElementById('fileMenuBtn'),
+    fileMenu: document.getElementById('fileMenu'),
+    exportMenuBtn: document.getElementById('exportMenuBtn'),
+    exportMenu: document.getElementById('exportMenu'),
     participantsBtn: document.getElementById('participantsBtn'),
     headerBtn: document.getElementById('headerBtn'),
     conversationStyle: document.getElementById('conversationStyle'),
@@ -82,6 +88,54 @@
     replaceCurrentBtn: document.getElementById('replaceCurrentBtn'),
     replaceAllBtn: document.getElementById('replaceAllBtn')
   };
+
+  function closeTopMenus(except = null) {
+    const menus = [
+      [els.textMenu, els.textMenuBtn],
+      [els.fileMenu, els.fileMenuBtn]
+    ];
+    menus.forEach(([menu, button]) => {
+      if (!menu || menu === except) return;
+      menu.hidden = true;
+      button?.setAttribute('aria-expanded', 'false');
+    });
+    if (els.exportMenu && (!except || except !== els.fileMenu)) {
+      els.exportMenu.hidden = true;
+      els.exportMenuBtn?.setAttribute('aria-expanded', 'false');
+    }
+  }
+
+  function toggleTopMenu(menu, button) {
+    const opening = menu.hidden;
+    closeTopMenus(menu);
+    menu.hidden = !opening;
+    button.setAttribute('aria-expanded', String(opening));
+    if (!opening && menu === els.fileMenu && els.exportMenu) {
+      els.exportMenu.hidden = true;
+      els.exportMenuBtn?.setAttribute('aria-expanded', 'false');
+    }
+  }
+
+  els.textMenuBtn?.addEventListener('click', event => {
+    event.stopPropagation();
+    toggleTopMenu(els.textMenu, els.textMenuBtn);
+  });
+  els.fileMenuBtn?.addEventListener('click', event => {
+    event.stopPropagation();
+    toggleTopMenu(els.fileMenu, els.fileMenuBtn);
+  });
+  els.textMenu?.addEventListener('click', event => event.stopPropagation());
+  els.fileMenu?.addEventListener('click', event => event.stopPropagation());
+  els.exportMenuBtn?.addEventListener('click', event => {
+    event.stopPropagation();
+    const opening = els.exportMenu.hidden;
+    els.exportMenu.hidden = !opening;
+    els.exportMenuBtn.setAttribute('aria-expanded', String(opening));
+  });
+  document.addEventListener('click', () => closeTopMenus());
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape') closeTopMenus();
+  });
 
   function normalizeState(project) {
     const base = defaultState();
@@ -684,7 +738,7 @@
     if (els.headerDialog.open) els.headerDialog.close();
   }
 
-  els.headerBtn.addEventListener('click', openHeaderDialog);
+  els.headerBtn.addEventListener('click', () => { closeTopMenus(); openHeaderDialog(); });
   els.closeHeaderDialogBtn.addEventListener('click', closeHeaderDialog);
   els.saveHeaderBtn.addEventListener('click', () => {
     state.sceneHeader = els.headerInput.value.trim();
@@ -705,6 +759,7 @@
     state.conversationStyle = els.conversationStyle.value === 'transcript' ? 'transcript' : 'chat';
     scheduleSave();
     renderThread();
+    closeTopMenus();
   });
 
   function computeFindMatches() {
@@ -817,7 +872,7 @@
     renderThread();
   }
 
-  els.findBtn.addEventListener('click', openFindDialog);
+  els.findBtn.addEventListener('click', () => { closeTopMenus(); openFindDialog(); });
   els.closeFindDialogBtn.addEventListener('click', closeFindDialog);
   els.findInput.addEventListener('input', () => refreshFindMatches({ preserveCurrent: false }));
   els.replaceInput.addEventListener('input', () => { findState.replacement = els.replaceInput.value; });
@@ -895,7 +950,7 @@
     scheduleSave();
   });
 
-  els.participantsBtn.addEventListener('click', openParticipantsDialog);
+  els.participantsBtn.addEventListener('click', () => { closeTopMenus(); openParticipantsDialog(); });
   function openParticipantsDialog() {
     els.editor.innerHTML = '';
     state.participants.forEach(p => appendParticipantEditor(p));
@@ -1086,9 +1141,10 @@
     els.saveAsBtn.blur();
   }
 
-  els.saveAsBtn.addEventListener('click', saveAsProject);
+  els.saveAsBtn.addEventListener('click', () => { closeTopMenus(); saveAsProject(); });
 
   els.recentBtn.addEventListener('click', () => {
+    closeTopMenus();
     saveNow({ quiet: true });
     renderRecentList();
     els.recentDialog.showModal();
@@ -1096,11 +1152,12 @@
   els.closeRecentDialogBtn.addEventListener('click', () => els.recentDialog.close());
 
   els.newBtn.addEventListener('click', () => {
+    closeTopMenus();
     if (!confirm('Start a new thread? Your current thread will remain saved under Recent.')) return;
     createNewLocalThread();
   });
 
-  els.importBtn.addEventListener('click', () => els.fileInput.click());
+  els.importBtn.addEventListener('click', () => { closeTopMenus(); els.fileInput.click(); });
   els.fileInput.addEventListener('change', async () => {
     const file = els.fileInput.files?.[0];
     if (!file) return;
@@ -1123,13 +1180,14 @@
   });
 
   els.exportTxtBtn.addEventListener('click', () => {
+    closeTopMenus();
     const txt = buildTranscript();
     downloadBlob(new Blob([txt], { type: 'text/plain;charset=utf-8' }), `${safeName(state.title)}.txt`);
   });
 
-  els.exportPngBtn.addEventListener('click', exportPng);
+  els.exportPngBtn.addEventListener('click', () => { closeTopMenus(); exportPng(); });
 
-  els.exportDocxBtn.addEventListener('click', () => els.docxDialog.showModal());
+  els.exportDocxBtn.addEventListener('click', () => { closeTopMenus(); els.docxDialog.showModal(); });
   els.closeDocxDialogBtn.addEventListener('click', () => els.docxDialog.close());
   els.portableDocxBtn.addEventListener('click', () => exportDocx('portable'));
   els.richDocxBtn.addEventListener('click', () => exportDocx('rich'));
@@ -1146,7 +1204,7 @@
     }
   }
 
-  els.printBtn.addEventListener('click', () => window.print());
+  els.printBtn.addEventListener('click', () => { closeTopMenus(); window.print(); });
 
   function safeName(name) {
     return (name || 'thread').replace(/[\\/:*?"<>|]+/g, '-').trim() || 'thread';

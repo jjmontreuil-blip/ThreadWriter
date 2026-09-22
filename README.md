@@ -1,4 +1,4 @@
-# ThreadWriter v0.6.6
+# ThreadWriter v0.7
 
 A small local-first dialogue editor that looks and behaves like a message thread, but can also switch into a plain transcript-style drafting view.
 
@@ -52,6 +52,19 @@ Then open `http://localhost:8000/` in your browser. Service-worker/offline insta
 
 GitHub Pages is also a good fit: place these files at the publishing root and add the resulting site to an iPhone/iPad Home Screen if desired.
 
+
+## New in v0.7
+
+### Cleaner top-of-page interface
+
+- Reorganized the growing toolbar into three primary controls: **Text**, **File**, and **Recent**.
+- **Text** now contains Participants, Header, Conversation Style, and Find & Replace.
+- **File** now contains New, Open, Save As, and a nested Export section.
+- **Open…** replaces the older “Import” label for native `.threadwriter` files, reserving “Import” for the planned future feature that converts non-ThreadWriter text/DOCX material.
+- **Export** now groups DOCX, TXT, PNG, and PDF/Print instead of keeping four format buttons permanently visible.
+- **Recent** remains top-level so locally saved conversations stay one tap/click away.
+- Mobile now uses the same compact menu hierarchy rather than wrapping a large grid of controls across the top of the screen.
+- No document-format changes in this release; v0.6.x `.threadwriter` files remain compatible.
 
 ## New in v0.6.6
 
@@ -156,7 +169,6 @@ v0.6 project files add fields for the scene header and Conversation Style, but o
 
 ### User interface
 
-- Clean up / organize the growing top-of-page toolbar
 - Expand the Recent/local-document interface as Projects arrive
 
 ### Output / sharing
