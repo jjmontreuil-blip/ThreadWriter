@@ -1,6 +1,8 @@
 (() => {
-  const APP_VERSION = '0.6.4';
-  const STORAGE_KEY = 'threadwriter.project.v1';
+  const APP_VERSION = '0.6.5';
+  const LEGACY_STORAGE_KEY = 'threadwriter.project.v1';
+  const LIBRARY_KEY = 'threadwriter.library.v1';
+  const DOCUMENT_PREFIX = 'threadwriter.document.v1.';
   const defaultState = () => ({
     version: 2,
     title: 'Untitled Thread',
@@ -15,7 +17,9 @@
     messages: []
   });
 
-  let state = loadState();
+  let library = loadLibraryIndex();
+  let currentDocumentId = null;
+  let state = initializeLibraryState();
   let saveTimer = null;
   let timestampMessageId = null;
   let pendingInsertId = null;
@@ -34,6 +38,11 @@
     headerBtn: document.getElementById('headerBtn'),
     conversationStyle: document.getElementById('conversationStyle'),
     findBtn: document.getElementById('findBtn'),
+    saveBtn: document.getElementById('saveBtn'),
+    recentBtn: document.getElementById('recentBtn'),
+    recentDialog: document.getElementById('recentDialog'),
+    closeRecentDialogBtn: document.getElementById('closeRecentDialogBtn'),
+    recentList: document.getElementById('recentList'),
     dialog: document.getElementById('participantsDialog'),
     editor: document.getElementById('participantsEditor'),
     template: document.getElementById('participantEditorTemplate'),
@@ -102,23 +111,147 @@
     };
   }
 
-  function loadState() {
+  function makeDocumentId() {
+    return crypto.randomUUID ? crypto.randomUUID() : `doc-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  }
+
+  function documentStorageKey(id) {
+    return `${DOCUMENT_PREFIX}${id}`;
+  }
+
+  function blankLibrary() {
+    return { version: 1, currentId: null, documents: {} };
+  }
+
+  function loadLibraryIndex() {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return defaultState();
-      return normalizeState(JSON.parse(raw));
+      const raw = localStorage.getItem(LIBRARY_KEY);
+      if (!raw) return blankLibrary();
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') return blankLibrary();
+      return {
+        version: 1,
+        currentId: typeof parsed.currentId === 'string' ? parsed.currentId : null,
+        documents: parsed.documents && typeof parsed.documents === 'object' ? parsed.documents : {}
+      };
     } catch {
-      return defaultState();
+      return blankLibrary();
     }
   }
 
-  function scheduleSave() {
-    els.saveStatus.textContent = 'Saving…';
+  function saveLibraryIndex() {
+    localStorage.setItem(LIBRARY_KEY, JSON.stringify(library));
+  }
+
+  function readStoredDocument(id) {
+    if (!id) return null;
+    try {
+      const raw = localStorage.getItem(documentStorageKey(id));
+      return raw ? normalizeState(JSON.parse(raw)) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function wordCountForState(project) {
+    return project.messages.reduce((sum, message) => sum + countWordsInText(message.text), 0);
+  }
+
+  function previewForState(project) {
+    const first = project.messages.find(message => String(message.text || '').trim());
+    if (!first) return 'Empty thread';
+    const clean = String(first.text).replace(/\s+/g, ' ').trim();
+    return clean.length > 110 ? `${clean.slice(0, 107)}…` : clean;
+  }
+
+  function updateDocumentMeta(id, project, options = {}) {
+    const now = new Date().toISOString();
+    const existing = library.documents[id] || {};
+    library.documents[id] = {
+      title: project.title || 'Untitled Thread',
+      createdAt: existing.createdAt || options.createdAt || now,
+      updatedAt: options.touchUpdated === false ? (existing.updatedAt || now) : now,
+      lastOpenedAt: options.touchOpened === false ? (existing.lastOpenedAt || existing.updatedAt || now) : now,
+      wordCount: wordCountForState(project),
+      preview: previewForState(project)
+    };
+  }
+
+  function persistDocument(id, project, options = {}) {
+    try {
+      localStorage.setItem(documentStorageKey(id), JSON.stringify(project));
+      updateDocumentMeta(id, project, options);
+      library.currentId = id;
+      saveLibraryIndex();
+      return true;
+    } catch (error) {
+      console.error('ThreadWriter local save failed', error);
+      return false;
+    }
+  }
+
+  function initializeLibraryState() {
+    // First, reopen the currently selected v0.6.5+ local document if it exists.
+    if (library.currentId) {
+      const current = readStoredDocument(library.currentId);
+      if (current) {
+        currentDocumentId = library.currentId;
+        updateDocumentMeta(currentDocumentId, current, { touchUpdated: false });
+        try { saveLibraryIndex(); } catch {}
+        return current;
+      }
+    }
+
+    // If the index lost its current pointer, recover the most recently opened valid document.
+    const candidates = Object.entries(library.documents)
+      .sort((a, b) => String(b[1]?.lastOpenedAt || b[1]?.updatedAt || '').localeCompare(String(a[1]?.lastOpenedAt || a[1]?.updatedAt || '')));
+    for (const [id] of candidates) {
+      const recovered = readStoredDocument(id);
+      if (recovered) {
+        currentDocumentId = id;
+        library.currentId = id;
+        updateDocumentMeta(id, recovered, { touchUpdated: false });
+        try { saveLibraryIndex(); } catch {}
+        return recovered;
+      }
+    }
+
+    // Migrate the single autosave used by v0.6.4 and earlier. Keep the legacy key
+    // untouched as an extra safety copy instead of deleting it during migration.
+    try {
+      const legacyRaw = localStorage.getItem(LEGACY_STORAGE_KEY);
+      if (legacyRaw) {
+        const legacy = normalizeState(JSON.parse(legacyRaw));
+        const id = makeDocumentId();
+        currentDocumentId = id;
+        persistDocument(id, legacy);
+        return legacy;
+      }
+    } catch {}
+
+    const fresh = defaultState();
+    const id = makeDocumentId();
+    currentDocumentId = id;
+    persistDocument(id, fresh);
+    return fresh;
+  }
+
+  function saveNow({ quiet = false } = {}) {
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-      els.saveStatus.textContent = 'Saved locally';
-    }, 180);
+    saveTimer = null;
+    if (!currentDocumentId) currentDocumentId = makeDocumentId();
+    const ok = persistDocument(currentDocumentId, state);
+    if (typeof els !== 'undefined' && els.saveStatus) {
+      els.saveStatus.textContent = ok ? 'Saved locally' : 'Save failed';
+    }
+    if (!ok && !quiet) alert('ThreadWriter could not save this thread locally. Export a Project copy before continuing.');
+    return ok;
+  }
+
+  function scheduleSave() {
+    if (els.saveStatus) els.saveStatus.textContent = 'Saving…';
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => saveNow({ quiet: true }), 180);
   }
 
   function getParticipant(id) {
@@ -809,14 +942,113 @@
     els.dialog.close();
   });
 
-  els.newBtn.addEventListener('click', () => {
-    if (!confirm('Start a new thread? Export your current project first if you want a separate backup.')) return;
+  function createNewLocalThread() {
+    saveNow({ quiet: true });
     state = defaultState();
+    currentDocumentId = makeDocumentId();
     pendingInsertId = null;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    persistDocument(currentDocumentId, state);
     render();
     els.composer.value = '';
+    autoSizeComposer();
     els.composer.focus();
+  }
+
+  function formatRecentTime(value) {
+    if (!value) return 'unknown time';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return 'unknown time';
+    try {
+      return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+    } catch {
+      return date.toLocaleString();
+    }
+  }
+
+  function renderRecentList() {
+    if (!els.recentList) return;
+    els.recentList.innerHTML = '';
+    const entries = Object.entries(library.documents)
+      .sort((a, b) => String(b[1]?.lastOpenedAt || b[1]?.updatedAt || '').localeCompare(String(a[1]?.lastOpenedAt || a[1]?.updatedAt || '')));
+
+    if (!entries.length) {
+      const empty = document.createElement('div');
+      empty.className = 'recent-empty';
+      empty.textContent = 'No locally saved conversations yet.';
+      els.recentList.appendChild(empty);
+      return;
+    }
+
+    entries.forEach(([id, meta]) => {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = 'recent-item';
+      if (id === currentDocumentId) item.classList.add('current');
+
+      const top = document.createElement('div');
+      top.className = 'recent-item-top';
+      const title = document.createElement('strong');
+      title.textContent = meta.title || 'Untitled Thread';
+      const badge = document.createElement('span');
+      badge.className = 'recent-badge';
+      badge.textContent = id === currentDocumentId ? 'Current' : 'Open';
+      top.append(title, badge);
+
+      const details = document.createElement('div');
+      details.className = 'recent-details';
+      const words = Number(meta.wordCount || 0);
+      details.textContent = `${words.toLocaleString()} ${words === 1 ? 'word' : 'words'} · ${formatRecentTime(meta.updatedAt || meta.lastOpenedAt)}`;
+
+      const preview = document.createElement('div');
+      preview.className = 'recent-preview';
+      preview.textContent = meta.preview || 'Empty thread';
+
+      item.append(top, details, preview);
+      item.addEventListener('click', () => {
+        if (id === currentDocumentId) {
+          els.recentDialog.close();
+          return;
+        }
+        saveNow({ quiet: true });
+        const loaded = readStoredDocument(id);
+        if (!loaded) {
+          alert('That local conversation could not be opened. Its saved data may have been removed by the browser.');
+          renderRecentList();
+          return;
+        }
+        state = loaded;
+        currentDocumentId = id;
+        library.currentId = id;
+        updateDocumentMeta(id, state, { touchUpdated: false });
+        try { saveLibraryIndex(); } catch {}
+        pendingInsertId = null;
+        els.composer.value = '';
+        autoSizeComposer();
+        render();
+        els.recentDialog.close();
+      });
+      els.recentList.appendChild(item);
+    });
+  }
+
+  els.saveBtn.addEventListener('click', () => {
+    const ok = saveNow();
+    if (ok) {
+      els.saveStatus.textContent = 'Saved locally';
+      els.saveBtn.blur();
+    }
+  });
+
+  els.recentBtn.addEventListener('click', () => {
+    saveNow({ quiet: true });
+    renderRecentList();
+    els.recentDialog.showModal();
+  });
+  els.closeRecentDialogBtn.addEventListener('click', () => els.recentDialog.close());
+
+  els.newBtn.addEventListener('click', () => {
+    if (!confirm('Start a new thread? Your current thread will remain saved under Recent.')) return;
+    createNewLocalThread();
   });
 
   els.importBtn.addEventListener('click', () => els.fileInput.click());
@@ -825,9 +1057,14 @@
     if (!file) return;
     try {
       const parsed = JSON.parse(await file.text());
-      state = normalizeState(parsed);
+      const imported = normalizeState(parsed);
+      saveNow({ quiet: true });
+      state = imported;
+      currentDocumentId = makeDocumentId();
       pendingInsertId = null;
-      scheduleSave();
+      persistDocument(currentDocumentId, state);
+      els.composer.value = '';
+      autoSizeComposer();
       render();
     } catch (err) {
       alert(`Could not import this file: ${err.message}`);
@@ -1382,6 +1619,11 @@
     for (const b of bytes) crc = crcTable[(crc ^ b) & 0xFF] ^ (crc >>> 8);
     return (crc ^ 0xFFFFFFFF) >>> 0;
   }
+
+  window.addEventListener('pagehide', () => saveNow({ quiet: true }));
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') saveNow({ quiet: true });
+  });
 
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
     navigator.serviceWorker.register('./sw.js').catch(() => {});

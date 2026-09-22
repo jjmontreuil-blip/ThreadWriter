@@ -348,6 +348,27 @@ dialog {
 }
 dialog::backdrop { background: rgba(0,0,0,.45); backdrop-filter: blur(3px); }
 .dialog-card { padding: 16px; }
+.recent-dialog-card { width: min(92vw, 620px); max-height: min(82vh, 720px); overflow: hidden; display: flex; flex-direction: column; }
+.recent-list { display: grid; gap: 8px; margin-top: 12px; overflow-y: auto; padding: 2px; }
+.recent-item {
+  width: 100%;
+  display: grid;
+  gap: 4px;
+  text-align: left;
+  border: 1px solid var(--border);
+  background: var(--field);
+  color: var(--text);
+  border-radius: 12px;
+  padding: 11px 12px;
+}
+.recent-item:hover, .recent-item:focus-visible { border-color: color-mix(in srgb, var(--text) 35%, var(--border)); outline: none; }
+.recent-item.current { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text) 16%, transparent); }
+.recent-item-top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.recent-item-top strong { min-width: 0; overflow-wrap: anywhere; }
+.recent-badge { flex: 0 0 auto; font-size: 11px; color: var(--muted); font-weight: 650; }
+.recent-details { color: var(--muted); font-size: 11px; }
+.recent-preview { color: var(--muted); font-size: 12px; line-height: 1.35; overflow-wrap: anywhere; }
+.recent-empty { color: var(--muted); padding: 18px 4px 8px; text-align: center; }
 .dialog-head, .dialog-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .dialog-head h2 { margin: 0; }
 .icon-btn { font-size: 22px; line-height: 1; padding: 4px 9px; }

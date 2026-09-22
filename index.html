@@ -4,10 +4,10 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#f4f4f7" />
-  <title>Threadwriter v0.6.4</title>
-  <link rel="manifest" href="manifest.webmanifest?v=0.6.4" />
-  <link rel="icon" href="icon.svg?v=0.6.4" type="image/svg+xml" />
-  <link rel="stylesheet" href="styles.css?v=0.6.4" />
+  <title>Threadwriter v0.6.5</title>
+  <link rel="manifest" href="manifest.webmanifest?v=0.6.5" />
+  <link rel="icon" href="icon.svg?v=0.6.5" type="image/svg+xml" />
+  <link rel="stylesheet" href="styles.css?v=0.6.5" />
 </head>
 <body>
   <div class="app-shell">
@@ -27,7 +27,9 @@
           </select>
         </label>
         <button id="findBtn" title="Find and replace message text">Find</button>
-        <button id="newBtn" title="Start a new thread">New</button>
+        <button id="saveBtn" title="Save this thread locally now">Save</button>
+        <button id="recentBtn" title="Open a recently saved local thread">Recent</button>
+        <button id="newBtn" title="Start a new thread without overwriting this one">New</button>
         <button id="importBtn" title="Import a Threadwriter project">Import</button>
         <button id="exportProjectBtn" title="Export editable project file">Project</button>
         <button id="exportDocxBtn" title="Choose a DOCX export style">DOCX</button>
@@ -166,6 +168,17 @@
     </div>
   </dialog>
 
+  <dialog id="recentDialog">
+    <div class="dialog-card recent-dialog-card">
+      <div class="dialog-head">
+        <h2>Recent conversations</h2>
+        <button type="button" id="closeRecentDialogBtn" class="icon-btn" aria-label="Close">×</button>
+      </div>
+      <p class="dialog-copy">Threads are saved separately in this browser. Starting a new thread no longer overwrites the one you were working on.</p>
+      <div id="recentList" class="recent-list"></div>
+    </div>
+  </dialog>
+
   <template id="participantEditorTemplate">
     <div class="participant-edit-row">
       <input class="participant-name" maxlength="40" aria-label="Participant name" />
@@ -178,6 +191,6 @@
     </div>
   </template>
 
-  <script src="app.js?v=0.6.4"></script>
+  <script src="app.js?v=0.6.5"></script>
 </body>
 </html>

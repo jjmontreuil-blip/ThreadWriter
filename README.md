@@ -1,4 +1,4 @@
-# ThreadWriter v0.6.4
+# ThreadWriter v0.6.5
 
 A small local-first dialogue editor that looks and behaves like a message thread, but can also switch into a plain transcript-style drafting view.
 
@@ -11,7 +11,9 @@ A small local-first dialogue editor that looks and behaves like a message thread
 - `Tab` / `Shift+Tab` cycles participants while composing
 - `Ctrl+1` through `Ctrl+9` jumps directly to a participant
 - Touch-friendly participant buttons for mobile
-- Local autosave in the browser
+- Local autosave in the browser, with each conversation stored separately
+- **Recent** conversation picker for reopening locally saved threads, including multiple threads with the same title
+- Manual **Save** button for an immediate local save
 - Editable native `.threadwriter` JSON project export/import
 - Consecutive messages from the same participant are visually grouped
 - Compact per-message overflow menu for edit, insert-above/below, speaker reassignment, optional timestamp, reordering, and delete
@@ -51,13 +53,22 @@ Then open `http://localhost:8000/` in your browser. Service-worker/offline insta
 GitHub Pages is also a good fit: place these files at the publishing root and add the resulting site to an iPhone/iPad Home Screen if desired.
 
 
-## Fixed in v0.6.4
+## New in v0.6.5
 
-- Fixed a mixed-version caching failure where the new `index.html` could appear while a browser continued running an older `app.js`. This produced the exact symptom of seeing **Participants** and the new word-count display while the count stayed at 0 and Insert Above/Below were missing.
-- Added versioned asset URLs for `app.js`, `styles.css`, the manifest, and icon so hosted/browser copies are forced to request the matching release files.
-- The service worker now explicitly bypasses the browser HTTP cache while online before refreshing its offline copy.
-- Added a subtle runtime version indicator beside the local-save status. If it reads **v0.6.4**, the matching JavaScript is actually running.
-- Strengthened the word-count fallback for browsers with incomplete `Intl.Segmenter` behavior.
+### Safer local conversations
+
+- ThreadWriter no longer keeps only one browser autosave slot. Every new or imported conversation receives its own local document ID and is stored separately.
+- **New** now saves the current thread first, then creates a separate blank thread. Reusing the title “Untitled Thread” no longer overwrites an earlier conversation.
+- **Recent** opens a local conversation picker showing title, word count, last-updated time, and a short preview. This is the first step toward the fuller project/navigation interface planned for later versions.
+- **Save** performs an immediate manual local save in addition to the existing autosave behavior.
+- Imported `.threadwriter` files are brought in as separate local conversations instead of replacing the current browser autosave.
+- v0.6.4-and-earlier single-slot autosaves are migrated into the new local conversation library on first launch. The old legacy storage key is deliberately left untouched as an extra safety copy.
+- ThreadWriter now flushes the current thread to local storage when the page is hidden or closed, in addition to normal debounced autosaving.
+- Local-save failures are surfaced as **Save failed** instead of silently pretending the write succeeded.
+
+### Important note
+
+The local conversation library is browser/device-specific. It is much safer than the old single autosave slot, but it is **not yet a backup system**. Clearing browser site data can still remove locally stored threads. Use **Project** export for external backups until automatic backup/version-history work is added.
 
 ## New in v0.6.3
 
@@ -129,7 +140,13 @@ v0.6 project files add fields for the scene header and Conversation Style, but o
 ### Core / reliability
 
 - Automatic backups and lightweight version history
+- Optional recovery/version browser for prior local revisions
 - Word-count breakdowns / project totals once multi-scene projects exist
+
+### User interface
+
+- Clean up / organize the growing top-of-page toolbar
+- Expand the Recent/local-document interface as Projects arrive
 
 ### Output / sharing
 
