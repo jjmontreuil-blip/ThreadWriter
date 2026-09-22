@@ -1,4 +1,4 @@
-# ThreadWriter v0.7
+# ThreadWriter v0.7.1
 
 A small local-first dialogue editor that looks and behaves like a message thread, but can also switch into a plain transcript-style drafting view.
 
@@ -13,6 +13,7 @@ A small local-first dialogue editor that looks and behaves like a message thread
 - Touch-friendly participant buttons for mobile
 - Local autosave in the browser, with each conversation stored separately
 - **Recent** conversation picker for reopening locally saved threads, including multiple threads with the same title
+- Local **Projects** for grouping, reordering, counting, and searching multiple scenes/conversations
 - **Save As…** creates a portable `.threadwriter` file you control, while autosave continues maintaining the browser-local Recent copy
 - Editable native `.threadwriter` JSON project export/import
 - Consecutive messages from the same participant are visually grouped
@@ -52,6 +53,23 @@ Then open `http://localhost:8000/` in your browser. Service-worker/offline insta
 
 GitHub Pages is also a good fit: place these files at the publishing root and add the resulting site to an iPhone/iPad Home Screen if desired.
 
+
+
+## New in v0.7.1
+
+### Projects
+
+- Added a local **Projects** workspace for grouping related ThreadWriter conversations into a larger manuscript or production. A project can hold many scenes while every scene remains an ordinary ThreadWriter conversation that also stays available in **Recent**.
+- Create and rename projects, add the current thread, create a new scene directly inside a project, remove scenes without deleting them, and reorder scenes with explicit up/down controls.
+- The current thread shows a small clickable **Project: …** indicator under its title whenever it belongs to a project.
+- Project dialogs show scene count plus a live **project-level word count**.
+- Added **project-wide search** across scene titles, scene headers, and message text. Selecting a message-text result opens that scene and hands the query to ThreadWriter's existing Find system so matching messages are highlighted.
+- Recent conversations now show their project name when they belong to one.
+- Projects and their scene order are stored locally in the browser alongside the Recent library. Existing v0.7 and earlier conversations remain compatible and begin unassigned until you add them to a project.
+
+### Important safety note
+
+Projects are organization, **not yet backup/version history**. Project membership and scene order live in browser storage, and clearing site data can remove them. Individual scenes can still be protected with **Save As…**. Automatic snapshots / fuller project backup remain planned safety work for a later v0.7.x release.
 
 ## New in v0.7
 

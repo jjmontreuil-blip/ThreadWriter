@@ -4,35 +4,53 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#f4f4f7" />
-  <title>Threadwriter</title>
-  <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="icon" href="icon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="styles.css" />
+  <title>Threadwriter v0.7.1</title>
+  <link rel="manifest" href="manifest.webmanifest?v=0.7.1" />
+  <link rel="icon" href="icon.svg?v=0.7.1" type="image/svg+xml" />
+  <link rel="stylesheet" href="styles.css?v=0.7.1" />
 </head>
 <body>
   <div class="app-shell">
     <header class="topbar">
       <div class="title-wrap">
         <input id="docTitle" class="doc-title" value="Untitled Thread" aria-label="Document title" />
-        <div id="saveStatus" class="save-status">Saved to Recent</div>
+        <div class="status-line"><div id="saveStatus" class="save-status">Saved to Recent</div><button id="projectContext" class="project-context" type="button" hidden></button><div id="runtimeVersion" class="runtime-version">runtime loading…</div></div>
       </div>
       <div class="toolbar no-print">
-        <button id="participantsBtn" title="Manage participants">Participants</button>
-        <button id="headerBtn" title="Add or edit an optional scene header">Header</button>
-        <label class="style-control" title="Conversation style">
-          <span class="sr-only">Conversation style</span>
-          <select id="conversationStyle" aria-label="Conversation style">
-            <option value="chat">Mobile Chat</option>
-            <option value="transcript">Transcript</option>
-          </select>
-        </label>
-        <button id="findBtn" title="Find and replace message text">Find</button>
-        <button id="newBtn" title="Start a new thread">New</button>
-        <button id="importBtn" title="Import a Threadwriter project">Import</button>
-        <button id="exportDocxBtn" title="Choose a DOCX export style">DOCX</button>
-        <button id="exportTxtBtn" title="Export plain text transcript">TXT</button>
-        <button id="exportPngBtn" title="Export the rendered thread as a PNG image">PNG</button>
-        <button id="printBtn" title="Print or save as PDF">PDF</button>
+        <div class="top-menu-host">
+          <button id="textMenuBtn" class="top-menu-button" type="button" aria-haspopup="true" aria-expanded="false">Text</button>
+          <div id="textMenu" class="top-menu" hidden>
+            <button id="participantsBtn" type="button">Participants</button>
+            <button id="headerBtn" type="button">Header</button>
+            <label class="top-menu-field">
+              <span>Conversation style</span>
+              <select id="conversationStyle" aria-label="Conversation style">
+                <option value="chat">Mobile Chat</option>
+                <option value="transcript">Transcript</option>
+              </select>
+            </label>
+            <button id="findBtn" type="button">Find &amp; Replace</button>
+          </div>
+        </div>
+
+        <div class="top-menu-host">
+          <button id="fileMenuBtn" class="top-menu-button" type="button" aria-haspopup="true" aria-expanded="false">File</button>
+          <div id="fileMenu" class="top-menu" hidden>
+            <button id="newBtn" type="button">New</button>
+            <button id="importBtn" type="button">Open…</button>
+            <button id="saveAsBtn" type="button">Save As…</button>
+            <button id="exportMenuBtn" type="button" class="submenu-toggle" aria-expanded="false">Export <span aria-hidden="true">›</span></button>
+            <div id="exportMenu" class="export-submenu" hidden>
+              <button id="exportDocxBtn" type="button">DOCX…</button>
+              <button id="exportTxtBtn" type="button">TXT</button>
+              <button id="exportPngBtn" type="button">PNG</button>
+              <button id="printBtn" type="button">PDF / Print</button>
+            </div>
+          </div>
+        </div>
+
+        <button id="projectsBtn" class="top-menu-button" type="button" title="Organize conversations into projects">Projects</button>
+        <button id="recentBtn" class="top-menu-button" type="button" title="Open a recently saved local thread">Recent</button>
         <input id="fileInput" type="file" accept="application/json,.threadwriter,.json" hidden />
       </div>
     </header>
@@ -165,6 +183,63 @@
     </div>
   </dialog>
 
+  <dialog id="recentDialog">
+    <div class="dialog-card recent-dialog-card">
+      <div class="dialog-head">
+        <h2>Recent conversations</h2>
+        <button type="button" id="closeRecentDialogBtn" class="icon-btn" aria-label="Close">×</button>
+      </div>
+      <p class="dialog-copy">Threads are saved separately in this browser. Starting a new thread no longer overwrites the one you were working on.</p>
+      <div id="recentList" class="recent-list"></div>
+    </div>
+  </dialog>
+
+
+  <dialog id="projectsDialog">
+    <div class="dialog-card projects-dialog-card">
+      <div class="dialog-head">
+        <h2>Projects</h2>
+        <button type="button" id="closeProjectsDialogBtn" class="icon-btn" aria-label="Close">×</button>
+      </div>
+      <p class="dialog-copy">Group related ThreadWriter conversations into one local project. Scenes remain ordinary conversations and can still be opened from Recent.</p>
+      <div class="projects-layout">
+        <aside class="project-sidebar">
+          <div class="project-create-row">
+            <input id="newProjectName" type="text" maxlength="80" placeholder="New project name" aria-label="New project name" />
+            <button id="createProjectBtn" type="button">Create</button>
+          </div>
+          <div id="projectList" class="project-list" aria-label="Projects"></div>
+        </aside>
+        <section id="projectDetail" class="project-detail">
+          <div id="projectEmpty" class="project-empty">Create or select a project to organize scenes.</div>
+          <div id="projectDetailContent" hidden>
+            <div class="project-detail-head">
+              <label class="project-name-field">
+                <span>Project name</span>
+                <input id="projectNameEditor" type="text" maxlength="80" />
+              </label>
+              <button id="deleteProjectBtn" type="button" class="danger-button">Delete project</button>
+            </div>
+            <div class="project-summary-row">
+              <div id="projectStats" class="project-stats"></div>
+              <div class="project-actions">
+                <button id="addCurrentToProjectBtn" type="button">Add current thread</button>
+                <button id="newProjectSceneBtn" type="button">New scene</button>
+              </div>
+            </div>
+            <label class="project-search-field">
+              <span>Search this project</span>
+              <input id="projectSearchInput" type="search" placeholder="Search every scene…" autocomplete="off" />
+            </label>
+            <div id="projectSearchResults" class="project-search-results" hidden></div>
+            <div class="project-scenes-head"><strong>Scenes / conversations</strong><span>Use ↑/↓ to set project order.</span></div>
+            <div id="projectSceneList" class="project-scene-list"></div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </dialog>
+
   <template id="participantEditorTemplate">
     <div class="participant-edit-row">
       <input class="participant-name" maxlength="40" aria-label="Participant name" />
@@ -177,38 +252,55 @@
     </div>
   </template>
 
-  <script src="app.js"></script>
+  <script>
+    for (const key of Object.keys(localStorage)) {
+      if (key.startsWith('threadwriter.')) localStorage.removeItem(key);
+    }
+  </script>
+  <script src="app.js?v=0.7.1"></script>
+
 <script>
 window.addEventListener('load', () => {
-  localStorage.removeItem('threadwriter.project.v1');
-  setTimeout(() => {
+  const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+  (async () => {
+    await wait(120);
     const composer = document.getElementById('composer');
-    composer.value = 'One two three';
+    composer.value = 'Alpha beta';
     document.getElementById('sendBtn').click();
-    setTimeout(() => {
-      const menuBtn = document.querySelector('.message-menu-button');
-      menuBtn.click();
-      const insert = [...document.querySelectorAll('.message-menu button')].find(b => b.textContent === 'Insert below');
-      insert.click();
-      setTimeout(() => {
-        const rows = document.querySelectorAll('.message-row');
-        const lastBubble = rows[rows.length-1].querySelector('.bubble');
-        lastBubble.textContent = 'Four five';
-        lastBubble.dispatchEvent(new FocusEvent('blur', { bubbles: false }));
-        setTimeout(() => {
-          const out = document.createElement('pre');
-          out.id = 'test-output';
-          out.textContent = JSON.stringify({
-            rows: document.querySelectorAll('.message-row').length,
-            wordCount: document.getElementById('wordCount').textContent,
-            participantsLabel: document.getElementById('participantsBtn').textContent,
-            texts: [...document.querySelectorAll('.bubble')].map(b=>b.textContent)
-          });
-          document.body.appendChild(out);
-        }, 100);
-      }, 100);
-    }, 100);
-  }, 100);
+    await wait(220);
+
+    document.getElementById('projectsBtn').click();
+    await wait(40);
+    document.getElementById('newProjectName').value = 'Novel Project';
+    document.getElementById('createProjectBtn').click();
+    document.getElementById('addCurrentToProjectBtn').click();
+    await wait(80);
+    const firstSceneCount = document.querySelectorAll('.project-scene-row').length;
+    document.getElementById('newProjectSceneBtn').click();
+    await wait(120);
+
+    const title = document.getElementById('docTitle');
+    title.value = 'Scene Two';
+    title.dispatchEvent(new Event('input', { bubbles: true }));
+    composer.value = 'Gamma delta epsilon';
+    document.getElementById('sendBtn').click();
+    await wait(260);
+
+    document.getElementById('projectsBtn').click();
+    await wait(80);
+    const sceneCount = document.querySelectorAll('.project-scene-row').length;
+    const projectStats = document.getElementById('projectStats').textContent;
+    const projectContext = document.getElementById('projectContext').textContent;
+    document.getElementById('projectSearchInput').value = 'Alpha';
+    document.getElementById('projectSearchInput').dispatchEvent(new Event('input', { bubbles: true }));
+    await wait(80);
+    const searchResults = document.querySelectorAll('.project-search-result').length;
+
+    const out = document.createElement('pre');
+    out.id = 'test-output';
+    out.textContent = JSON.stringify({ firstSceneCount, sceneCount, projectStats, projectContext, searchResults, runtime: document.getElementById('runtimeVersion').textContent });
+    document.body.appendChild(out);
+  })();
 });
 </script>
 </body>

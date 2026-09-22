@@ -1,8 +1,9 @@
 (() => {
-  const APP_VERSION = '0.7';
+  const APP_VERSION = '0.7.1';
   const LEGACY_STORAGE_KEY = 'threadwriter.project.v1';
   const LIBRARY_KEY = 'threadwriter.library.v1';
   const DOCUMENT_PREFIX = 'threadwriter.document.v1.';
+  const PROJECT_LIBRARY_KEY = 'threadwriter.projects.v1';
   const defaultState = () => ({
     version: 2,
     title: 'Untitled Thread',
@@ -18,8 +19,11 @@
   });
 
   let library = loadLibraryIndex();
+  let projectLibrary = loadProjectLibrary();
   let currentDocumentId = null;
   let state = initializeLibraryState();
+  sanitizeProjectLibrary();
+  let selectedProjectId = projectIdForDocument(currentDocumentId) || projectLibrary.lastProjectId || Object.keys(projectLibrary.projects)[0] || null;
   let saveTimer = null;
   let timestampMessageId = null;
   let pendingInsertId = null;
@@ -29,6 +33,7 @@
     title: document.getElementById('docTitle'),
     saveStatus: document.getElementById('saveStatus'),
     runtimeVersion: document.getElementById('runtimeVersion'),
+    projectContext: document.getElementById('projectContext'),
     thread: document.getElementById('thread'),
     speakerStrip: document.getElementById('speakerStrip'),
     composer: document.getElementById('composer'),
@@ -45,6 +50,7 @@
     conversationStyle: document.getElementById('conversationStyle'),
     findBtn: document.getElementById('findBtn'),
     saveAsBtn: document.getElementById('saveAsBtn'),
+    projectsBtn: document.getElementById('projectsBtn'),
     recentBtn: document.getElementById('recentBtn'),
     recentDialog: document.getElementById('recentDialog'),
     closeRecentDialogBtn: document.getElementById('closeRecentDialogBtn'),
@@ -86,7 +92,22 @@
     findPrevBtn: document.getElementById('findPrevBtn'),
     findNextBtn: document.getElementById('findNextBtn'),
     replaceCurrentBtn: document.getElementById('replaceCurrentBtn'),
-    replaceAllBtn: document.getElementById('replaceAllBtn')
+    replaceAllBtn: document.getElementById('replaceAllBtn'),
+    projectsDialog: document.getElementById('projectsDialog'),
+    closeProjectsDialogBtn: document.getElementById('closeProjectsDialogBtn'),
+    newProjectName: document.getElementById('newProjectName'),
+    createProjectBtn: document.getElementById('createProjectBtn'),
+    projectList: document.getElementById('projectList'),
+    projectEmpty: document.getElementById('projectEmpty'),
+    projectDetailContent: document.getElementById('projectDetailContent'),
+    projectNameEditor: document.getElementById('projectNameEditor'),
+    deleteProjectBtn: document.getElementById('deleteProjectBtn'),
+    projectStats: document.getElementById('projectStats'),
+    addCurrentToProjectBtn: document.getElementById('addCurrentToProjectBtn'),
+    newProjectSceneBtn: document.getElementById('newProjectSceneBtn'),
+    projectSearchInput: document.getElementById('projectSearchInput'),
+    projectSearchResults: document.getElementById('projectSearchResults'),
+    projectSceneList: document.getElementById('projectSceneList')
   };
 
   function closeTopMenus(except = null) {
@@ -136,6 +157,134 @@
   document.addEventListener('keydown', event => {
     if (event.key === 'Escape') closeTopMenus();
   });
+
+  function blankProjectLibrary() {
+    return { version: 1, lastProjectId: null, projects: {} };
+  }
+
+  function loadProjectLibrary() {
+    try {
+      const raw = localStorage.getItem(PROJECT_LIBRARY_KEY);
+      if (!raw) return blankProjectLibrary();
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') return blankProjectLibrary();
+      return {
+        version: 1,
+        lastProjectId: typeof parsed.lastProjectId === 'string' ? parsed.lastProjectId : null,
+        projects: parsed.projects && typeof parsed.projects === 'object' ? parsed.projects : {}
+      };
+    } catch {
+      return blankProjectLibrary();
+    }
+  }
+
+  function saveProjectLibrary() {
+    try {
+      localStorage.setItem(PROJECT_LIBRARY_KEY, JSON.stringify(projectLibrary));
+      return true;
+    } catch (error) {
+      console.error('ThreadWriter project save failed', error);
+      return false;
+    }
+  }
+
+  function makeProjectId() {
+    return crypto.randomUUID ? crypto.randomUUID() : `project-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  }
+
+  function projectIdForDocument(documentId) {
+    if (!documentId || !projectLibrary?.projects) return null;
+    for (const [projectId, project] of Object.entries(projectLibrary.projects)) {
+      if (Array.isArray(project.documentIds) && project.documentIds.includes(documentId)) return projectId;
+    }
+    return null;
+  }
+
+  function projectForDocument(documentId) {
+    const projectId = projectIdForDocument(documentId);
+    return projectId ? projectLibrary.projects[projectId] : null;
+  }
+
+  function sanitizeProjectLibrary() {
+    if (!projectLibrary || typeof projectLibrary !== 'object') projectLibrary = blankProjectLibrary();
+    if (!projectLibrary.projects || typeof projectLibrary.projects !== 'object') projectLibrary.projects = {};
+    const validDocumentIds = new Set(Object.keys(library.documents || {}));
+    Object.entries(projectLibrary.projects).forEach(([projectId, project]) => {
+      if (!project || typeof project !== 'object') {
+        delete projectLibrary.projects[projectId];
+        return;
+      }
+      project.id = projectId;
+      project.name = typeof project.name === 'string' && project.name.trim() ? project.name.trim() : 'Untitled Project';
+      project.documentIds = Array.isArray(project.documentIds) ? [...new Set(project.documentIds.filter(id => validDocumentIds.has(id)))] : [];
+      project.createdAt = project.createdAt || new Date().toISOString();
+      project.updatedAt = project.updatedAt || project.createdAt;
+    });
+    if (projectLibrary.lastProjectId && !projectLibrary.projects[projectLibrary.lastProjectId]) projectLibrary.lastProjectId = null;
+    saveProjectLibrary();
+  }
+
+  function touchProject(projectId) {
+    const project = projectLibrary.projects[projectId];
+    if (!project) return;
+    project.updatedAt = new Date().toISOString();
+    projectLibrary.lastProjectId = projectId;
+    saveProjectLibrary();
+  }
+
+  function projectWordCount(project) {
+    if (!project) return 0;
+    return project.documentIds.reduce((sum, documentId) => {
+      if (documentId === currentDocumentId) return sum + wordCountForState(state);
+      const meta = library.documents[documentId];
+      if (meta && Number.isFinite(Number(meta.wordCount))) return sum + Number(meta.wordCount);
+      const stored = readStoredDocument(documentId);
+      return sum + (stored ? wordCountForState(stored) : 0);
+    }, 0);
+  }
+
+  function addDocumentToProject(documentId, projectId, { confirmMove = true } = {}) {
+    const project = projectLibrary.projects[projectId];
+    if (!project || !documentId) return false;
+    const previousProjectId = projectIdForDocument(documentId);
+    if (previousProjectId === projectId) return true;
+    if (previousProjectId && confirmMove) {
+      const previousName = projectLibrary.projects[previousProjectId]?.name || 'another project';
+      if (!confirm(`This thread already belongs to “${previousName}”. Move it to “${project.name}”?`)) return false;
+    }
+    if (previousProjectId) {
+      const previous = projectLibrary.projects[previousProjectId];
+      previous.documentIds = previous.documentIds.filter(id => id !== documentId);
+      previous.updatedAt = new Date().toISOString();
+    }
+    if (!project.documentIds.includes(documentId)) project.documentIds.push(documentId);
+    touchProject(projectId);
+    selectedProjectId = projectId;
+    return true;
+  }
+
+  function removeDocumentFromProject(documentId, projectId) {
+    const project = projectLibrary.projects[projectId];
+    if (!project) return;
+    project.documentIds = project.documentIds.filter(id => id !== documentId);
+    touchProject(projectId);
+  }
+
+  function createProject(name) {
+    const id = makeProjectId();
+    const now = new Date().toISOString();
+    projectLibrary.projects[id] = {
+      id,
+      name: String(name || '').trim() || 'Untitled Project',
+      documentIds: [],
+      createdAt: now,
+      updatedAt: now
+    };
+    selectedProjectId = id;
+    projectLibrary.lastProjectId = id;
+    saveProjectLibrary();
+    return id;
+  }
 
   function normalizeState(project) {
     const base = defaultState();
@@ -234,8 +383,10 @@
     try {
       localStorage.setItem(documentStorageKey(id), JSON.stringify(project));
       updateDocumentMeta(id, project, options);
-      library.currentId = id;
+      if (options.makeCurrent !== false) library.currentId = id;
       saveLibraryIndex();
+      const owningProjectId = projectIdForDocument(id);
+      if (owningProjectId) touchProject(owningProjectId);
       return true;
     } catch (error) {
       console.error('ThreadWriter local save failed', error);
@@ -297,7 +448,7 @@
     if (typeof els !== 'undefined' && els.saveStatus) {
       els.saveStatus.textContent = ok ? 'Saved to Recent' : 'Save failed';
     }
-    if (!ok && !quiet) alert('ThreadWriter could not save this thread locally. Export a Project copy before continuing.');
+    if (!ok && !quiet) alert('ThreadWriter could not save this thread locally. Use Save As… to make an external copy before continuing.');
     return ok;
   }
 
@@ -324,6 +475,7 @@
     renderSpeakers();
     renderThread();
     updateWordCount();
+    renderProjectContext();
   }
 
   function renderSpeakers() {
@@ -996,6 +1148,299 @@
     els.dialog.close();
   });
 
+  function renderProjectContext() {
+    if (!els.projectContext) return;
+    const projectId = projectIdForDocument(currentDocumentId);
+    const project = projectId ? projectLibrary.projects[projectId] : null;
+    if (!project) {
+      els.projectContext.hidden = true;
+      els.projectContext.textContent = '';
+      return;
+    }
+    els.projectContext.hidden = false;
+    els.projectContext.textContent = `Project: ${project.name}`;
+    els.projectContext.title = 'Open this project';
+  }
+
+  function openLocalDocument(id, { closeDialogs = true } = {}) {
+    if (!id || id === currentDocumentId) {
+      if (closeDialogs) {
+        if (els.recentDialog?.open) els.recentDialog.close();
+        if (els.projectsDialog?.open) els.projectsDialog.close();
+      }
+      return true;
+    }
+    saveNow({ quiet: true });
+    const loaded = readStoredDocument(id);
+    if (!loaded) {
+      alert('That local conversation could not be opened. Its saved data may have been removed by the browser.');
+      return false;
+    }
+    state = loaded;
+    currentDocumentId = id;
+    library.currentId = id;
+    updateDocumentMeta(id, state, { touchUpdated: false });
+    try { saveLibraryIndex(); } catch {}
+    selectedProjectId = projectIdForDocument(id) || selectedProjectId;
+    if (selectedProjectId) {
+      projectLibrary.lastProjectId = selectedProjectId;
+      saveProjectLibrary();
+    }
+    pendingInsertId = null;
+    els.composer.value = '';
+    autoSizeComposer();
+    render();
+    if (closeDialogs) {
+      if (els.recentDialog?.open) els.recentDialog.close();
+      if (els.projectsDialog?.open) els.projectsDialog.close();
+    }
+    return true;
+  }
+
+  function createProjectScene(projectId) {
+    const project = projectLibrary.projects[projectId];
+    if (!project) return;
+    saveNow({ quiet: true });
+    const fresh = defaultState();
+    const id = makeDocumentId();
+    currentDocumentId = id;
+    state = fresh;
+    pendingInsertId = null;
+    persistDocument(id, fresh);
+    addDocumentToProject(id, projectId, { confirmMove: false });
+    els.composer.value = '';
+    autoSizeComposer();
+    render();
+    if (els.projectsDialog?.open) els.projectsDialog.close();
+    els.title.focus();
+    els.title.select();
+  }
+
+  function moveProjectScene(projectId, documentId, direction) {
+    const project = projectLibrary.projects[projectId];
+    if (!project) return;
+    const index = project.documentIds.indexOf(documentId);
+    const target = index + direction;
+    if (index < 0 || target < 0 || target >= project.documentIds.length) return;
+    const [moved] = project.documentIds.splice(index, 1);
+    project.documentIds.splice(target, 0, moved);
+    touchProject(projectId);
+    renderProjectsDialog();
+  }
+
+  function projectSceneMeta(documentId) {
+    if (documentId === currentDocumentId) {
+      return {
+        title: state.title || 'Untitled Thread',
+        wordCount: wordCountForState(state),
+        preview: previewForState(state),
+        updatedAt: library.documents[documentId]?.updatedAt || new Date().toISOString()
+      };
+    }
+    return library.documents[documentId] || { title: 'Untitled Thread', wordCount: 0, preview: 'Empty thread', updatedAt: '' };
+  }
+
+  function projectSearch(project, query) {
+    const raw = String(query || '').trim();
+    if (!raw) return [];
+    const needle = raw.toLocaleLowerCase();
+    const results = [];
+    for (const documentId of project.documentIds) {
+      const documentState = documentId === currentDocumentId ? state : readStoredDocument(documentId);
+      if (!documentState) continue;
+      const title = documentState.title || 'Untitled Thread';
+      const header = documentState.sceneHeader || '';
+      if (title.toLocaleLowerCase().includes(needle)) {
+        results.push({ documentId, title, kind: 'Title', snippet: title });
+      } else if (header.toLocaleLowerCase().includes(needle)) {
+        results.push({ documentId, title, kind: 'Header', snippet: header.replace(/\s+/g, ' ').trim() });
+      }
+      for (const message of documentState.messages) {
+        const participant = documentState.participants.find(p => p.id === message.speakerId);
+        const clean = String(message.text || '').replace(/\s+/g, ' ').trim();
+        const at = clean.toLocaleLowerCase().indexOf(needle);
+        if (at === -1) continue;
+        const start = Math.max(0, at - 45);
+        const end = Math.min(clean.length, at + raw.length + 80);
+        const snippet = `${start > 0 ? '…' : ''}${clean.slice(start, end)}${end < clean.length ? '…' : ''}`;
+        results.push({ documentId, title, kind: participant?.name || 'Message', snippet });
+        if (results.length >= 60) return results;
+      }
+    }
+    return results;
+  }
+
+  function renderProjectSearchResults(project) {
+    const query = els.projectSearchInput.value.trim();
+    els.projectSearchResults.innerHTML = '';
+    if (!query) {
+      els.projectSearchResults.hidden = true;
+      return;
+    }
+    els.projectSearchResults.hidden = false;
+    const results = projectSearch(project, query);
+    if (!results.length) {
+      const empty = document.createElement('div');
+      empty.className = 'project-search-empty';
+      empty.textContent = 'No matches in this project.';
+      els.projectSearchResults.appendChild(empty);
+      return;
+    }
+    results.forEach(result => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'project-search-result';
+      const label = document.createElement('strong');
+      label.textContent = result.title;
+      const kind = document.createElement('small');
+      kind.textContent = result.kind;
+      const snippet = document.createElement('div');
+      snippet.className = 'project-search-snippet';
+      snippet.textContent = result.snippet;
+      button.append(label, kind, snippet);
+      button.addEventListener('click', () => {
+        const messageSearch = result.kind !== 'Title' && result.kind !== 'Header';
+        openLocalDocument(result.documentId);
+        if (messageSearch && query) {
+          els.findInput.value = query;
+          els.replaceInput.value = '';
+          els.caseSensitiveFind.checked = false;
+          findState.current = 0;
+          refreshFindMatches({ preserveCurrent: false, scroll: true });
+        }
+      });
+      els.projectSearchResults.appendChild(button);
+    });
+  }
+
+  function renderProjectsDialog() {
+    sanitizeProjectLibrary();
+    if (selectedProjectId && !projectLibrary.projects[selectedProjectId]) selectedProjectId = null;
+    if (!selectedProjectId) selectedProjectId = projectIdForDocument(currentDocumentId) || projectLibrary.lastProjectId || Object.keys(projectLibrary.projects)[0] || null;
+
+    els.projectList.innerHTML = '';
+    const entries = Object.entries(projectLibrary.projects).sort((a, b) => String(b[1].updatedAt || '').localeCompare(String(a[1].updatedAt || '')));
+    if (!entries.length) {
+      const empty = document.createElement('div');
+      empty.className = 'recent-empty';
+      empty.textContent = 'No projects yet.';
+      els.projectList.appendChild(empty);
+    } else {
+      entries.forEach(([projectId, project]) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'project-list-button';
+        if (projectId === selectedProjectId) button.classList.add('active');
+        const title = document.createElement('strong');
+        title.textContent = project.name;
+        const details = document.createElement('span');
+        const count = project.documentIds.length;
+        details.textContent = `${count} ${count === 1 ? 'scene' : 'scenes'} · ${projectWordCount(project).toLocaleString()} words`;
+        button.append(title, details);
+        button.addEventListener('click', () => {
+          selectedProjectId = projectId;
+          projectLibrary.lastProjectId = projectId;
+          saveProjectLibrary();
+          els.projectSearchInput.value = '';
+          renderProjectsDialog();
+        });
+        els.projectList.appendChild(button);
+      });
+    }
+
+    const project = selectedProjectId ? projectLibrary.projects[selectedProjectId] : null;
+    els.projectEmpty.hidden = !!project;
+    els.projectDetailContent.hidden = !project;
+    if (!project) return;
+
+    els.projectNameEditor.value = project.name;
+    const totalWords = projectWordCount(project);
+    const sceneCount = project.documentIds.length;
+    els.projectStats.textContent = `${sceneCount.toLocaleString()} ${sceneCount === 1 ? 'scene' : 'scenes'} · ${totalWords.toLocaleString()} ${totalWords === 1 ? 'word' : 'words'}`;
+    const currentOwner = projectIdForDocument(currentDocumentId);
+    els.addCurrentToProjectBtn.disabled = currentOwner === selectedProjectId;
+    els.addCurrentToProjectBtn.textContent = currentOwner === selectedProjectId ? 'Current thread added' : (currentOwner ? 'Move current thread here' : 'Add current thread');
+
+    els.projectSceneList.innerHTML = '';
+    if (!project.documentIds.length) {
+      const empty = document.createElement('div');
+      empty.className = 'recent-empty';
+      empty.textContent = 'No scenes yet. Add the current thread or create a new scene.';
+      els.projectSceneList.appendChild(empty);
+    } else {
+      project.documentIds.forEach((documentId, index) => {
+        const meta = projectSceneMeta(documentId);
+        const row = document.createElement('div');
+        row.className = 'project-scene-row';
+        if (documentId === currentDocumentId) row.classList.add('current');
+        const main = document.createElement('div');
+        main.className = 'project-scene-main';
+        const text = document.createElement('div');
+        const title = document.createElement('div');
+        title.className = 'project-scene-title';
+        title.textContent = meta.title || 'Untitled Thread';
+        const details = document.createElement('div');
+        details.className = 'project-scene-meta';
+        details.textContent = `${Number(meta.wordCount || 0).toLocaleString()} words · ${meta.preview || 'Empty thread'}`;
+        text.append(title, details);
+        const order = document.createElement('span');
+        order.className = 'project-scene-meta';
+        order.textContent = `${index + 1}`;
+        main.append(text, order);
+
+        const actions = document.createElement('div');
+        actions.className = 'project-scene-actions';
+        const open = document.createElement('button');
+        open.type = 'button';
+        open.textContent = documentId === currentDocumentId ? 'Current' : 'Open';
+        open.disabled = documentId === currentDocumentId;
+        open.addEventListener('click', () => openLocalDocument(documentId));
+        const up = document.createElement('button');
+        up.type = 'button'; up.textContent = '↑'; up.title = 'Move scene up'; up.disabled = index === 0;
+        up.addEventListener('click', () => moveProjectScene(selectedProjectId, documentId, -1));
+        const down = document.createElement('button');
+        down.type = 'button'; down.textContent = '↓'; down.title = 'Move scene down'; down.disabled = index === project.documentIds.length - 1;
+        down.addEventListener('click', () => moveProjectScene(selectedProjectId, documentId, 1));
+        const rename = document.createElement('button');
+        rename.type = 'button'; rename.textContent = 'Rename';
+        rename.addEventListener('click', () => {
+          const documentState = documentId === currentDocumentId ? state : readStoredDocument(documentId);
+          if (!documentState) return;
+          const value = prompt('Scene title:', documentState.title || 'Untitled Thread');
+          if (value === null) return;
+          documentState.title = value.trim() || 'Untitled Thread';
+          if (documentId === currentDocumentId) {
+            state.title = documentState.title;
+            els.title.value = state.title;
+            saveNow({ quiet: true });
+          } else persistDocument(documentId, documentState, { touchOpened: false, makeCurrent: false });
+          renderProjectsDialog();
+        });
+        const remove = document.createElement('button');
+        remove.type = 'button'; remove.textContent = 'Remove';
+        remove.addEventListener('click', () => {
+          removeDocumentFromProject(documentId, selectedProjectId);
+          renderProjectContext();
+          renderProjectsDialog();
+        });
+        actions.append(open, up, down, rename, remove);
+        row.append(main, actions);
+        els.projectSceneList.appendChild(row);
+      });
+    }
+    renderProjectSearchResults(project);
+  }
+
+  function openProjectsDialog(preferCurrent = false) {
+    saveNow({ quiet: true });
+    const currentProjectId = projectIdForDocument(currentDocumentId);
+    if (preferCurrent && currentProjectId) selectedProjectId = currentProjectId;
+    else if (!selectedProjectId) selectedProjectId = currentProjectId || projectLibrary.lastProjectId || Object.keys(projectLibrary.projects)[0] || null;
+    els.projectSearchInput.value = '';
+    renderProjectsDialog();
+    els.projectsDialog.showModal();
+  }
+
   function createNewLocalThread() {
     saveNow({ quiet: true });
     state = defaultState();
@@ -1051,7 +1496,8 @@
       const details = document.createElement('div');
       details.className = 'recent-details';
       const words = Number(meta.wordCount || 0);
-      details.textContent = `${words.toLocaleString()} ${words === 1 ? 'word' : 'words'} · ${formatRecentTime(meta.updatedAt || meta.lastOpenedAt)}`;
+      const project = projectForDocument(id);
+      details.textContent = `${words.toLocaleString()} ${words === 1 ? 'word' : 'words'} · ${formatRecentTime(meta.updatedAt || meta.lastOpenedAt)}${project ? ` · ${project.name}` : ''}`;
 
       const preview = document.createElement('div');
       preview.className = 'recent-preview';
@@ -1059,27 +1505,7 @@
 
       item.append(top, details, preview);
       item.addEventListener('click', () => {
-        if (id === currentDocumentId) {
-          els.recentDialog.close();
-          return;
-        }
-        saveNow({ quiet: true });
-        const loaded = readStoredDocument(id);
-        if (!loaded) {
-          alert('That local conversation could not be opened. Its saved data may have been removed by the browser.');
-          renderRecentList();
-          return;
-        }
-        state = loaded;
-        currentDocumentId = id;
-        library.currentId = id;
-        updateDocumentMeta(id, state, { touchUpdated: false });
-        try { saveLibraryIndex(); } catch {}
-        pendingInsertId = null;
-        els.composer.value = '';
-        autoSizeComposer();
-        render();
-        els.recentDialog.close();
+        if (!openLocalDocument(id)) renderRecentList();
       });
       els.recentList.appendChild(item);
     });
@@ -1142,6 +1568,56 @@
   }
 
   els.saveAsBtn.addEventListener('click', () => { closeTopMenus(); saveAsProject(); });
+
+  els.projectsBtn.addEventListener('click', () => { closeTopMenus(); openProjectsDialog(true); });
+  els.projectContext.addEventListener('click', () => openProjectsDialog(true));
+  els.closeProjectsDialogBtn.addEventListener('click', () => els.projectsDialog.close());
+  els.createProjectBtn.addEventListener('click', () => {
+    const projectId = createProject(els.newProjectName.value);
+    els.newProjectName.value = '';
+    selectedProjectId = projectId;
+    renderProjectsDialog();
+  });
+  els.newProjectName.addEventListener('keydown', event => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      els.createProjectBtn.click();
+    }
+  });
+  els.projectNameEditor.addEventListener('change', () => {
+    const project = projectLibrary.projects[selectedProjectId];
+    if (!project) return;
+    project.name = els.projectNameEditor.value.trim() || 'Untitled Project';
+    touchProject(selectedProjectId);
+    renderProjectContext();
+    renderProjectsDialog();
+  });
+  els.deleteProjectBtn.addEventListener('click', () => {
+    const project = projectLibrary.projects[selectedProjectId];
+    if (!project) return;
+    if (!confirm(`Delete the project “${project.name}”? Its conversations will stay in Recent.`)) return;
+    delete projectLibrary.projects[selectedProjectId];
+    if (projectLibrary.lastProjectId === selectedProjectId) projectLibrary.lastProjectId = null;
+    selectedProjectId = Object.keys(projectLibrary.projects)[0] || null;
+    saveProjectLibrary();
+    renderProjectContext();
+    renderProjectsDialog();
+  });
+  els.addCurrentToProjectBtn.addEventListener('click', () => {
+    if (!selectedProjectId) return;
+    saveNow({ quiet: true });
+    if (addDocumentToProject(currentDocumentId, selectedProjectId)) {
+      renderProjectContext();
+      renderProjectsDialog();
+    }
+  });
+  els.newProjectSceneBtn.addEventListener('click', () => {
+    if (selectedProjectId) createProjectScene(selectedProjectId);
+  });
+  els.projectSearchInput.addEventListener('input', () => {
+    const project = projectLibrary.projects[selectedProjectId];
+    if (project) renderProjectSearchResults(project);
+  });
 
   els.recentBtn.addEventListener('click', () => {
     closeTopMenus();
