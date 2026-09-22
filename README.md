@@ -1,4 +1,4 @@
-# ThreadWriter v0.6.2
+# ThreadWriter v0.6.3
 
 A small local-first dialogue editor that looks and behaves like a message thread, but can also switch into a plain transcript-style drafting view.
 
@@ -14,12 +14,14 @@ A small local-first dialogue editor that looks and behaves like a message thread
 - Local autosave in the browser
 - Editable native `.threadwriter` JSON project export/import
 - Consecutive messages from the same participant are visually grouped
-- Compact per-message overflow menu for edit, speaker reassignment, optional timestamp, and delete
+- Compact per-message overflow menu for edit, insert-above/below, speaker reassignment, optional timestamp, reordering, and delete
 - Viewport-safe mobile message menus
 - Optional editable timestamps, including free-form story labels such as “two hours later”
 - Timestamped messages create a visual time-break before the new message beat
 - Move Up / Move Down controls in each message menu for reliable one-step reordering
 - Find & Replace across message text, including next/previous navigation and case-sensitive search
+- Live thread word count for committed message text (headers, timestamps, and participant labels are excluded)
+- Insert Above / Insert Below commands for adding a message directly where it belongs in an existing thread
 - Optional centered scene header for chapter names, dates, channels, AI-session labels, interstitial jokes, etc.
 - Four simple header-font families: Rounded, Sans, Serif, and Mono
 - Conversation Styles: **Mobile Chat** and **Transcript**
@@ -49,6 +51,13 @@ Then open `http://localhost:8000/` in your browser. Service-worker/offline insta
 GitHub Pages is also a good fit: place these files at the publishing root and add the resulting site to an iPhone/iPad Home Screen if desired.
 
 
+## New in v0.6.3
+
+- Added a live **word count** in the composer area. It counts committed message text only, so participant labels, timestamps, and scene headers do not inflate the total.
+- Added **Insert above** and **Insert below** to each message's `…` menu. The inserted message starts with the neighboring message's speaker and opens immediately for inline editing; use **Change speaker** afterward if needed.
+- Renamed the top-bar **People** button to **Participants** for clearer terminology.
+- Bumped the PWA cache for hosted/Home Screen copies.
+
 ## Fixed in v0.6.2
 
 - Replaced drag-to-reorder with dependable **Move up** and **Move down** commands in each message's `…` menu.
@@ -70,7 +79,7 @@ Use **Move up** or **Move down** in a message's `…` menu to shift it one posit
 
 The **Find** button searches message text and highlights matching messages. You can step through matches, replace the current match, replace all matches, and optionally use case-sensitive search.
 
-Participant names are intentionally not altered by Find & Replace; rename a participant once in **People** and every message assigned to that participant updates automatically.
+Participant names are intentionally not altered by Find & Replace; rename a participant once in **Participants** and every message assigned to that participant updates automatically.
 
 ### Scene headers
 
@@ -112,6 +121,10 @@ v0.6 project files add fields for the scene header and Conversation Style, but o
 ### Core / reliability
 
 - Automatic backups and lightweight version history
+- Word-count breakdowns / project totals once multi-scene projects exist
+
+### Output / sharing
+
 - JPG export
 - Split/subdivided image export for very long threads
 
@@ -123,8 +136,13 @@ v0.6 project files add fields for the scene header and Conversation Style, but o
 ### Authoring tools
 
 - Under-message annotations for actions, metrics, read receipts, or system notes
+- General-purpose narrative / system text blocks
 - Single-image attachments
 - Faux link previews
+
+### Import / migration
+
+- Import existing TXT / Markdown / DOCX conversations, including speaker-labelled dialogue and two-person left/right-aligned drafts
 
 ### Presentation
 

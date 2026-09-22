@@ -17,7 +17,7 @@
         <div id="saveStatus" class="save-status">Saved locally</div>
       </div>
       <div class="toolbar no-print">
-        <button id="participantsBtn" title="Manage participants">People</button>
+        <button id="participantsBtn" title="Manage participants">Participants</button>
         <button id="headerBtn" title="Add or edit an optional scene header">Header</button>
         <label class="style-control" title="Conversation style">
           <span class="sr-only">Conversation style</span>
@@ -46,7 +46,10 @@
         <textarea id="composer" rows="2" placeholder="Write a message…" aria-label="Message composer"></textarea>
         <button id="sendBtn" class="send-btn" aria-label="Add message">Send</button>
       </div>
-      <div class="shortcut-hint">Enter = new message · Shift+Enter = line break · Tab / Shift+Tab = switch speaker</div>
+      <div class="composer-meta">
+        <div class="shortcut-hint">Enter = new message · Shift+Enter = line break · Tab / Shift+Tab = switch speaker</div>
+        <div id="wordCount" class="word-count" title="Counts words in committed message text; headers and timestamps are excluded">0 words</div>
+      </div>
     </footer>
   </div>
 
@@ -135,7 +138,7 @@
         <h2>Find &amp; Replace</h2>
         <button type="button" id="closeFindDialogBtn" class="icon-btn" aria-label="Close">×</button>
       </div>
-      <p class="dialog-copy">Searches message text. Participant names can be changed globally from People.</p>
+      <p class="dialog-copy">Searches message text. Participant names can be changed globally from Participants.</p>
       <div class="find-grid">
         <label>
           <span>Find</span>

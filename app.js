@@ -17,6 +17,7 @@
   let state = loadState();
   let saveTimer = null;
   let timestampMessageId = null;
+  let pendingInsertId = null;
   const findState = { query: '', replacement: '', caseSensitive: false, matches: [], current: 0 };
 
   const els = {
@@ -25,6 +26,7 @@
     thread: document.getElementById('thread'),
     speakerStrip: document.getElementById('speakerStrip'),
     composer: document.getElementById('composer'),
+    wordCount: document.getElementById('wordCount'),
     send: document.getElementById('sendBtn'),
     participantsBtn: document.getElementById('participantsBtn'),
     headerBtn: document.getElementById('headerBtn'),
@@ -133,6 +135,7 @@
     els.conversationStyle.value = state.conversationStyle || 'chat';
     renderSpeakers();
     renderThread();
+    updateWordCount();
   }
 
   function renderSpeakers() {
@@ -149,6 +152,7 @@
   }
 
   function renderThread() {
+    updateWordCount();
     els.thread.innerHTML = '';
     els.thread.classList.toggle('style-transcript', state.conversationStyle === 'transcript');
 
@@ -236,6 +240,8 @@
       menu.setAttribute('role', 'menu');
 
       const edit = makeToolButton('Edit', () => { closeMessageMenus(); startEditMessage(msg.id, bubble); });
+      const insertAbove = makeToolButton('Insert above', () => { closeMessageMenus(); insertMessageAdjacent(msg.id, 0); });
+      const insertBelow = makeToolButton('Insert below', () => { closeMessageMenus(); insertMessageAdjacent(msg.id, 1); });
       const swap = makeToolButton('Change speaker', () => { closeMessageMenus(); cycleMessageSpeaker(msg.id); });
       const timestamp = makeToolButton(msg.displayTimestamp ? 'Edit timestamp…' : 'Add timestamp…', () => { closeMessageMenus(); openTimestampDialog(msg.id); });
       const moveUp = makeToolButton('Move up', () => { closeMessageMenus(); moveMessage(msg.id, -1); });
@@ -243,7 +249,7 @@
       moveUp.disabled = index === 0;
       moveDown.disabled = index === state.messages.length - 1;
       const del = makeToolButton('Delete', () => { closeMessageMenus(); deleteMessage(msg.id); }, true);
-      menu.append(edit, swap, timestamp, moveUp, moveDown, del);
+      menu.append(edit, insertAbove, insertBelow, swap, timestamp, moveUp, moveDown, del);
 
       menuButton.addEventListener('click', e => {
         e.stopPropagation();
@@ -264,6 +270,23 @@
     });
   }
 
+  function countWordsInText(text) {
+    if (!text || !text.trim()) return 0;
+    if (typeof Intl !== 'undefined' && Intl.Segmenter) {
+      const segmenter = new Intl.Segmenter(undefined, { granularity: 'word' });
+      let count = 0;
+      for (const part of segmenter.segment(text)) if (part.isWordLike) count += 1;
+      return count;
+    }
+    const matches = text.match(/[\p{L}\p{N}]+(?:['’\-][\p{L}\p{N}]+)*/gu);
+    return matches ? matches.length : 0;
+  }
+
+  function updateWordCount() {
+    const count = state.messages.reduce((sum, message) => sum + countWordsInText(message.text), 0);
+    if (els.wordCount) els.wordCount.textContent = `${count.toLocaleString()} ${count === 1 ? 'word' : 'words'}`;
+  }
+
   function makeToolButton(label, action, destructive = false) {
     const b = document.createElement('button');
     b.type = 'button';
@@ -272,6 +295,30 @@
     if (destructive) b.classList.add('destructive');
     b.addEventListener('click', action);
     return b;
+  }
+
+  function insertMessageAdjacent(referenceId, offset) {
+    const referenceIndex = state.messages.findIndex(message => message.id === referenceId);
+    if (referenceIndex < 0) return;
+    const reference = state.messages[referenceIndex];
+    const newMessage = {
+      id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random(),
+      speakerId: reference.speakerId,
+      text: '',
+      createdAt: new Date().toISOString()
+    };
+    const insertIndex = referenceIndex + offset;
+    state.messages.splice(insertIndex, 0, newMessage);
+    pendingInsertId = newMessage.id;
+    renderThread();
+
+    requestAnimationFrame(() => {
+      const row = [...els.thread.querySelectorAll('.message-row')].find(el => el.dataset.messageId === newMessage.id);
+      const bubble = row?.querySelector('.bubble');
+      if (!bubble) return;
+      row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      startEditMessage(newMessage.id, bubble, { removeIfBlank: true });
+    });
   }
 
   function moveMessage(id, direction) {
@@ -352,28 +399,50 @@
   window.visualViewport?.addEventListener('resize', closeMessageMenus);
   window.visualViewport?.addEventListener('scroll', closeMessageMenus);
 
-  function startEditMessage(id, bubble) {
+  function startEditMessage(id, bubble, { removeIfBlank = false } = {}) {
     const msg = state.messages.find(m => m.id === id);
     if (!msg) return;
     const editing = bubble.contentEditable === 'true';
     if (editing) {
       msg.text = bubble.textContent.trimEnd();
       bubble.contentEditable = 'false';
-      scheduleSave();
+      if (removeIfBlank && !msg.text.trim()) {
+        state.messages = state.messages.filter(message => message.id !== id);
+        if (pendingInsertId === id) pendingInsertId = null;
+      } else {
+        if (pendingInsertId === id) pendingInsertId = null;
+        scheduleSave();
+      }
       renderThread();
       return;
     }
     bubble.contentEditable = 'true';
     bubble.focus();
     placeCaretAtEnd(bubble);
+    let cancelled = false;
     const finish = () => {
+      if (cancelled) return;
       msg.text = bubble.textContent.trimEnd();
       bubble.contentEditable = 'false';
-      scheduleSave();
+      if (removeIfBlank && !msg.text.trim()) {
+        state.messages = state.messages.filter(message => message.id !== id);
+      } else {
+        scheduleSave();
+      }
+      if (pendingInsertId === id) pendingInsertId = null;
       renderThread();
     };
     bubble.addEventListener('blur', finish, { once: true });
     bubble.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && removeIfBlank) {
+        e.preventDefault();
+        cancelled = true;
+        state.messages = state.messages.filter(message => message.id !== id);
+        if (pendingInsertId === id) pendingInsertId = null;
+        renderThread();
+        els.composer.focus();
+        return;
+      }
       if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
         e.preventDefault();
         bubble.blur();
@@ -401,6 +470,7 @@
 
   function deleteMessage(id) {
     state.messages = state.messages.filter(m => m.id !== id);
+    if (pendingInsertId === id) pendingInsertId = null;
     scheduleSave();
     renderThread();
   }
@@ -733,6 +803,7 @@
   els.newBtn.addEventListener('click', () => {
     if (!confirm('Start a new thread? Export your current project first if you want a separate backup.')) return;
     state = defaultState();
+    pendingInsertId = null;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     render();
     els.composer.value = '';
@@ -746,6 +817,7 @@
     try {
       const parsed = JSON.parse(await file.text());
       state = normalizeState(parsed);
+      pendingInsertId = null;
       scheduleSave();
       render();
     } catch (err) {
