@@ -4,17 +4,17 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#f4f4f7" />
-  <title>Threadwriter v0.6.4</title>
-  <link rel="manifest" href="manifest.webmanifest?v=0.6.4" />
-  <link rel="icon" href="icon.svg?v=0.6.4" type="image/svg+xml" />
-  <link rel="stylesheet" href="styles.css?v=0.6.4" />
+  <title>Threadwriter</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <div class="app-shell">
     <header class="topbar">
       <div class="title-wrap">
         <input id="docTitle" class="doc-title" value="Untitled Thread" aria-label="Document title" />
-        <div class="status-line"><div id="saveStatus" class="save-status">Saved locally</div><div id="runtimeVersion" class="runtime-version">runtime loading…</div></div>
+        <div id="saveStatus" class="save-status">Saved locally</div>
       </div>
       <div class="toolbar no-print">
         <button id="participantsBtn" title="Manage participants">Participants</button>
@@ -178,6 +178,39 @@
     </div>
   </template>
 
-  <script src="app.js?v=0.6.4"></script>
+  <script src="app.js"></script>
+<script>
+window.addEventListener('load', () => {
+  localStorage.removeItem('threadwriter.project.v1');
+  setTimeout(() => {
+    const composer = document.getElementById('composer');
+    composer.value = 'One two three';
+    document.getElementById('sendBtn').click();
+    setTimeout(() => {
+      const menuBtn = document.querySelector('.message-menu-button');
+      menuBtn.click();
+      const insert = [...document.querySelectorAll('.message-menu button')].find(b => b.textContent === 'Insert below');
+      insert.click();
+      setTimeout(() => {
+        const rows = document.querySelectorAll('.message-row');
+        const lastBubble = rows[rows.length-1].querySelector('.bubble');
+        lastBubble.textContent = 'Four five';
+        lastBubble.dispatchEvent(new FocusEvent('blur', { bubbles: false }));
+        setTimeout(() => {
+          const out = document.createElement('pre');
+          out.id = 'test-output';
+          out.textContent = JSON.stringify({
+            rows: document.querySelectorAll('.message-row').length,
+            wordCount: document.getElementById('wordCount').textContent,
+            participantsLabel: document.getElementById('participantsBtn').textContent,
+            texts: [...document.querySelectorAll('.bubble')].map(b=>b.textContent)
+          });
+          document.body.appendChild(out);
+        }, 100);
+      }, 100);
+    }, 100);
+  }, 100);
+});
+</script>
 </body>
 </html>

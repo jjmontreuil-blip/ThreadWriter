@@ -1,4 +1,4 @@
-# ThreadWriter v0.6.3
+# ThreadWriter v0.6.4
 
 A small local-first dialogue editor that looks and behaves like a message thread, but can also switch into a plain transcript-style drafting view.
 
@@ -50,6 +50,14 @@ Then open `http://localhost:8000/` in your browser. Service-worker/offline insta
 
 GitHub Pages is also a good fit: place these files at the publishing root and add the resulting site to an iPhone/iPad Home Screen if desired.
 
+
+## Fixed in v0.6.4
+
+- Fixed a mixed-version caching failure where the new `index.html` could appear while a browser continued running an older `app.js`. This produced the exact symptom of seeing **Participants** and the new word-count display while the count stayed at 0 and Insert Above/Below were missing.
+- Added versioned asset URLs for `app.js`, `styles.css`, the manifest, and icon so hosted/browser copies are forced to request the matching release files.
+- The service worker now explicitly bypasses the browser HTTP cache while online before refreshing its offline copy.
+- Added a subtle runtime version indicator beside the local-save status. If it reads **v0.6.4**, the matching JavaScript is actually running.
+- Strengthened the word-count fallback for browsers with incomplete `Intl.Segmenter` behavior.
 
 ## New in v0.6.3
 

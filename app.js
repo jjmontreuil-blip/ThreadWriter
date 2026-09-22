@@ -1,4 +1,5 @@
 (() => {
+  const APP_VERSION = '0.6.4';
   const STORAGE_KEY = 'threadwriter.project.v1';
   const defaultState = () => ({
     version: 2,
@@ -23,6 +24,7 @@
   const els = {
     title: document.getElementById('docTitle'),
     saveStatus: document.getElementById('saveStatus'),
+    runtimeVersion: document.getElementById('runtimeVersion'),
     thread: document.getElementById('thread'),
     speakerStrip: document.getElementById('speakerStrip'),
     composer: document.getElementById('composer'),
@@ -272,14 +274,21 @@
 
   function countWordsInText(text) {
     if (!text || !text.trim()) return 0;
-    if (typeof Intl !== 'undefined' && Intl.Segmenter) {
-      const segmenter = new Intl.Segmenter(undefined, { granularity: 'word' });
-      let count = 0;
-      for (const part of segmenter.segment(text)) if (part.isWordLike) count += 1;
-      return count;
-    }
-    const matches = text.match(/[\p{L}\p{N}]+(?:['’\-][\p{L}\p{N}]+)*/gu);
-    return matches ? matches.length : 0;
+    // Prefer the browser's Unicode-aware word segmenter, but fall back cleanly if a
+    // browser exposes Intl.Segmenter without useful isWordLike support.
+    try {
+      if (typeof Intl !== 'undefined' && Intl.Segmenter) {
+        const segmenter = new Intl.Segmenter(undefined, { granularity: 'word' });
+        let count = 0;
+        for (const part of segmenter.segment(text)) if (part.isWordLike) count += 1;
+        if (count > 0) return count;
+      }
+    } catch {}
+    try {
+      const matches = text.match(/[\p{L}\p{N}]+(?:['’\-][\p{L}\p{N}]+)*/gu);
+      if (matches) return matches.length;
+    } catch {}
+    return text.trim().split(/\s+/).filter(Boolean).length;
   }
 
   function updateWordCount() {
@@ -1378,6 +1387,7 @@
     navigator.serviceWorker.register('./sw.js').catch(() => {});
   }
 
+  if (els.runtimeVersion) els.runtimeVersion.textContent = `v${APP_VERSION}`;
   render();
   autoSizeComposer();
 })();
