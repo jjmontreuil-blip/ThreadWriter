@@ -4,10 +4,10 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#f4f4f7" />
-  <title>Threadwriter v0.7.1</title>
-  <link rel="manifest" href="manifest.webmanifest?v=0.7.1" />
-  <link rel="icon" href="icon.svg?v=0.7.1" type="image/svg+xml" />
-  <link rel="stylesheet" href="styles.css?v=0.7.1" />
+  <title>Threadwriter v0.7.2</title>
+  <link rel="manifest" href="manifest.webmanifest?v=0.7.2" />
+  <link rel="icon" href="icon.svg?v=0.7.2" type="image/svg+xml" />
+  <link rel="stylesheet" href="styles.css?v=0.7.2" />
 </head>
 <body>
   <div class="app-shell">
@@ -39,6 +39,7 @@
             <button id="newBtn" type="button">New</button>
             <button id="importBtn" type="button">Open…</button>
             <button id="saveAsBtn" type="button">Save As…</button>
+            <button id="historyBtn" type="button">Version History…</button>
             <button id="exportMenuBtn" type="button" class="submenu-toggle" aria-expanded="false">Export <span aria-hidden="true">›</span></button>
             <div id="exportMenu" class="export-submenu" hidden>
               <button id="exportDocxBtn" type="button">DOCX…</button>
@@ -183,6 +184,19 @@
     </div>
   </dialog>
 
+
+  <dialog id="historyDialog">
+    <div class="dialog-card history-dialog-card">
+      <div class="dialog-head">
+        <h2>Version history</h2>
+        <button type="button" id="closeHistoryDialogBtn" class="icon-btn" aria-label="Close">×</button>
+      </div>
+      <p class="dialog-copy">ThreadWriter keeps up to 12 lightweight snapshots for this conversation in this browser. Automatic snapshots are spaced out while you work, and session checkpoints are added when you leave a thread. Local history is recovery help, not an external backup.</p>
+      <div class="history-actions"><button type="button" id="createSnapshotBtn" class="primary-action">Create snapshot now</button></div>
+      <div id="historyList" class="history-list"></div>
+    </div>
+  </dialog>
+
   <dialog id="recentDialog">
     <div class="dialog-card recent-dialog-card">
       <div class="dialog-head">
@@ -208,6 +222,7 @@
             <input id="newProjectName" type="text" maxlength="80" placeholder="New project name" aria-label="New project name" />
             <button id="createProjectBtn" type="button">Create</button>
           </div>
+          <div class="project-library-actions"><button id="restoreProjectBtn" type="button">Restore project backup…</button></div>
           <div id="projectList" class="project-list" aria-label="Projects"></div>
         </aside>
         <section id="projectDetail" class="project-detail">
@@ -225,6 +240,7 @@
               <div class="project-actions">
                 <button id="addCurrentToProjectBtn" type="button">Add current thread</button>
                 <button id="newProjectSceneBtn" type="button">New scene</button>
+                <button id="backupProjectBtn" type="button">Back up project…</button>
               </div>
             </div>
             <label class="project-search-field">
@@ -240,6 +256,8 @@
     </div>
   </dialog>
 
+  <input id="projectBackupInput" type="file" accept="application/json,.threadwriter-project,.json" hidden />
+
   <template id="participantEditorTemplate">
     <div class="participant-edit-row">
       <input class="participant-name" maxlength="40" aria-label="Participant name" />
@@ -252,6 +270,6 @@
     </div>
   </template>
 
-  <script src="app.js?v=0.7.1"></script>
+  <script src="app.js?v=0.7.2"></script>
 </body>
 </html>

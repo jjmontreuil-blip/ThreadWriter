@@ -1,9 +1,12 @@
 (() => {
-  const APP_VERSION = '0.7.1';
+  const APP_VERSION = '0.7.2';
   const LEGACY_STORAGE_KEY = 'threadwriter.project.v1';
   const LIBRARY_KEY = 'threadwriter.library.v1';
   const DOCUMENT_PREFIX = 'threadwriter.document.v1.';
   const PROJECT_LIBRARY_KEY = 'threadwriter.projects.v1';
+  const HISTORY_PREFIX = 'threadwriter.history.v1.';
+  const HISTORY_MAX = 12;
+  const HISTORY_INTERVAL_MS = 5 * 60 * 1000;
   const defaultState = () => ({
     version: 2,
     title: 'Untitled Thread',
@@ -50,11 +53,16 @@
     conversationStyle: document.getElementById('conversationStyle'),
     findBtn: document.getElementById('findBtn'),
     saveAsBtn: document.getElementById('saveAsBtn'),
+    historyBtn: document.getElementById('historyBtn'),
     projectsBtn: document.getElementById('projectsBtn'),
     recentBtn: document.getElementById('recentBtn'),
     recentDialog: document.getElementById('recentDialog'),
     closeRecentDialogBtn: document.getElementById('closeRecentDialogBtn'),
     recentList: document.getElementById('recentList'),
+    historyDialog: document.getElementById('historyDialog'),
+    closeHistoryDialogBtn: document.getElementById('closeHistoryDialogBtn'),
+    createSnapshotBtn: document.getElementById('createSnapshotBtn'),
+    historyList: document.getElementById('historyList'),
     dialog: document.getElementById('participantsDialog'),
     editor: document.getElementById('participantsEditor'),
     template: document.getElementById('participantEditorTemplate'),
@@ -107,7 +115,10 @@
     newProjectSceneBtn: document.getElementById('newProjectSceneBtn'),
     projectSearchInput: document.getElementById('projectSearchInput'),
     projectSearchResults: document.getElementById('projectSearchResults'),
-    projectSceneList: document.getElementById('projectSceneList')
+    projectSceneList: document.getElementById('projectSceneList'),
+    backupProjectBtn: document.getElementById('backupProjectBtn'),
+    restoreProjectBtn: document.getElementById('restoreProjectBtn'),
+    projectBackupInput: document.getElementById('projectBackupInput')
   };
 
   function closeTopMenus(except = null) {
@@ -317,6 +328,100 @@
     return crypto.randomUUID ? crypto.randomUUID() : `doc-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   }
 
+  function historyStorageKey(id) {
+    return `${HISTORY_PREFIX}${id}`;
+  }
+
+  function blankHistory() {
+    return { version: 1, snapshots: [] };
+  }
+
+  function loadHistory(id) {
+    if (!id) return blankHistory();
+    try {
+      const raw = localStorage.getItem(historyStorageKey(id));
+      if (!raw) return blankHistory();
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.snapshots)) return blankHistory();
+      return {
+        version: 1,
+        snapshots: parsed.snapshots.filter(item => item && typeof item === 'object' && item.state).slice(0, HISTORY_MAX)
+      };
+    } catch {
+      return blankHistory();
+    }
+  }
+
+  function saveHistory(id, history) {
+    if (!id) return false;
+    const payload = { version: 1, snapshots: (history?.snapshots || []).slice(0, HISTORY_MAX) };
+    try {
+      localStorage.setItem(historyStorageKey(id), JSON.stringify(payload));
+      return true;
+    } catch (error) {
+      console.warn('ThreadWriter history save failed; pruning snapshots.', error);
+      try {
+        payload.snapshots = payload.snapshots.slice(0, Math.min(6, HISTORY_MAX));
+        localStorage.setItem(historyStorageKey(id), JSON.stringify(payload));
+        return true;
+      } catch (retryError) {
+        console.error('ThreadWriter history save failed', retryError);
+        return false;
+      }
+    }
+  }
+
+  function cloneState(project) {
+    return JSON.parse(JSON.stringify(project));
+  }
+
+  function stateSignature(project) {
+    try { return JSON.stringify(project); } catch { return ''; }
+  }
+
+  function createSnapshot(documentId, snapshotState, reason = 'Automatic snapshot', { force = false } = {}) {
+    if (!documentId || !snapshotState) return null;
+    const history = loadHistory(documentId);
+    const normalized = normalizeState(cloneState(snapshotState));
+    const signature = stateSignature(normalized);
+    const latest = history.snapshots[0];
+    if (latest?.signature === signature || stateSignature(latest?.state) === signature) return latest || null;
+
+    if (!force && latest?.createdAt) {
+      const elapsed = Date.now() - new Date(latest.createdAt).getTime();
+      if (Number.isFinite(elapsed) && elapsed < HISTORY_INTERVAL_MS) return null;
+    }
+
+    const snapshot = {
+      id: crypto.randomUUID ? crypto.randomUUID() : `snapshot-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      createdAt: new Date().toISOString(),
+      reason,
+      wordCount: wordCountForState(normalized),
+      preview: previewForState(normalized),
+      signature,
+      state: normalized
+    };
+    history.snapshots.unshift(snapshot);
+    history.snapshots = history.snapshots.slice(0, HISTORY_MAX);
+    return saveHistory(documentId, history) ? snapshot : null;
+  }
+
+  function maybeSnapshotBeforeWrite(documentId, previousState, nextState) {
+    if (!documentId || !previousState || !nextState) return;
+    if (stateSignature(previousState) === stateSignature(nextState)) return;
+    // Do not clutter a brand-new thread's history with the untouched factory blank.
+    if (stateSignature(previousState) === stateSignature(defaultState())) return;
+    const destructive = (nextState.messages?.length || 0) < (previousState.messages?.length || 0)
+      || (nextState.participants?.length || 0) < (previousState.participants?.length || 0);
+    createSnapshot(documentId, previousState, destructive ? 'Before destructive edit' : 'Automatic snapshot', { force: destructive });
+  }
+
+  function checkpointCurrent(reason = 'Session checkpoint') {
+    if (!currentDocumentId || !state) return null;
+    saveNow({ quiet: true, skipHistory: true });
+    return createSnapshot(currentDocumentId, state, reason, { force: true });
+  }
+
   function documentStorageKey(id) {
     return `${DOCUMENT_PREFIX}${id}`;
   }
@@ -381,6 +486,10 @@
 
   function persistDocument(id, project, options = {}) {
     try {
+      if (!options.skipHistory) {
+        const previous = readStoredDocument(id);
+        if (previous) maybeSnapshotBeforeWrite(id, previous, project);
+      }
       localStorage.setItem(documentStorageKey(id), JSON.stringify(project));
       updateDocumentMeta(id, project, options);
       if (options.makeCurrent !== false) library.currentId = id;
@@ -440,11 +549,11 @@
     return fresh;
   }
 
-  function saveNow({ quiet = false } = {}) {
+  function saveNow({ quiet = false, skipHistory = false } = {}) {
     clearTimeout(saveTimer);
     saveTimer = null;
     if (!currentDocumentId) currentDocumentId = makeDocumentId();
-    const ok = persistDocument(currentDocumentId, state);
+    const ok = persistDocument(currentDocumentId, state, { skipHistory });
     if (typeof els !== 'undefined' && els.saveStatus) {
       els.saveStatus.textContent = ok ? 'Saved to Recent' : 'Save failed';
     }
@@ -1148,6 +1257,67 @@
     els.dialog.close();
   });
 
+  function renderHistoryList() {
+    if (!els.historyList) return;
+    els.historyList.innerHTML = '';
+    const history = loadHistory(currentDocumentId);
+    if (!history.snapshots.length) {
+      const empty = document.createElement('div');
+      empty.className = 'history-empty';
+      empty.textContent = 'No earlier snapshots yet. ThreadWriter creates local snapshots while a thread changes, and you can create one manually at any time.';
+      els.historyList.appendChild(empty);
+      return;
+    }
+
+    history.snapshots.forEach(snapshot => {
+      const item = document.createElement('div');
+      item.className = 'history-item';
+      const main = document.createElement('div');
+      main.className = 'history-main';
+      const top = document.createElement('div');
+      top.className = 'history-top';
+      const when = document.createElement('strong');
+      when.textContent = formatRecentTime(snapshot.createdAt);
+      const reason = document.createElement('span');
+      reason.className = 'history-reason';
+      reason.textContent = snapshot.reason || 'Snapshot';
+      top.append(when, reason);
+      const meta = document.createElement('div');
+      meta.className = 'history-meta';
+      const words = Number(snapshot.wordCount ?? wordCountForState(snapshot.state));
+      meta.textContent = `${words.toLocaleString()} ${words === 1 ? 'word' : 'words'} · ${snapshot.preview || previewForState(snapshot.state)}`;
+      main.append(top, meta);
+
+      const restore = document.createElement('button');
+      restore.type = 'button';
+      restore.textContent = 'Restore';
+      restore.addEventListener('click', () => restoreSnapshot(snapshot));
+      item.append(main, restore);
+      els.historyList.appendChild(item);
+    });
+  }
+
+  function openHistoryDialog() {
+    closeTopMenus();
+    saveNow({ quiet: true });
+    renderHistoryList();
+    els.historyDialog.showModal();
+  }
+
+  function restoreSnapshot(snapshot) {
+    if (!snapshot?.state) return;
+    if (!confirm(`Restore the version from ${formatRecentTime(snapshot.createdAt)}? ThreadWriter will save your current version to history first.`)) return;
+    createSnapshot(currentDocumentId, state, 'Before restore', { force: true });
+    state = normalizeState(cloneState(snapshot.state));
+    pendingInsertId = null;
+    persistDocument(currentDocumentId, state, { skipHistory: true });
+    els.composer.value = '';
+    autoSizeComposer();
+    render();
+    renderHistoryList();
+    els.historyDialog.close();
+  }
+
   function renderProjectContext() {
     if (!els.projectContext) return;
     const projectId = projectIdForDocument(currentDocumentId);
@@ -1170,7 +1340,7 @@
       }
       return true;
     }
-    saveNow({ quiet: true });
+    checkpointCurrent('Closed / switched thread');
     const loaded = readStoredDocument(id);
     if (!loaded) {
       alert('That local conversation could not be opened. Its saved data may have been removed by the browser.');
@@ -1200,7 +1370,7 @@
   function createProjectScene(projectId) {
     const project = projectLibrary.projects[projectId];
     if (!project) return;
-    saveNow({ quiet: true });
+    checkpointCurrent('Closed / switched thread');
     const fresh = defaultState();
     const id = makeDocumentId();
     currentDocumentId = id;
@@ -1351,6 +1521,7 @@
     const project = selectedProjectId ? projectLibrary.projects[selectedProjectId] : null;
     els.projectEmpty.hidden = !!project;
     els.projectDetailContent.hidden = !project;
+    if (els.backupProjectBtn) els.backupProjectBtn.disabled = !project;
     if (!project) return;
 
     els.projectNameEditor.value = project.name;
@@ -1442,7 +1613,7 @@
   }
 
   function createNewLocalThread() {
-    saveNow({ quiet: true });
+    checkpointCurrent('Closed / switched thread');
     state = defaultState();
     currentDocumentId = makeDocumentId();
     pendingInsertId = null;
@@ -1511,63 +1682,126 @@
     });
   }
 
-  async function saveAsProject() {
-    // Keep the browser-local Recent copy current first, then create a portable
-    // .threadwriter file the user can store wherever their browser/OS permits.
-    saveNow({ quiet: true });
-
-    const filename = `${safeName(state.title)}.threadwriter`;
-    const json = JSON.stringify(state, null, 2);
-    const blob = new Blob([json], { type: 'application/json' });
-
-    // Chromium-family browsers on secure origins can offer a real Save As picker.
-    // This is the closest browser equivalent to a desktop app choosing a folder.
+  async function saveBlobAsPortableFile(blob, filename, description, extensions) {
     if (typeof window.showSaveFilePicker === 'function' && window.isSecureContext) {
       try {
         const handle = await window.showSaveFilePicker({
           suggestedName: filename,
-          types: [{
-            description: 'ThreadWriter project',
-            accept: { 'application/json': ['.threadwriter'] }
-          }]
+          types: [{ description, accept: { 'application/json': extensions } }]
         });
         const writable = await handle.createWritable();
         await writable.write(blob);
         await writable.close();
-        if (els.saveStatus) els.saveStatus.textContent = 'Saved file';
-        els.saveAsBtn.blur();
-        return;
+        return 'saved';
       } catch (error) {
-        // A cancellation should remain a cancellation rather than unexpectedly
-        // triggering another download/share prompt. Other failures can fall back.
-        if (error?.name === 'AbortError') return;
-        console.warn('ThreadWriter Save As picker unavailable; falling back.', error);
+        if (error?.name === 'AbortError') return 'cancelled';
+        console.warn('ThreadWriter file picker unavailable; falling back.', error);
       }
     }
-
-    // iOS/Safari cannot currently expose the desktop file picker API. If the
-    // Web Share API accepts files, its share sheet lets the user choose Save to
-    // Files (and therefore a folder) instead of silently choosing Downloads.
     try {
       const file = new File([blob], filename, { type: 'application/json' });
       if (navigator.share && navigator.canShare?.({ files: [file] })) {
         await navigator.share({ files: [file], title: filename });
-        if (els.saveStatus) els.saveStatus.textContent = 'Shared file copy';
-        els.saveAsBtn.blur();
-        return;
+        return 'shared';
       }
     } catch (error) {
-      if (error?.name === 'AbortError') return;
-      console.warn('ThreadWriter share-sheet save unavailable; falling back.', error);
+      if (error?.name === 'AbortError') return 'cancelled';
+      console.warn('ThreadWriter share sheet unavailable; falling back.', error);
     }
-
-    // Last-resort browser download. The browser/OS chooses the final destination.
     downloadBlob(blob, filename);
-    if (els.saveStatus) els.saveStatus.textContent = 'Downloaded file copy';
+    return 'downloaded';
+  }
+
+  async function backupSelectedProject() {
+    const project = projectLibrary.projects[selectedProjectId];
+    if (!project) return;
+    checkpointCurrent('Project backup checkpoint');
+    const scenes = project.documentIds.map((documentId, index) => {
+      const documentState = documentId === currentDocumentId ? state : readStoredDocument(documentId);
+      if (!documentState) return null;
+      return {
+        order: index,
+        title: documentState.title || 'Untitled Thread',
+        state: cloneState(documentState),
+        history: loadHistory(documentId).snapshots.map(snapshot => ({ ...snapshot, state: cloneState(snapshot.state) }))
+      };
+    }).filter(Boolean);
+    const backup = {
+      format: 'threadwriter-project-backup',
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      project: {
+        name: project.name,
+        createdAt: project.createdAt,
+        scenes
+      }
+    };
+    const filename = `${safeName(project.name)}.threadwriter-project`;
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+    const result = await saveBlobAsPortableFile(blob, filename, 'ThreadWriter project backup', ['.threadwriter-project', '.json']);
+    if (result && result !== 'cancelled' && els.saveStatus) els.saveStatus.textContent = 'Project backup created';
+  }
+
+  function restoreProjectBackup(parsed) {
+    if (!parsed || parsed.format !== 'threadwriter-project-backup' || parsed.version !== 1 || !parsed.project || !Array.isArray(parsed.project.scenes)) {
+      throw new Error('Not a ThreadWriter project backup');
+    }
+    const projectId = makeProjectId();
+    const documentIds = [];
+    parsed.project.scenes.forEach(scene => {
+      const restored = normalizeState(scene.state);
+      const documentId = makeDocumentId();
+      persistDocument(documentId, restored, { makeCurrent: false, touchOpened: false, skipHistory: true });
+      if (Array.isArray(scene.history) && scene.history.length) {
+        const snapshots = scene.history.slice(0, HISTORY_MAX).map(snapshot => {
+          const restoredSnapshotState = normalizeState(snapshot.state);
+          return {
+            id: snapshot.id || (crypto.randomUUID ? crypto.randomUUID() : `snapshot-${Date.now()}-${Math.random()}`),
+            createdAt: snapshot.createdAt || new Date().toISOString(),
+            reason: snapshot.reason || 'Restored snapshot',
+            wordCount: Number(snapshot.wordCount ?? wordCountForState(restoredSnapshotState)),
+            preview: snapshot.preview || previewForState(restoredSnapshotState),
+            signature: snapshot.signature || stateSignature(restoredSnapshotState),
+            state: restoredSnapshotState
+          };
+        });
+        saveHistory(documentId, { version: 1, snapshots });
+      }
+      documentIds.push(documentId);
+    });
+    projectLibrary.projects[projectId] = {
+      id: projectId,
+      name: String(parsed.project.name || 'Restored Project').trim() || 'Restored Project',
+      documentIds,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    selectedProjectId = projectId;
+    projectLibrary.lastProjectId = projectId;
+    saveProjectLibrary();
+    return { projectId, documentIds };
+  }
+
+  async function saveAsProject() {
+    saveNow({ quiet: true });
+    const filename = `${safeName(state.title)}.threadwriter`;
+    const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+    const result = await saveBlobAsPortableFile(blob, filename, 'ThreadWriter project', ['.threadwriter']);
+    if (result === 'saved' && els.saveStatus) els.saveStatus.textContent = 'Saved file';
+    else if (result === 'shared' && els.saveStatus) els.saveStatus.textContent = 'Shared file copy';
+    else if (result === 'downloaded' && els.saveStatus) els.saveStatus.textContent = 'Downloaded file copy';
     els.saveAsBtn.blur();
   }
 
   els.saveAsBtn.addEventListener('click', () => { closeTopMenus(); saveAsProject(); });
+  els.historyBtn.addEventListener('click', openHistoryDialog);
+  els.closeHistoryDialogBtn.addEventListener('click', () => els.historyDialog.close());
+  els.createSnapshotBtn.addEventListener('click', () => {
+    saveNow({ quiet: true });
+    const snapshot = createSnapshot(currentDocumentId, state, 'Manual snapshot', { force: true });
+    if (snapshot && els.saveStatus) els.saveStatus.textContent = 'Snapshot created';
+    renderHistoryList();
+  });
 
   els.projectsBtn.addEventListener('click', () => { closeTopMenus(); openProjectsDialog(true); });
   els.projectContext.addEventListener('click', () => openProjectsDialog(true));
@@ -1614,6 +1848,22 @@
   els.newProjectSceneBtn.addEventListener('click', () => {
     if (selectedProjectId) createProjectScene(selectedProjectId);
   });
+  els.backupProjectBtn.addEventListener('click', () => backupSelectedProject());
+  els.restoreProjectBtn.addEventListener('click', () => els.projectBackupInput.click());
+  els.projectBackupInput.addEventListener('change', async () => {
+    const file = els.projectBackupInput.files?.[0];
+    if (!file) return;
+    try {
+      const parsed = JSON.parse(await file.text());
+      const result = restoreProjectBackup(parsed);
+      renderProjectsDialog();
+      alert(`Restored “${projectLibrary.projects[result.projectId]?.name || 'project'}” with ${result.documentIds.length} scene${result.documentIds.length === 1 ? '' : 's'}.`);
+    } catch (error) {
+      alert(`Could not restore this project backup: ${error.message}`);
+    } finally {
+      els.projectBackupInput.value = '';
+    }
+  });
   els.projectSearchInput.addEventListener('input', () => {
     const project = projectLibrary.projects[selectedProjectId];
     if (project) renderProjectSearchResults(project);
@@ -1640,7 +1890,7 @@
     try {
       const parsed = JSON.parse(await file.text());
       const imported = normalizeState(parsed);
-      saveNow({ quiet: true });
+      checkpointCurrent('Closed / switched thread');
       state = imported;
       currentDocumentId = makeDocumentId();
       pendingInsertId = null;
@@ -2199,9 +2449,9 @@
     return (crc ^ 0xFFFFFFFF) >>> 0;
   }
 
-  window.addEventListener('pagehide', () => saveNow({ quiet: true }));
+  window.addEventListener('pagehide', () => { saveNow({ quiet: true }); createSnapshot(currentDocumentId, state, 'Session checkpoint', { force: true }); });
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') saveNow({ quiet: true });
+    if (document.visibilityState === 'hidden') { saveNow({ quiet: true }); createSnapshot(currentDocumentId, state, 'Session checkpoint', { force: true }); }
   });
 
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {

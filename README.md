@@ -1,4 +1,4 @@
-# ThreadWriter v0.7.1
+# ThreadWriter v0.7.2
 
 A small local-first dialogue editor that looks and behaves like a message thread, but can also switch into a plain transcript-style drafting view.
 
@@ -14,6 +14,8 @@ A small local-first dialogue editor that looks and behaves like a message thread
 - Local autosave in the browser, with each conversation stored separately
 - **Recent** conversation picker for reopening locally saved threads, including multiple threads with the same title
 - Local **Projects** for grouping, reordering, counting, and searching multiple scenes/conversations
+- Lightweight per-thread **Version History** with automatic local snapshots, manual checkpoints, and one-click restore
+- Portable full-project backup / restore files (`.threadwriter-project`) that include every scene plus available local snapshot history
 - **Save As…** creates a portable `.threadwriter` file you control, while autosave continues maintaining the browser-local Recent copy
 - Editable native `.threadwriter` JSON project export/import
 - Consecutive messages from the same participant are visually grouped
@@ -54,6 +56,34 @@ Then open `http://localhost:8000/` in your browser. Service-worker/offline insta
 GitHub Pages is also a good fit: place these files at the publishing root and add the resulting site to an iPhone/iPad Home Screen if desired.
 
 
+
+
+## New in v0.7.2
+
+### Local version history
+
+- Added **File → Version History…** for the current conversation.
+- ThreadWriter keeps up to **12 local snapshots per thread** in the same browser. Automatic snapshots are spaced roughly five minutes apart while the thread changes, with extra checkpoints when a thread is switched/closed and before destructive edits.
+- **Create snapshot now** makes an explicit checkpoint whenever you want one.
+- Restoring a snapshot first saves the current state as **Before restore**, so using history does not casually destroy the version you are leaving.
+- Snapshot entries show date/time, reason, word count, and a short preview.
+- Local history is intentionally lightweight and browser-local. Clearing site data can remove it, and later image-heavy document formats may require moving history storage to IndexedDB rather than localStorage.
+
+### Project backup / restore
+
+- Projects now have **Back up project…**, which creates a portable `.threadwriter-project` JSON backup containing the project name, scene order, every current scene, and any available local history snapshots for those scenes.
+- **Restore project backup…** imports that file as a new local project with new document IDs, so restoring does not overwrite an existing project or Recent conversation.
+- Desktop Chromium-family browsers can use the system Save As picker; iOS/Safari uses the share sheet / Save to Files when available; other browsers fall back to a normal download.
+
+### Safety model
+
+ThreadWriter now has three deliberately different safety layers:
+
+1. **Recent**: convenient current browser-local autosaves.
+2. **Version History**: local rollback points for editing mistakes and accidental deletions.
+3. **Save As / Project Backup**: external files you actually control and can keep outside browser storage.
+
+Version history and Recent are recovery tools, not substitutes for external backups.
 
 ## New in v0.7.1
 
@@ -181,9 +211,8 @@ v0.6 project files add fields for the scene header and Conversation Style, but o
 
 ### Core / reliability
 
-- Automatic backups and lightweight version history
-- Optional recovery/version browser for prior local revisions
-- Word-count breakdowns / project totals once multi-scene projects exist
+- Optional richer snapshot policies / longer history once storage moves beyond localStorage
+- Word-count breakdowns beyond the existing thread/project totals
 
 ### User interface
 
@@ -196,8 +225,8 @@ v0.6 project files add fields for the scene header and Conversation Style, but o
 
 ### Projects
 
-- Multiple scenes / chapters inside one project
-- Project-wide search
+- Optional folders / nested organization if real-world use eventually demands it
+- Optional project-level metadata beyond name, order, search, word count, and backups
 
 ### Authoring tools
 

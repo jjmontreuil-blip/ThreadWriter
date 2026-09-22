@@ -1,5 +1,5 @@
-const CACHE = 'threadwriter-v0.7.1';
-const ASSETS = ['./', './index.html', './styles.css?v=0.7.1', './app.js?v=0.7.1', './manifest.webmanifest?v=0.7.1', './icon.svg?v=0.7.1'];
+const CACHE = 'threadwriter-v0.7.2';
+const ASSETS = ['./', './index.html', './styles.css?v=0.7.2', './app.js?v=0.7.2', './manifest.webmanifest?v=0.7.2', './icon.svg?v=0.7.2'];
 
 self.addEventListener('install', event => {
   self.skipWaiting();
