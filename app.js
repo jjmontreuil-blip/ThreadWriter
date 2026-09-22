@@ -1,5 +1,5 @@
 (() => {
-  const APP_VERSION = '0.6.5';
+  const APP_VERSION = '0.6.6';
   const LEGACY_STORAGE_KEY = 'threadwriter.project.v1';
   const LIBRARY_KEY = 'threadwriter.library.v1';
   const DOCUMENT_PREFIX = 'threadwriter.document.v1.';
@@ -38,7 +38,7 @@
     headerBtn: document.getElementById('headerBtn'),
     conversationStyle: document.getElementById('conversationStyle'),
     findBtn: document.getElementById('findBtn'),
-    saveBtn: document.getElementById('saveBtn'),
+    saveAsBtn: document.getElementById('saveAsBtn'),
     recentBtn: document.getElementById('recentBtn'),
     recentDialog: document.getElementById('recentDialog'),
     closeRecentDialogBtn: document.getElementById('closeRecentDialogBtn'),
@@ -51,7 +51,6 @@
     newBtn: document.getElementById('newBtn'),
     importBtn: document.getElementById('importBtn'),
     fileInput: document.getElementById('fileInput'),
-    exportProjectBtn: document.getElementById('exportProjectBtn'),
     exportDocxBtn: document.getElementById('exportDocxBtn'),
     docxDialog: document.getElementById('docxDialog'),
     closeDocxDialogBtn: document.getElementById('closeDocxDialogBtn'),
@@ -242,7 +241,7 @@
     if (!currentDocumentId) currentDocumentId = makeDocumentId();
     const ok = persistDocument(currentDocumentId, state);
     if (typeof els !== 'undefined' && els.saveStatus) {
-      els.saveStatus.textContent = ok ? 'Saved locally' : 'Save failed';
+      els.saveStatus.textContent = ok ? 'Saved to Recent' : 'Save failed';
     }
     if (!ok && !quiet) alert('ThreadWriter could not save this thread locally. Export a Project copy before continuing.');
     return ok;
@@ -1031,13 +1030,63 @@
     });
   }
 
-  els.saveBtn.addEventListener('click', () => {
-    const ok = saveNow();
-    if (ok) {
-      els.saveStatus.textContent = 'Saved locally';
-      els.saveBtn.blur();
+  async function saveAsProject() {
+    // Keep the browser-local Recent copy current first, then create a portable
+    // .threadwriter file the user can store wherever their browser/OS permits.
+    saveNow({ quiet: true });
+
+    const filename = `${safeName(state.title)}.threadwriter`;
+    const json = JSON.stringify(state, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+
+    // Chromium-family browsers on secure origins can offer a real Save As picker.
+    // This is the closest browser equivalent to a desktop app choosing a folder.
+    if (typeof window.showSaveFilePicker === 'function' && window.isSecureContext) {
+      try {
+        const handle = await window.showSaveFilePicker({
+          suggestedName: filename,
+          types: [{
+            description: 'ThreadWriter project',
+            accept: { 'application/json': ['.threadwriter'] }
+          }]
+        });
+        const writable = await handle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        if (els.saveStatus) els.saveStatus.textContent = 'Saved file';
+        els.saveAsBtn.blur();
+        return;
+      } catch (error) {
+        // A cancellation should remain a cancellation rather than unexpectedly
+        // triggering another download/share prompt. Other failures can fall back.
+        if (error?.name === 'AbortError') return;
+        console.warn('ThreadWriter Save As picker unavailable; falling back.', error);
+      }
     }
-  });
+
+    // iOS/Safari cannot currently expose the desktop file picker API. If the
+    // Web Share API accepts files, its share sheet lets the user choose Save to
+    // Files (and therefore a folder) instead of silently choosing Downloads.
+    try {
+      const file = new File([blob], filename, { type: 'application/json' });
+      if (navigator.share && navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file], title: filename });
+        if (els.saveStatus) els.saveStatus.textContent = 'Shared file copy';
+        els.saveAsBtn.blur();
+        return;
+      }
+    } catch (error) {
+      if (error?.name === 'AbortError') return;
+      console.warn('ThreadWriter share-sheet save unavailable; falling back.', error);
+    }
+
+    // Last-resort browser download. The browser/OS chooses the final destination.
+    downloadBlob(blob, filename);
+    if (els.saveStatus) els.saveStatus.textContent = 'Downloaded file copy';
+    els.saveAsBtn.blur();
+  }
+
+  els.saveAsBtn.addEventListener('click', saveAsProject);
 
   els.recentBtn.addEventListener('click', () => {
     saveNow({ quiet: true });
@@ -1071,10 +1120,6 @@
     } finally {
       els.fileInput.value = '';
     }
-  });
-
-  els.exportProjectBtn.addEventListener('click', () => {
-    downloadBlob(new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' }), `${safeName(state.title)}.threadwriter`);
   });
 
   els.exportTxtBtn.addEventListener('click', () => {

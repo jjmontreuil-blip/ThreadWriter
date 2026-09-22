@@ -1,4 +1,4 @@
-# ThreadWriter v0.6.5
+# ThreadWriter v0.6.6
 
 A small local-first dialogue editor that looks and behaves like a message thread, but can also switch into a plain transcript-style drafting view.
 
@@ -13,7 +13,7 @@ A small local-first dialogue editor that looks and behaves like a message thread
 - Touch-friendly participant buttons for mobile
 - Local autosave in the browser, with each conversation stored separately
 - **Recent** conversation picker for reopening locally saved threads, including multiple threads with the same title
-- Manual **Save** button for an immediate local save
+- **Save As…** creates a portable `.threadwriter` file you control, while autosave continues maintaining the browser-local Recent copy
 - Editable native `.threadwriter` JSON project export/import
 - Consecutive messages from the same participant are visually grouped
 - Compact per-message overflow menu for edit, insert-above/below, speaker reassignment, optional timestamp, reordering, and delete
@@ -53,6 +53,17 @@ Then open `http://localhost:8000/` in your browser. Service-worker/offline insta
 GitHub Pages is also a good fit: place these files at the publishing root and add the resulting site to an iPhone/iPad Home Screen if desired.
 
 
+## New in v0.6.6
+
+### Save As means an actual file
+
+- Replaced the misleading manual **Save** button with **Save As…**. Autosave still keeps the current conversation in ThreadWriter's browser-local **Recent** library.
+- On supported desktop Chromium-family browsers served from HTTPS/localhost, **Save As…** opens the operating system's file picker so you can choose the `.threadwriter` filename and folder.
+- On iOS/Safari and other browsers without that picker, ThreadWriter first tries the system share sheet so **Save to Files** can choose a destination. If that is unavailable, it falls back to a normal browser download.
+- The old **Project** export button has been folded into **Save As…** so there is one clear command for making an editable external ThreadWriter file.
+- Save-status wording now distinguishes the internal autosave (**Saved to Recent**) from an external file copy.
+- The browser-local Recent library remains independent of external `.threadwriter` files: Save As is the explicit backup/portable-copy path, not a replacement for autosave.
+
 ## New in v0.6.5
 
 ### Safer local conversations
@@ -68,7 +79,7 @@ GitHub Pages is also a good fit: place these files at the publishing root and ad
 
 ### Important note
 
-The local conversation library is browser/device-specific. It is much safer than the old single autosave slot, but it is **not yet a backup system**. Clearing browser site data can still remove locally stored threads. Use **Project** export for external backups until automatic backup/version-history work is added.
+The local conversation library is browser/device-specific. It is much safer than the old single autosave slot, but it is **not yet a backup system**. Clearing browser site data can still remove locally stored threads. Use **Save As…** to make external `.threadwriter` backups until automatic backup/version-history work is added.
 
 ## New in v0.6.3
 
