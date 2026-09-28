@@ -314,7 +314,49 @@ body.reordering { user-select: none; }
   background: color-mix(in srgb, var(--muted) 14%, transparent);
   outline: none;
 }
-.message-menu button.destructive { color: #d33b3b; }
+.message-menu button.message-submenu-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+.message-submenu-chevron {
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+}
+.message-menu-subhead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: -1px -1px 4px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+.message-menu .message-menu-subhead button.message-menu-back {
+  width: auto;
+  flex: 0 0 auto;
+  padding: 6px 7px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.message-menu-page-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding-right: 8px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-align: right;
+  text-transform: uppercase;
+}
+.message-menu button.destructive {
+  margin-top: 4px;
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 7px 7px;
+  color: #d33b3b;
+}
 .message-menu button:disabled {
   opacity: .38;
   cursor: default;
@@ -696,12 +738,11 @@ dialog::backdrop { background: rgba(0,0,0,.45); backdrop-filter: blur(3px); }
 
 
 
-/* Phones use the same compact popover as desktop. JavaScript positions it beside the
-   ellipsis and clamps/flips it to stay inside the visible viewport. */
+/* Phones use the same viewport-layer popover and nested menu model as desktop. */
 @media (max-width: 700px) {
   .message-menu {
     z-index: 30;
-    min-width: 118px;
+    min-width: 148px;
     max-width: calc(100vw - 16px);
   }
   .message-menu button {

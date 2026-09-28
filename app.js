@@ -1,5 +1,5 @@
 (() => {
-  const APP_VERSION = '0.8.1';
+  const APP_VERSION = '0.8.2';
   const LEGACY_STORAGE_KEY = 'threadwriter.project.v1';
   const LIBRARY_KEY = 'threadwriter.library.v1';
   const DOCUMENT_PREFIX = 'threadwriter.document.v1.';
@@ -701,20 +701,35 @@
         menu.className = 'message-menu';
         menu.hidden = true;
         menu.setAttribute('role', 'menu');
-        const edit = makeToolButton('Edit', () => { closeMessageMenus(); openNarrativeDialog(item.id); });
-        const insertAbove = makeToolButton('Insert message above', () => { closeMessageMenus(); insertMessageAdjacent(item.id, 0); });
-        const insertBelow = makeToolButton('Insert message below', () => { closeMessageMenus(); insertMessageAdjacent(item.id, 1); });
-        const moveUp = makeToolButton('Move up', () => { closeMessageMenus(); moveMessage(item.id, -1); });
-        const moveDown = makeToolButton('Move down', () => { closeMessageMenus(); moveMessage(item.id, 1); });
-        moveUp.disabled = index === 0;
-        moveDown.disabled = index === state.messages.length - 1;
-        const del = makeToolButton('Delete', () => { closeMessageMenus(); deleteMessage(item.id); }, true);
-        menu.append(edit, insertAbove, insertBelow, moveUp, moveDown, del);
+        const showRoot = () => {
+          const edit = makeToolButton('Edit', () => { closeMessageMenus(); openNarrativeDialog(item.id); });
+          const move = makeSubmenuButton('Move', () => showMove());
+          const insert = makeSubmenuButton('Insert', () => showInsert());
+          const del = makeToolButton('Delete', () => { closeMessageMenus(); deleteMessage(item.id); }, true);
+          setMessageMenuPage(menu, [edit, insert, move, del]);
+        };
+        const showMove = () => {
+          const moveUp = makeToolButton('Up', () => { closeMessageMenus(); moveMessage(item.id, -1); });
+          const moveDown = makeToolButton('Down', () => { closeMessageMenus(); moveMessage(item.id, 1); });
+          moveUp.disabled = index === 0;
+          moveDown.disabled = index === state.messages.length - 1;
+          setMessageMenuPage(menu, [moveUp, moveDown], showRoot, 'Move');
+        };
+        const showInsert = () => {
+          const messageAbove = makeToolButton('Message above', () => { closeMessageMenus(); insertMessageAdjacent(item.id, 0); });
+          const messageBelow = makeToolButton('Message below', () => { closeMessageMenus(); insertMessageAdjacent(item.id, 1); });
+          const narrativeAbove = makeToolButton('Narrative above…', () => { closeMessageMenus(); openNarrativeDialog(null, index); });
+          const narrativeBelow = makeToolButton('Narrative below…', () => { closeMessageMenus(); openNarrativeDialog(null, index + 1); });
+          setMessageMenuPage(menu, [messageAbove, messageBelow, narrativeAbove, narrativeBelow], showRoot, 'Insert');
+        };
+        menu._threadwriterShowRoot = showRoot;
+        showRoot();
 
         menuButton.addEventListener('click', e => {
           e.stopPropagation();
           const opening = menu.hidden;
           closeMessageMenus();
+          if (opening) menu._threadwriterShowRoot?.();
           menu.hidden = !opening;
           menuButton.setAttribute('aria-expanded', String(opening));
           if (opening) requestAnimationFrame(() => positionMessageMenu(menu, menuButton, row));
@@ -781,24 +796,56 @@
       menu.hidden = true;
       menu.setAttribute('role', 'menu');
 
-      const edit = makeToolButton('Edit', () => { closeMessageMenus(); startEditMessage(item.id, bubble); });
-      const insertAbove = makeToolButton('Insert above', () => { closeMessageMenus(); insertMessageAdjacent(item.id, 0); });
-      const insertBelow = makeToolButton('Insert below', () => { closeMessageMenus(); insertMessageAdjacent(item.id, 1); });
-      const insertNarrative = makeToolButton('Insert narrative below…', () => { closeMessageMenus(); openNarrativeDialog(null, index + 1); });
-      const swap = makeToolButton('Change speaker', () => { closeMessageMenus(); cycleMessageSpeaker(item.id); });
-      const annotation = makeToolButton(item.annotation ? 'Edit annotation…' : 'Add annotation…', () => { closeMessageMenus(); openAnnotationDialog(item.id); });
-      const timestamp = makeToolButton(item.displayTimestamp ? 'Edit timestamp…' : 'Add timestamp…', () => { closeMessageMenus(); openTimestampDialog(item.id); });
-      const moveUp = makeToolButton('Move up', () => { closeMessageMenus(); moveMessage(item.id, -1); });
-      const moveDown = makeToolButton('Move down', () => { closeMessageMenus(); moveMessage(item.id, 1); });
-      moveUp.disabled = index === 0;
-      moveDown.disabled = index === state.messages.length - 1;
-      const del = makeToolButton('Delete', () => { closeMessageMenus(); deleteMessage(item.id); }, true);
-      menu.append(edit, insertAbove, insertBelow, insertNarrative, swap, annotation, timestamp, moveUp, moveDown, del);
+      const hasAnnotation = Boolean(item.annotation);
+      const hasTimestamp = Boolean(item.displayTimestamp);
+      const showRoot = () => {
+        const controls = [];
+        if (hasAnnotation || hasTimestamp) {
+          controls.push(makeSubmenuButton('Edit', () => showEdit()));
+        } else {
+          controls.push(makeToolButton('Edit', () => { closeMessageMenus(); startEditMessage(item.id, bubble); }));
+        }
+        controls.push(makeToolButton('Change speaker', () => { closeMessageMenus(); cycleMessageSpeaker(item.id); }));
+        controls.push(makeSubmenuButton('Move', () => showMove()));
+        controls.push(makeSubmenuButton('Insert', () => showInsert()));
+        if (!hasAnnotation || !hasTimestamp) controls.push(makeSubmenuButton('Add', () => showAdd()));
+        controls.push(makeToolButton('Delete', () => { closeMessageMenus(); deleteMessage(item.id); }, true));
+        setMessageMenuPage(menu, controls);
+      };
+      const showEdit = () => {
+        const controls = [makeToolButton('Message', () => { closeMessageMenus(); startEditMessage(item.id, bubble); })];
+        if (hasAnnotation) controls.push(makeToolButton('Annotation…', () => { closeMessageMenus(); openAnnotationDialog(item.id); }));
+        if (hasTimestamp) controls.push(makeToolButton('Timestamp…', () => { closeMessageMenus(); openTimestampDialog(item.id); }));
+        setMessageMenuPage(menu, controls, showRoot, 'Edit');
+      };
+      const showMove = () => {
+        const moveUp = makeToolButton('Up', () => { closeMessageMenus(); moveMessage(item.id, -1); });
+        const moveDown = makeToolButton('Down', () => { closeMessageMenus(); moveMessage(item.id, 1); });
+        moveUp.disabled = index === 0;
+        moveDown.disabled = index === state.messages.length - 1;
+        setMessageMenuPage(menu, [moveUp, moveDown], showRoot, 'Move');
+      };
+      const showInsert = () => {
+        const messageAbove = makeToolButton('Message above', () => { closeMessageMenus(); insertMessageAdjacent(item.id, 0); });
+        const messageBelow = makeToolButton('Message below', () => { closeMessageMenus(); insertMessageAdjacent(item.id, 1); });
+        const narrativeAbove = makeToolButton('Narrative above…', () => { closeMessageMenus(); openNarrativeDialog(null, index); });
+        const narrativeBelow = makeToolButton('Narrative below…', () => { closeMessageMenus(); openNarrativeDialog(null, index + 1); });
+        setMessageMenuPage(menu, [messageAbove, messageBelow, narrativeAbove, narrativeBelow], showRoot, 'Insert');
+      };
+      const showAdd = () => {
+        const controls = [];
+        if (!hasAnnotation) controls.push(makeToolButton('Annotation…', () => { closeMessageMenus(); openAnnotationDialog(item.id); }));
+        if (!hasTimestamp) controls.push(makeToolButton('Timestamp…', () => { closeMessageMenus(); openTimestampDialog(item.id); }));
+        setMessageMenuPage(menu, controls, showRoot, 'Add');
+      };
+      menu._threadwriterShowRoot = showRoot;
+      showRoot();
 
       menuButton.addEventListener('click', e => {
         e.stopPropagation();
         const opening = menu.hidden;
         closeMessageMenus();
+        if (opening) menu._threadwriterShowRoot?.();
         menu.hidden = !opening;
         menuButton.setAttribute('aria-expanded', String(opening));
         if (opening) requestAnimationFrame(() => positionMessageMenu(menu, menuButton, row));
@@ -866,6 +913,38 @@
     return b;
   }
 
+  function makeSubmenuButton(label, action) {
+    const b = makeToolButton(label, action);
+    b.classList.add('message-submenu-toggle');
+    b.setAttribute('aria-haspopup', 'menu');
+    const chevron = document.createElement('span');
+    chevron.className = 'message-submenu-chevron';
+    chevron.setAttribute('aria-hidden', 'true');
+    chevron.textContent = '›';
+    b.appendChild(chevron);
+    return b;
+  }
+
+  function setMessageMenuPage(menu, controls, backAction = null, title = '') {
+    menu.replaceChildren();
+    menu._threadwriterBack = backAction || null;
+    if (backAction) {
+      const head = document.createElement('div');
+      head.className = 'message-menu-subhead';
+      const back = makeToolButton('‹ Back', () => backAction());
+      back.classList.add('message-menu-back');
+      const label = document.createElement('span');
+      label.className = 'message-menu-page-title';
+      label.textContent = title;
+      head.append(back, label);
+      menu.appendChild(head);
+    }
+    controls.forEach(control => menu.appendChild(control));
+    if (!menu.hidden && menu._threadwriterButton && menu._threadwriterRow) {
+      requestAnimationFrame(() => positionMessageMenu(menu, menu._threadwriterButton, menu._threadwriterRow));
+    }
+  }
+
   function insertMessageAdjacent(referenceId, offset) {
     const referenceIndex = state.messages.findIndex(item => item.id === referenceId);
     if (referenceIndex < 0) return;
@@ -906,33 +985,41 @@
   }
 
   function positionMessageMenu(menu, button, row) {
-    if (!window.matchMedia('(max-width: 700px)').matches) return;
-
     const vv = window.visualViewport;
     const viewLeft = vv?.offsetLeft || 0;
     const viewTop = vv?.offsetTop || 0;
     const viewWidth = vv?.width || window.innerWidth;
     const viewHeight = vv?.height || window.innerHeight;
     const pad = 8;
-    const gap = 5;
+    const gap = 6;
     const buttonRect = button.getBoundingClientRect();
 
-    // A transformed message-actions parent changes the containing block for CSS fixed
-    // positioning. Move the open mobile popover to <body> so viewport clamping is real.
-    menu._threadwriterHome = menu.parentElement;
+    // Keep the popover in the top-level viewport layer on every device. This avoids
+    // transformed/overflowing message containers and lets the menu float above the
+    // fixed composer instead of disappearing behind it near the bottom of the page.
+    if (!menu._threadwriterHome) menu._threadwriterHome = menu.parentElement;
     menu._threadwriterButton = button;
-    document.body.appendChild(menu);
+    menu._threadwriterRow = row;
+    if (menu.parentElement !== document.body) document.body.appendChild(menu);
     menu.style.position = 'fixed';
     menu.style.right = 'auto';
     menu.style.bottom = 'auto';
     menu.style.zIndex = '100';
+    menu.style.maxHeight = `${Math.max(120, viewHeight - pad * 2)}px`;
+    menu.style.overflowY = 'auto';
 
     const menuWidth = menu.offsetWidth;
     const menuHeight = menu.offsetHeight;
+    const preferLeft = row.classList.contains('right') || row.classList.contains('narrative-row');
+    const roomLeft = buttonRect.left - gap - menuWidth >= viewLeft + pad;
+    const roomRight = buttonRect.right + gap + menuWidth <= viewLeft + viewWidth - pad;
 
-    let left = row.classList.contains('right')
-      ? buttonRect.left - menuWidth - gap
-      : buttonRect.right + gap;
+    let left;
+    if (preferLeft && roomLeft) left = buttonRect.left - menuWidth - gap;
+    else if (!preferLeft && roomRight) left = buttonRect.right + gap;
+    else if (roomLeft) left = buttonRect.left - menuWidth - gap;
+    else if (roomRight) left = buttonRect.right + gap;
+    else left = buttonRect.left + (buttonRect.width - menuWidth) / 2;
     left = Math.max(viewLeft + pad, Math.min(left, viewLeft + viewWidth - menuWidth - pad));
 
     let top = buttonRect.top + (buttonRect.height - menuHeight) / 2;
@@ -949,8 +1036,12 @@
     menu.style.top = '';
     menu.style.bottom = '';
     menu.style.zIndex = '';
+    menu.style.maxHeight = '';
+    menu.style.overflowY = '';
     if (menu._threadwriterHome?.isConnected) menu._threadwriterHome.appendChild(menu);
     delete menu._threadwriterHome;
+    delete menu._threadwriterRow;
+    menu._threadwriterBack = null;
   }
 
   function closeMessageMenus() {
@@ -964,7 +1055,14 @@
 
   document.addEventListener('click', closeMessageMenus);
   document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') closeMessageMenus();
+    if (e.key !== 'Escape') return;
+    const openMenu = document.querySelector('.message-menu:not([hidden])');
+    if (openMenu?._threadwriterBack) {
+      e.preventDefault();
+      openMenu._threadwriterBack();
+      return;
+    }
+    closeMessageMenus();
   });
   window.addEventListener('resize', closeMessageMenus);
   window.addEventListener('scroll', closeMessageMenus, { passive: true });

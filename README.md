@@ -1,4 +1,4 @@
-# ThreadWriter v0.8.1
+# ThreadWriter v0.8.2
 
 A small local-first dialogue editor that looks and behaves like a message thread, but can also switch into a plain transcript-style drafting view.
 
@@ -21,8 +21,8 @@ A small local-first dialogue editor that looks and behaves like a message thread
 - **Save As…** creates a portable `.threadwriter` file you control, while autosave continues maintaining the browser-local Recent copy
 - Editable native `.threadwriter` JSON project export/import
 - Consecutive messages from the same participant are visually grouped
-- Compact per-message overflow menu for edit, insert-above/below, speaker reassignment, optional timestamp, reordering, and delete
-- Viewport-safe mobile message menus
+- Compact hierarchical per-message overflow menu for editing, speaker reassignment, moving, inserting messages/narrative blocks, annotations/timestamps, and delete
+- Viewport-safe message menus on desktop and mobile that float above the fixed composer and stay clamped inside the visible screen
 - Optional editable timestamps, including free-form story labels such as “two hours later”
 - Timestamped messages create a visual time-break before the new message beat
 - Move Up / Move Down controls in each message menu for reliable one-step reordering
@@ -60,7 +60,18 @@ Then open `http://localhost:8000/` in your browser. Service-worker/offline insta
 GitHub Pages is also a good fit: place these files at the publishing root and add the resulting site to an iPhone/iPad Home Screen if desired.
 
 
+## New in v0.8.2
 
+### Context-menu cleanup
+
+- Message and Narrative `…` menus now move into a viewport-level floating layer on desktop as well as mobile, so controls near the bottom of a long thread no longer disappear behind the fixed participant/composer panel.
+- Open menus choose the roomier side of the `…` button when necessary and clamp vertically/horizontally inside the visible viewport.
+- Reorganized crowded message controls into compact nested menus: **Edit**, **Move**, **Insert**, and **Add**, with **Change speaker** and **Delete** kept immediately accessible.
+- **Edit** opens directly on a plain message; once an annotation and/or timestamp exists, it becomes a submenu for Message plus the attached extras.
+- **Add** only offers extras that are not already present.
+- **Insert** now supports Message Above/Below and Narrative Above/Below from either message or narrative blocks.
+- Narrative menus use the slimmer **Edit / Insert / Move / Delete** hierarchy.
+- Submenus are click/tap driven on every device; **Escape** backs out one submenu level before closing the popover.
 
 ## New in v0.8.1
 
