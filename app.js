@@ -1,5 +1,5 @@
 (() => {
-  const APP_VERSION = '0.8';
+  const APP_VERSION = '0.8.1';
   const LEGACY_STORAGE_KEY = 'threadwriter.project.v1';
   const LIBRARY_KEY = 'threadwriter.library.v1';
   const DOCUMENT_PREFIX = 'threadwriter.document.v1.';
@@ -32,6 +32,7 @@
   let annotationMessageId = null;
   let narrativeBlockId = null;
   let narrativeInsertIndex = null;
+  let narrativeReturnFocusToComposer = false;
   let pendingInsertId = null;
   const findState = { query: '', replacement: '', caseSensitive: false, matches: [], current: 0 };
 
@@ -54,6 +55,7 @@
     participantsBtn: document.getElementById('participantsBtn'),
     headerBtn: document.getElementById('headerBtn'),
     narrativeBtn: document.getElementById('narrativeBtn'),
+    quickNarrativeBtn: document.getElementById('quickNarrativeBtn'),
     conversationStyle: document.getElementById('conversationStyle'),
     findBtn: document.getElementById('findBtn'),
     saveAsBtn: document.getElementById('saveAsBtn'),
@@ -1144,10 +1146,11 @@
     }
   });
 
-  function openNarrativeDialog(id = null, insertIndex = null) {
+  function openNarrativeDialog(id = null, insertIndex = null, options = {}) {
     const block = id ? state.messages.find(item => item.id === id && isNarrative(item)) : null;
     narrativeBlockId = block?.id || null;
     narrativeInsertIndex = Number.isInteger(insertIndex) ? insertIndex : state.messages.length;
+    narrativeReturnFocusToComposer = Boolean(options.returnFocusToComposer);
     els.narrativeInput.value = block?.text || '';
     els.removeNarrativeBtn.disabled = !block;
     els.narrativeDialog.showModal();
@@ -1158,9 +1161,12 @@
   }
 
   function closeNarrativeDialog() {
+    const returnFocus = narrativeReturnFocusToComposer;
     narrativeBlockId = null;
     narrativeInsertIndex = null;
+    narrativeReturnFocusToComposer = false;
     if (els.narrativeDialog.open) els.narrativeDialog.close();
+    if (returnFocus) requestAnimationFrame(() => els.composer.focus());
   }
 
   function saveNarrativeBlock() {
@@ -1196,7 +1202,17 @@
     closeTopMenus();
     openNarrativeDialog(null, state.messages.length);
   });
+  els.quickNarrativeBtn?.addEventListener('click', () => {
+    openNarrativeDialog(null, state.messages.length, { returnFocusToComposer: true });
+  });
   els.closeNarrativeDialogBtn.addEventListener('click', closeNarrativeDialog);
+  els.narrativeDialog.addEventListener('cancel', () => {
+    if (!narrativeReturnFocusToComposer) return;
+    narrativeBlockId = null;
+    narrativeInsertIndex = null;
+    narrativeReturnFocusToComposer = false;
+    requestAnimationFrame(() => els.composer.focus());
+  });
   els.removeNarrativeBtn.addEventListener('click', () => {
     if (!narrativeBlockId) return closeNarrativeDialog();
     state.messages = state.messages.filter(item => item.id !== narrativeBlockId);
@@ -1426,6 +1442,11 @@
 
   els.composer.addEventListener('input', autoSizeComposer);
   els.composer.addEventListener('keydown', e => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      e.preventDefault();
+      openNarrativeDialog(null, state.messages.length, { returnFocusToComposer: true });
+      return;
+    }
     if (e.key === 'Tab') {
       e.preventDefault();
       cycleSpeaker(e.shiftKey ? -1 : 1);

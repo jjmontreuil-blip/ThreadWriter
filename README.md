@@ -1,4 +1,4 @@
-# ThreadWriter v0.8
+# ThreadWriter v0.8.1
 
 A small local-first dialogue editor that looks and behaves like a message thread, but can also switch into a plain transcript-style drafting view.
 
@@ -10,7 +10,9 @@ A small local-first dialogue editor that looks and behaves like a message thread
 - `Shift+Enter` inserts a line break
 - `Tab` / `Shift+Tab` cycles participants while composing
 - `Ctrl+1` through `Ctrl+9` jumps directly to a participant
+- `Ctrl+Enter` / `Cmd+Enter` opens a new Narrative block from the composer and saves/closes it from the Narrative editor
 - Touch-friendly participant buttons for mobile
+- Persistent mobile **Narrative** quick button beside the participant strip for adding blocks without reopening the top menu
 - Local autosave in the browser, with each conversation stored separately
 - **Recent** conversation picker for reopening locally saved threads, including multiple threads with the same title
 - Local **Projects** for grouping, reordering, counting, and searching multiple scenes/conversations
@@ -35,7 +37,7 @@ A small local-first dialogue editor that looks and behaves like a message thread
 - PNG image export for shareable rendered conversations
 - Two `.docx` export modes with no external libraries: Portable transcript and Rich layout
 - Plain `.txt` transcript export
-- Print stylesheet for browser Print / Save as PDF
+- Clean Print / Save as PDF stylesheet, including box-free Transcript output and no app status/project/version metadata
 - Headers, timestamps, and Transcript style carry through the relevant exports
 - Installable PWA behavior when served over HTTP/HTTPS
 
@@ -59,6 +61,20 @@ GitHub Pages is also a good fit: place these files at the publishing root and ad
 
 
 
+
+## New in v0.8.1
+
+### Authoring-flow refinements
+
+- Added `Ctrl+Enter` / `Cmd+Enter` as a composer shortcut for opening a new Narrative block. The same shortcut saves and closes the Narrative editor.
+- An unfinished message remains untouched while a Narrative block is added, and focus returns to the composer afterward when the shortcut/quick button launched the block.
+- Added a persistent mobile **Narrative** quick button. On phones, the swipeable participant strip now ends at the same horizontal point as the message field, leaving a compact Narrative control above the Send button.
+
+### PDF / Print cleanup
+
+- Transcript-style Print/PDF output no longer reintroduces full-width borders around every message.
+- Print output hides ThreadWriter's browser-local status line, including project membership and runtime version, while retaining the document title and optional scene header as document content.
+- Mobile Chat print styling remains unchanged.
 
 ## New in v0.8
 

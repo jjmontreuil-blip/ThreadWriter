@@ -4,10 +4,10 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#f4f4f7" />
-  <title>ThreadWriter v0.8</title>
-  <link rel="manifest" href="manifest.webmanifest?v=0.8" />
-  <link rel="icon" href="icon.svg?v=0.8" type="image/svg+xml" />
-  <link rel="stylesheet" href="styles.css?v=0.8" />
+  <title>ThreadWriter v0.8.1</title>
+  <link rel="manifest" href="manifest.webmanifest?v=0.8.1" />
+  <link rel="icon" href="icon.svg?v=0.8.1" type="image/svg+xml" />
+  <link rel="stylesheet" href="styles.css?v=0.8.1" />
 </head>
 <body>
   <div class="app-shell">
@@ -60,13 +60,16 @@
     <main id="thread" class="thread" aria-live="polite"></main>
 
     <footer class="composer-panel no-print">
-      <div id="speakerStrip" class="speaker-strip" aria-label="Participants"></div>
+      <div class="speaker-row">
+        <div id="speakerStrip" class="speaker-strip" aria-label="Participants"></div>
+        <button id="quickNarrativeBtn" class="quick-narrative-btn" type="button" aria-label="Add narrative block">Narrative</button>
+      </div>
       <div class="composer-row">
         <textarea id="composer" rows="2" placeholder="Write a message…" aria-label="Message composer"></textarea>
         <button id="sendBtn" class="send-btn" aria-label="Add message">Send</button>
       </div>
       <div class="composer-meta">
-        <div class="shortcut-hint">Enter = new message · Shift+Enter = line break · Tab / Shift+Tab = switch speaker</div>
+        <div class="shortcut-hint">Enter = new message · Shift+Enter = line break · Ctrl/Cmd+Enter = narrative · Tab / Shift+Tab = switch speaker</div>
         <div id="wordCount" class="word-count" title="Counts committed message and narrative text; headers, timestamps, and annotations are excluded">0 words</div>
       </div>
     </footer>
@@ -312,7 +315,7 @@
       if (key.startsWith('threadwriter.')) localStorage.removeItem(key);
     }
   </script>
-  <script src="app.js?v=0.8"></script>
+  <script src="app.js?v=0.8.1"></script>
 
 <script>
 window.addEventListener('load', () => {
@@ -331,11 +334,16 @@ window.addEventListener('load', () => {
     document.getElementById('saveAnnotationBtn').click();
     await wait(240);
 
-    document.getElementById('textMenuBtn').click();
-    document.getElementById('narrativeBtn').click();
+    composer.value = 'Draft survives narrative';
+    composer.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true }));
+    await wait(40);
+    const narrativeShortcutOpened = document.getElementById('narrativeDialog').open;
+    const composerPreservedBeforeSave = composer.value === 'Draft survives narrative';
     document.getElementById('narrativeInput').value = 'Three hours later';
-    document.getElementById('saveNarrativeBtn').click();
+    document.getElementById('narrativeInput').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true }));
     await wait(240);
+    const narrativeShortcutClosed = !document.getElementById('narrativeDialog').open;
+    const composerPreservedAfterSave = composer.value === 'Draft survives narrative';
 
     const wordCount = document.getElementById('wordCount').textContent;
     const annotationCount = document.querySelectorAll('.message-annotation').length;
@@ -375,6 +383,11 @@ window.addEventListener('load', () => {
     const historyCount = document.querySelectorAll('.history-item').length;
     document.getElementById('closeHistoryDialogBtn').click();
 
+    const styleSelect = document.getElementById('conversationStyle');
+    styleSelect.value = 'transcript';
+    styleSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    await wait(60);
+
     const out = document.createElement('pre');
     out.id = 'test-output';
     out.textContent = JSON.stringify({
@@ -382,6 +395,10 @@ window.addEventListener('load', () => {
       wordCount,
       annotationCount,
       narrativeCount,
+      narrativeShortcutOpened,
+      narrativeShortcutClosed,
+      composerPreservedBeforeSave,
+      composerPreservedAfterSave,
       findStatus,
       projectSearchResults,
       historyCount

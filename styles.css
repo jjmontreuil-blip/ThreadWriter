@@ -333,13 +333,29 @@ body.reordering { user-select: none; }
   border-top: 1px solid var(--border);
   box-shadow: var(--shadow);
 }
-.speaker-strip {
+.speaker-row {
   width: min(100%, 820px);
   margin: 0 auto 7px;
+}
+.speaker-strip {
+  width: 100%;
+  min-width: 0;
+  margin: 0;
   display: flex;
   gap: 7px;
   overflow-x: auto;
   padding-bottom: 2px;
+}
+.quick-narrative-btn {
+  display: none;
+  min-width: 70px;
+  height: 36px;
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  background: var(--field);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 750;
 }
 .speaker-chip {
   flex: 0 0 auto;
@@ -650,6 +666,13 @@ dialog::backdrop { background: rgba(0,0,0,.45); backdrop-filter: blur(3px); }
   .top-menu-host:first-child .top-menu { left: 0; right: auto; }
   .top-menu-host:nth-child(2) .top-menu { right: 0; left: auto; }
   .message-card { max-width: 67%; }
+  .speaker-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    align-items: center;
+  }
+  .quick-narrative-btn { display: block; }
   .message-menu-button { opacity: .38; }
   .find-grid { grid-template-columns: 1fr; }
   .shortcut-hint { display: none; }
@@ -694,13 +717,21 @@ dialog::backdrop { background: rgba(0,0,0,.45); backdrop-filter: blur(3px); }
   .app-shell { display: block; }
   .topbar { position: static; background: white; border: 0; padding: 0 0 18px; }
   .doc-title { width: 100%; color: black; font-size: 20pt; }
-  .save-status { display: none; }
+  .status-line { display: none !important; }
   .thread { width: 100%; max-width: none; padding: 0; }
   .message-card { max-width: 67%; break-inside: avoid; }
   .bubble { -webkit-print-color-adjust: exact; print-color-adjust: exact; border: 1px solid #bbb; }
   .message-actions { display: none; }
   .scene-header { color: black; margin-bottom: 20px; }
-  .thread.style-transcript .bubble { color: black; }
+  .thread.style-transcript .message-card { max-width: 100%; padding-right: 0; }
+  .thread.style-transcript .bubble {
+    color: black;
+    border: 0 !important;
+    border-radius: 0;
+    background: transparent !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+  }
 }
 
 
