@@ -1,4 +1,4 @@
-# ThreadWriter v0.8.2
+# ThreadWriter v0.9
 
 A small local-first dialogue editor that looks and behaves like a message thread, but can also switch into a plain transcript-style drafting view.
 
@@ -31,6 +31,8 @@ A small local-first dialogue editor that looks and behaves like a message thread
 - Insert Above / Insert Below commands for adding a message directly where it belongs in an existing thread
 - General-purpose narrative / system blocks in the ordered thread flow
 - Multiline under-message annotations for actions, stage directions, read receipts, reactions, metrics, and notes
+- One static image attachment per message or narrative block, stored once in IndexedDB rather than duplicated through local version-history snapshots
+- Browser-readable image imports are normalized to PNG or JPEG and resized to a maximum 2400-pixel dimension for saner local storage
 - Optional centered scene header for chapter names, dates/times, group names, scene labels, interstitials, etc.
 - Four simple header-font families: Rounded, Sans, Serif, and Mono
 - Conversation Styles: **Mobile Chat** and **Transcript**
@@ -38,7 +40,7 @@ A small local-first dialogue editor that looks and behaves like a message thread
 - Two `.docx` export modes with no external libraries: Portable transcript and Rich layout
 - Plain `.txt` transcript export
 - Clean Print / Save as PDF stylesheet, including box-free Transcript output and no app status/project/version metadata
-- Headers, timestamps, and Transcript style carry through the relevant exports
+- Headers, timestamps, Transcript style, and image attachments carry through the relevant visual exports; TXT and Portable DOCX use readable image placeholders
 - Installable PWA behavior when served over HTTP/HTTPS
 
 ## Running it
@@ -59,6 +61,24 @@ Then open `http://localhost:8000/` in your browser. Service-worker/offline insta
 
 GitHub Pages is also a good fit: place these files at the publishing root and add the resulting site to an iPhone/iPad Home Screen if desired.
 
+
+## New in v0.9
+
+### Single-image attachments
+
+- Messages and Narrative blocks can now carry **one static image attachment**. Add one from the block/message `…` menu; once attached, **Edit** offers Replace image and Remove image controls.
+- ThreadWriter accepts image formats the current browser can decode, then normalizes them for storage. PNG sources remain PNG; other readable formats are flattened to JPEG. Images are resized only when their longest edge exceeds **2400 px**.
+- Local media lives in **IndexedDB** under a separate image ID. Conversation states and Version History snapshots keep only lightweight references, so six snapshots do not six-times duplicate the same binary image.
+- Removing/replacing an image is treated as a destructive edit for Version History, giving the outgoing attachment a recovery checkpoint when possible. Unreferenced local media is garbage-collected after it falls out of current conversations and retained history.
+- `.threadwriter` Save As files now use a v2 wrapper that embeds the current conversation's referenced media once. v0.8.x and older raw ThreadWriter JSON files still open normally.
+- `.threadwriter-project` backups are now v2 and embed all images referenced by project scenes and retained history once at the project level. v1 project backups remain restorable.
+
+### Image-aware exports
+
+- **PNG** output renders attached images in both Mobile Chat and Transcript styles.
+- **Print / PDF** uses the same in-thread image elements, so attached images carry into the clean print stylesheet.
+- **Rich DOCX** embeds attached PNG/JPEG media directly into the Word package.
+- **Portable DOCX** and **TXT** intentionally stay text-first and insert a readable `[Image attachment: filename]` placeholder instead of binary media.
 
 ## New in v0.8.2
 
@@ -118,7 +138,7 @@ GitHub Pages is also a good fit: place these files at the publishing root and ad
 - **Create snapshot now** makes an explicit checkpoint whenever you want one.
 - Restoring a snapshot first saves the current state as **Before restore**, so using history does not casually destroy the version you are leaving.
 - Snapshot entries show date/time, reason, word count, and a short preview.
-- Local history is intentionally lightweight and browser-local. Clearing site data can remove it, and later image-heavy document formats may require moving history storage to IndexedDB rather than localStorage.
+- Local history is intentionally lightweight and browser-local. Clearing site data can remove it. As of v0.9, image binaries live separately in IndexedDB while history snapshots retain only image references.
 
 ### Project backup / restore
 
@@ -285,7 +305,7 @@ v0.6 project files add fields for the scene header and Conversation Style, but o
 
 ### Authoring tools
 
-- Single-image attachments, with captions / alt text
+- Image captions / alt text
 - Faux link previews
 
 ### Import / migration

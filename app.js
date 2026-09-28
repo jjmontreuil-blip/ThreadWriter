@@ -1,5 +1,5 @@
 (() => {
-  const APP_VERSION = '0.8.2';
+  const APP_VERSION = '0.9';
   const LEGACY_STORAGE_KEY = 'threadwriter.project.v1';
   const LIBRARY_KEY = 'threadwriter.library.v1';
   const DOCUMENT_PREFIX = 'threadwriter.document.v1.';
@@ -7,8 +7,12 @@
   const HISTORY_PREFIX = 'threadwriter.history.v1.';
   const HISTORY_MAX = 6;
   const HISTORY_INTERVAL_MS = 5 * 60 * 1000;
+  const MEDIA_DB_NAME = 'threadwriter.media.v1';
+  const MEDIA_STORE = 'images';
+  const MAX_IMAGE_DIMENSION = 2400;
+  const MAX_IMAGE_FILE_BYTES = 25 * 1024 * 1024;
   const defaultState = () => ({
-    version: 3,
+    version: 4,
     title: 'Untitled Thread',
     sceneHeader: '',
     headerFont: 'rounded',
@@ -34,6 +38,10 @@
   let narrativeInsertIndex = null;
   let narrativeReturnFocusToComposer = false;
   let pendingInsertId = null;
+  let imageTargetItemId = null;
+  let mediaDbPromise = null;
+  let mediaGcTimer = null;
+  const mediaObjectUrls = new Map();
   const findState = { query: '', replacement: '', caseSensitive: false, matches: [], current: 0 };
 
   const els = {
@@ -77,6 +85,7 @@
     newBtn: document.getElementById('newBtn'),
     importBtn: document.getElementById('importBtn'),
     fileInput: document.getElementById('fileInput'),
+    imageInput: document.getElementById('imageInput'),
     exportDocxBtn: document.getElementById('exportDocxBtn'),
     docxDialog: document.getElementById('docxDialog'),
     closeDocxDialogBtn: document.getElementById('closeDocxDialogBtn'),
@@ -184,6 +193,299 @@
   document.addEventListener('keydown', event => {
     if (event.key === 'Escape') closeTopMenus();
   });
+
+  function openMediaDb() {
+    if (!('indexedDB' in window)) return Promise.reject(new Error('This browser does not support local image storage.'));
+    if (mediaDbPromise) return mediaDbPromise;
+    mediaDbPromise = new Promise((resolve, reject) => {
+      const request = indexedDB.open(MEDIA_DB_NAME, 1);
+      request.onupgradeneeded = () => {
+        const db = request.result;
+        if (!db.objectStoreNames.contains(MEDIA_STORE)) db.createObjectStore(MEDIA_STORE, { keyPath: 'id' });
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error || new Error('Could not open image storage.'));
+    });
+    return mediaDbPromise;
+  }
+
+  async function mediaRequest(mode, action) {
+    const db = await openMediaDb();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(MEDIA_STORE, mode);
+      const store = tx.objectStore(MEDIA_STORE);
+      let request;
+      try { request = action(store); } catch (error) { reject(error); return; }
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error || new Error('Image storage request failed.'));
+      tx.onabort = () => reject(tx.error || new Error('Image storage transaction failed.'));
+    });
+  }
+
+  function putMediaRecord(record) {
+    return mediaRequest('readwrite', store => store.put(record));
+  }
+
+  function getMediaRecord(id) {
+    if (!id) return Promise.resolve(null);
+    return mediaRequest('readonly', store => store.get(id)).then(result => result || null).catch(() => null);
+  }
+
+  function deleteMediaRecord(id) {
+    if (!id) return Promise.resolve();
+    return mediaRequest('readwrite', store => store.delete(id)).catch(() => {});
+  }
+
+  function getAllMediaKeys() {
+    return mediaRequest('readonly', store => store.getAllKeys()).catch(() => []);
+  }
+
+  function normalizeImageAttachment(value) {
+    if (!value || typeof value !== 'object' || typeof value.id !== 'string' || !value.id) return null;
+    return {
+      id: value.id,
+      name: typeof value.name === 'string' && value.name ? value.name : 'image',
+      mime: ['image/jpeg', 'image/png'].includes(value.mime) ? value.mime : 'image/jpeg',
+      width: Math.max(1, Number(value.width) || 1),
+      height: Math.max(1, Number(value.height) || 1),
+      size: Math.max(0, Number(value.size) || 0)
+    };
+  }
+
+  function imageIdsForState(project) {
+    const ids = new Set();
+    for (const item of project?.messages || []) {
+      const attachment = normalizeImageAttachment(item?.imageAttachment);
+      if (attachment?.id) ids.add(attachment.id);
+    }
+    return ids;
+  }
+
+  function mergeImageIds(target, project) {
+    for (const id of imageIdsForState(project)) target.add(id);
+    return target;
+  }
+
+  async function blobToDataUrl(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = () => reject(reader.error || new Error('Could not read image data.'));
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  function dataUrlToBlob(dataUrl) {
+    const match = String(dataUrl || '').match(/^data:([^;,]+);base64,(.*)$/s);
+    if (!match) throw new Error('Invalid embedded image data.');
+    const binary = atob(match[2]);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return new Blob([bytes], { type: match[1] || 'application/octet-stream' });
+  }
+
+  async function serializeMediaForIds(ids) {
+    const media = [];
+    for (const id of ids) {
+      const record = await getMediaRecord(id);
+      if (!record?.blob) continue;
+      media.push({
+        id: record.id,
+        name: record.name || 'image',
+        mime: record.mime || record.blob.type || 'image/jpeg',
+        width: Number(record.width) || 1,
+        height: Number(record.height) || 1,
+        size: Number(record.size) || record.blob.size || 0,
+        dataUrl: await blobToDataUrl(record.blob)
+      });
+    }
+    return media;
+  }
+
+  async function restoreEmbeddedMedia(media) {
+    if (!Array.isArray(media)) return;
+    clearTimeout(mediaGcTimer);
+    mediaGcTimer = null;
+    for (const entry of media) {
+      if (!entry || typeof entry.id !== 'string' || !entry.id || typeof entry.dataUrl !== 'string') continue;
+      try {
+        const blob = dataUrlToBlob(entry.dataUrl);
+        await putMediaRecord({
+          id: entry.id,
+          name: typeof entry.name === 'string' && entry.name ? entry.name : 'image',
+          mime: ['image/jpeg', 'image/png'].includes(entry.mime) ? entry.mime : (blob.type || 'image/jpeg'),
+          width: Math.max(1, Number(entry.width) || 1),
+          height: Math.max(1, Number(entry.height) || 1),
+          size: blob.size,
+          blob,
+          createdAt: new Date().toISOString()
+        });
+      } catch (error) {
+        console.warn('Skipped an invalid embedded ThreadWriter image.', error);
+      }
+    }
+  }
+
+  async function getMediaObjectUrl(id) {
+    if (!id) return null;
+    if (mediaObjectUrls.has(id)) return mediaObjectUrls.get(id);
+    const record = await getMediaRecord(id);
+    if (!record?.blob) return null;
+    const url = URL.createObjectURL(record.blob);
+    mediaObjectUrls.set(id, url);
+    return url;
+  }
+
+  async function mountAttachmentImage(img, attachment, placeholder = null) {
+    const normalized = normalizeImageAttachment(attachment);
+    if (!normalized) return;
+    const url = await getMediaObjectUrl(normalized.id);
+    if (!img.isConnected) return;
+    if (!url) {
+      img.hidden = true;
+      if (placeholder) {
+        placeholder.hidden = false;
+        placeholder.textContent = `[Image unavailable: ${normalized.name}]`;
+      }
+      return;
+    }
+    img.src = url;
+    img.hidden = false;
+    if (placeholder) placeholder.hidden = true;
+  }
+
+  async function decodeImageFile(file) {
+    if (typeof createImageBitmap === 'function') {
+      try { return await createImageBitmap(file); } catch {}
+    }
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('The selected image could not be decoded by this browser.')); };
+      img.src = url;
+    });
+  }
+
+  function canvasToBlob(canvas, type, quality) {
+    return new Promise((resolve, reject) => {
+      canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('This browser could not prepare the image.')), type, quality);
+    });
+  }
+
+  async function normalizeAndStoreImage(file) {
+    if (!file) throw new Error('No image was selected.');
+    clearTimeout(mediaGcTimer);
+    mediaGcTimer = null;
+    if (file.type && !file.type.startsWith('image/')) throw new Error('Please choose an image file.');
+    if (file.size > MAX_IMAGE_FILE_BYTES) throw new Error('That image is larger than 25 MB. Please choose a smaller source image.');
+
+    const source = await decodeImageFile(file);
+    const sourceWidth = Number(source.width || source.naturalWidth) || 1;
+    const sourceHeight = Number(source.height || source.naturalHeight) || 1;
+    const scale = Math.min(1, MAX_IMAGE_DIMENSION / Math.max(sourceWidth, sourceHeight));
+    const width = Math.max(1, Math.round(sourceWidth * scale));
+    const height = Math.max(1, Math.round(sourceHeight * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    const outputMime = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
+    if (outputMime === 'image/jpeg') {
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, width, height);
+    }
+    ctx.drawImage(source, 0, 0, width, height);
+    source.close?.();
+    const blob = await canvasToBlob(canvas, outputMime, outputMime === 'image/jpeg' ? 0.88 : undefined);
+    const id = crypto.randomUUID ? crypto.randomUUID() : `image-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const record = {
+      id,
+      name: file.name || (outputMime === 'image/png' ? 'image.png' : 'image.jpg'),
+      mime: outputMime,
+      width,
+      height,
+      size: blob.size,
+      blob,
+      createdAt: new Date().toISOString()
+    };
+    await putMediaRecord(record);
+    return record;
+  }
+
+  function imageAttachmentFromRecord(record) {
+    return {
+      id: record.id,
+      name: record.name || 'image',
+      mime: record.mime || 'image/jpeg',
+      width: record.width,
+      height: record.height,
+      size: record.size || record.blob?.size || 0
+    };
+  }
+
+  function startImagePicker(itemId) {
+    const item = state.messages.find(entry => entry.id === itemId);
+    if (!item) return;
+    imageTargetItemId = itemId;
+    els.imageInput.value = '';
+    els.imageInput.click();
+  }
+
+  async function attachImageToItem(itemId, file) {
+    const item = state.messages.find(entry => entry.id === itemId);
+    if (!item || !file) return;
+    if (els.saveStatus) els.saveStatus.textContent = 'Preparing image…';
+    try {
+      const record = await normalizeAndStoreImage(file);
+      item.imageAttachment = imageAttachmentFromRecord(record);
+      scheduleSave();
+      renderThread();
+      if (els.saveStatus) els.saveStatus.textContent = 'Image attached';
+      scheduleMediaGarbageCollection();
+    } catch (error) {
+      console.error(error);
+      if (els.saveStatus) els.saveStatus.textContent = 'Image not attached';
+      alert(error.message || 'ThreadWriter could not attach that image.');
+    }
+  }
+
+  function removeImageFromItem(itemId) {
+    const item = state.messages.find(entry => entry.id === itemId);
+    if (!item?.imageAttachment) return;
+    delete item.imageAttachment;
+    scheduleSave();
+    renderThread();
+    scheduleMediaGarbageCollection();
+  }
+
+  async function garbageCollectMedia() {
+    try {
+      const referenced = new Set();
+      mergeImageIds(referenced, state);
+      for (const id of Object.keys(library.documents || {})) {
+        const doc = id === currentDocumentId ? state : readStoredDocument(id);
+        if (doc) mergeImageIds(referenced, doc);
+        const history = loadHistory(id);
+        for (const snapshot of history.snapshots) mergeImageIds(referenced, snapshot.state);
+      }
+      const keys = await getAllMediaKeys();
+      for (const id of keys) {
+        if (referenced.has(id)) continue;
+        const url = mediaObjectUrls.get(id);
+        if (url) URL.revokeObjectURL(url);
+        mediaObjectUrls.delete(id);
+        await deleteMediaRecord(id);
+      }
+    } catch (error) {
+      console.warn('ThreadWriter image cleanup skipped.', error);
+    }
+  }
+
+  function scheduleMediaGarbageCollection() {
+    clearTimeout(mediaGcTimer);
+    mediaGcTimer = setTimeout(() => garbageCollectMedia(), 3500);
+  }
 
   function blankProjectLibrary() {
     return { version: 1, lastProjectId: null, projects: {} };
@@ -326,7 +628,7 @@
     const fallbackSpeakerId = participants[0]?.id || null;
     return {
       ...project,
-      version: 3,
+      version: 4,
       title: typeof project.title === 'string' ? project.title : base.title,
       sceneHeader: typeof project.sceneHeader === 'string' ? project.sceneHeader : '',
       headerFont: allowedFonts.has(project.headerFont) ? project.headerFont : 'rounded',
@@ -342,6 +644,9 @@
           text: typeof m?.text === 'string' ? m.text : String(m?.text ?? ''),
           createdAt: m?.createdAt || new Date().toISOString()
         };
+        const imageAttachment = normalizeImageAttachment(m?.imageAttachment);
+        if (imageAttachment) item.imageAttachment = imageAttachment;
+        else delete item.imageAttachment;
         if (kind === 'narrative') {
           delete item.speakerId;
           delete item.annotation;
@@ -396,12 +701,14 @@
     const payload = { version: 1, snapshots: (history?.snapshots || []).slice(0, HISTORY_MAX) };
     try {
       localStorage.setItem(historyStorageKey(id), JSON.stringify(payload));
+      scheduleMediaGarbageCollection();
       return true;
     } catch (error) {
       console.warn('ThreadWriter history save failed; pruning snapshots.', error);
       try {
         payload.snapshots = payload.snapshots.slice(0, Math.min(6, HISTORY_MAX));
         localStorage.setItem(historyStorageKey(id), JSON.stringify(payload));
+        scheduleMediaGarbageCollection();
         return true;
       } catch (retryError) {
         console.error('ThreadWriter history save failed', retryError);
@@ -450,8 +757,12 @@
     if (stateSignature(previousState) === stateSignature(nextState)) return;
     // Do not clutter a brand-new thread's history with the untouched factory blank.
     if (stateSignature(previousState) === stateSignature(defaultState())) return;
+    const previousImageIds = imageIdsForState(previousState);
+    const nextImageIds = imageIdsForState(nextState);
+    const removedOrReplacedImage = [...previousImageIds].some(id => !nextImageIds.has(id));
     const destructive = (nextState.messages?.length || 0) < (previousState.messages?.length || 0)
-      || (nextState.participants?.length || 0) < (previousState.participants?.length || 0);
+      || (nextState.participants?.length || 0) < (previousState.participants?.length || 0)
+      || removedOrReplacedImage;
     createSnapshot(documentId, previousState, destructive ? 'Before destructive edit' : 'Automatic snapshot', { force: destructive });
   }
 
@@ -639,6 +950,31 @@
     });
   }
 
+  function makeImageAttachmentElement(item, kind = 'message') {
+    const attachment = normalizeImageAttachment(item?.imageAttachment);
+    if (!attachment) return null;
+    const frame = document.createElement('div');
+    frame.className = `image-attachment image-attachment-${kind}`;
+    frame.title = attachment.name || 'Image attachment';
+
+    const img = document.createElement('img');
+    img.className = 'attached-image';
+    img.alt = 'Image attachment';
+    img.loading = 'eager';
+    if (attachment.width && attachment.height) {
+      img.width = attachment.width;
+      img.height = attachment.height;
+      img.style.aspectRatio = `${attachment.width} / ${attachment.height}`;
+    }
+
+    const placeholder = document.createElement('div');
+    placeholder.className = 'image-attachment-placeholder';
+    placeholder.textContent = `Loading image…`;
+    frame.append(img, placeholder);
+    mountAttachmentImage(img, attachment, placeholder);
+    return frame;
+  }
+
   function renderThread() {
     updateWordCount();
     els.thread.innerHTML = '';
@@ -701,12 +1037,24 @@
         menu.className = 'message-menu';
         menu.hidden = true;
         menu.setAttribute('role', 'menu');
+        const hasImage = Boolean(item.imageAttachment);
         const showRoot = () => {
-          const edit = makeToolButton('Edit', () => { closeMessageMenus(); openNarrativeDialog(item.id); });
-          const move = makeSubmenuButton('Move', () => showMove());
-          const insert = makeSubmenuButton('Insert', () => showInsert());
-          const del = makeToolButton('Delete', () => { closeMessageMenus(); deleteMessage(item.id); }, true);
-          setMessageMenuPage(menu, [edit, insert, move, del]);
+          const controls = [];
+          if (hasImage) controls.push(makeSubmenuButton('Edit', () => showEdit()));
+          else controls.push(makeToolButton('Edit', () => { closeMessageMenus(); openNarrativeDialog(item.id); }));
+          controls.push(makeSubmenuButton('Insert', () => showInsert()));
+          controls.push(makeSubmenuButton('Move', () => showMove()));
+          if (!hasImage) controls.push(makeSubmenuButton('Add', () => showAdd()));
+          controls.push(makeToolButton('Delete', () => { closeMessageMenus(); deleteMessage(item.id); }, true));
+          setMessageMenuPage(menu, controls);
+        };
+        const showEdit = () => {
+          const controls = [
+            makeToolButton('Text', () => { closeMessageMenus(); openNarrativeDialog(item.id); }),
+            makeToolButton('Replace image…', () => { closeMessageMenus(); startImagePicker(item.id); }),
+            makeToolButton('Remove image', () => { closeMessageMenus(); removeImageFromItem(item.id); }, true)
+          ];
+          setMessageMenuPage(menu, controls, showRoot, 'Edit');
         };
         const showMove = () => {
           const moveUp = makeToolButton('Up', () => { closeMessageMenus(); moveMessage(item.id, -1); });
@@ -722,6 +1070,10 @@
           const narrativeBelow = makeToolButton('Narrative below…', () => { closeMessageMenus(); openNarrativeDialog(null, index + 1); });
           setMessageMenuPage(menu, [messageAbove, messageBelow, narrativeAbove, narrativeBelow], showRoot, 'Insert');
         };
+        const showAdd = () => {
+          const image = makeToolButton('Image…', () => { closeMessageMenus(); startImagePicker(item.id); });
+          setMessageMenuPage(menu, [image], showRoot, 'Add');
+        };
         menu._threadwriterShowRoot = showRoot;
         showRoot();
 
@@ -736,7 +1088,10 @@
         });
         menu.addEventListener('click', e => e.stopPropagation());
         actions.append(menuButton, menu);
-        card.append(text, actions);
+        card.appendChild(text);
+        const narrativeImage = makeImageAttachmentElement(item, 'narrative');
+        if (narrativeImage) card.appendChild(narrativeImage);
+        card.appendChild(actions);
         row.appendChild(card);
         els.thread.appendChild(row);
         return;
@@ -798,9 +1153,10 @@
 
       const hasAnnotation = Boolean(item.annotation);
       const hasTimestamp = Boolean(item.displayTimestamp);
+      const hasImage = Boolean(item.imageAttachment);
       const showRoot = () => {
         const controls = [];
-        if (hasAnnotation || hasTimestamp) {
+        if (hasAnnotation || hasTimestamp || hasImage) {
           controls.push(makeSubmenuButton('Edit', () => showEdit()));
         } else {
           controls.push(makeToolButton('Edit', () => { closeMessageMenus(); startEditMessage(item.id, bubble); }));
@@ -808,7 +1164,7 @@
         controls.push(makeToolButton('Change speaker', () => { closeMessageMenus(); cycleMessageSpeaker(item.id); }));
         controls.push(makeSubmenuButton('Move', () => showMove()));
         controls.push(makeSubmenuButton('Insert', () => showInsert()));
-        if (!hasAnnotation || !hasTimestamp) controls.push(makeSubmenuButton('Add', () => showAdd()));
+        if (!hasAnnotation || !hasTimestamp || !hasImage) controls.push(makeSubmenuButton('Add', () => showAdd()));
         controls.push(makeToolButton('Delete', () => { closeMessageMenus(); deleteMessage(item.id); }, true));
         setMessageMenuPage(menu, controls);
       };
@@ -816,6 +1172,10 @@
         const controls = [makeToolButton('Message', () => { closeMessageMenus(); startEditMessage(item.id, bubble); })];
         if (hasAnnotation) controls.push(makeToolButton('Annotation…', () => { closeMessageMenus(); openAnnotationDialog(item.id); }));
         if (hasTimestamp) controls.push(makeToolButton('Timestamp…', () => { closeMessageMenus(); openTimestampDialog(item.id); }));
+        if (hasImage) {
+          controls.push(makeToolButton('Replace image…', () => { closeMessageMenus(); startImagePicker(item.id); }));
+          controls.push(makeToolButton('Remove image', () => { closeMessageMenus(); removeImageFromItem(item.id); }, true));
+        }
         setMessageMenuPage(menu, controls, showRoot, 'Edit');
       };
       const showMove = () => {
@@ -836,6 +1196,7 @@
         const controls = [];
         if (!hasAnnotation) controls.push(makeToolButton('Annotation…', () => { closeMessageMenus(); openAnnotationDialog(item.id); }));
         if (!hasTimestamp) controls.push(makeToolButton('Timestamp…', () => { closeMessageMenus(); openTimestampDialog(item.id); }));
+        if (!hasImage) controls.push(makeToolButton('Image…', () => { closeMessageMenus(); startImagePicker(item.id); }));
         setMessageMenuPage(menu, controls, showRoot, 'Add');
       };
       menu._threadwriterShowRoot = showRoot;
@@ -855,6 +1216,9 @@
       actions.append(menuButton, menu);
       bubbleWrap.append(bubble, actions);
       card.appendChild(bubbleWrap);
+
+      const messageImage = makeImageAttachmentElement(item, 'message');
+      if (messageImage) card.appendChild(messageImage);
 
       if (item.annotation) {
         const note = document.createElement('div');
@@ -941,7 +1305,11 @@
     }
     controls.forEach(control => menu.appendChild(control));
     if (!menu.hidden && menu._threadwriterButton && menu._threadwriterRow) {
-      requestAnimationFrame(() => positionMessageMenu(menu, menu._threadwriterButton, menu._threadwriterRow));
+      requestAnimationFrame(() => {
+        const button = menu._threadwriterButton;
+        const row = menu._threadwriterRow;
+        if (!menu.hidden && button?.isConnected && row?.isConnected) positionMessageMenu(menu, button, row);
+      });
     }
   }
 
@@ -985,6 +1353,7 @@
   }
 
   function positionMessageMenu(menu, button, row) {
+    if (!menu || !button || !row) return;
     const vv = window.visualViewport;
     const viewLeft = vv?.offsetLeft || 0;
     const viewTop = vv?.offsetTop || 0;
@@ -1144,6 +1513,7 @@
     if (pendingInsertId === id) pendingInsertId = null;
     scheduleSave();
     renderThread();
+    scheduleMediaGarbageCollection();
   }
 
   function openTimestampDialog(id) {
@@ -2084,25 +2454,32 @@
     const project = projectLibrary.projects[selectedProjectId];
     if (!project) return;
     checkpointCurrent('Project backup checkpoint');
+    const mediaIds = new Set();
     const scenes = project.documentIds.map((documentId, index) => {
       const documentState = documentId === currentDocumentId ? state : readStoredDocument(documentId);
       if (!documentState) return null;
+      mergeImageIds(mediaIds, documentState);
+      const history = loadHistory(documentId).snapshots.map(snapshot => {
+        mergeImageIds(mediaIds, snapshot.state);
+        return { ...snapshot, state: cloneState(snapshot.state) };
+      });
       return {
         order: index,
         title: documentState.title || 'Untitled Thread',
         state: cloneState(documentState),
-        history: loadHistory(documentId).snapshots.map(snapshot => ({ ...snapshot, state: cloneState(snapshot.state) }))
+        history
       };
     }).filter(Boolean);
     const backup = {
       format: 'threadwriter-project-backup',
-      version: 1,
+      version: 2,
       exportedAt: new Date().toISOString(),
       project: {
         name: project.name,
         createdAt: project.createdAt,
         scenes
-      }
+      },
+      media: await serializeMediaForIds(mediaIds)
     };
     const filename = `${safeName(project.name)}.threadwriter-project`;
     const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
@@ -2110,10 +2487,11 @@
     if (result && result !== 'cancelled' && els.saveStatus) els.saveStatus.textContent = 'Project backup created';
   }
 
-  function restoreProjectBackup(parsed) {
-    if (!parsed || parsed.format !== 'threadwriter-project-backup' || parsed.version !== 1 || !parsed.project || !Array.isArray(parsed.project.scenes)) {
+  async function restoreProjectBackup(parsed) {
+    if (!parsed || parsed.format !== 'threadwriter-project-backup' || ![1, 2].includes(parsed.version) || !parsed.project || !Array.isArray(parsed.project.scenes)) {
       throw new Error('Not a ThreadWriter project backup');
     }
+    if (parsed.version >= 2) await restoreEmbeddedMedia(parsed.media);
     const projectId = makeProjectId();
     const documentIds = [];
     parsed.project.scenes.forEach(scene => {
@@ -2153,7 +2531,14 @@
   async function saveAsProject() {
     saveNow({ quiet: true });
     const filename = `${safeName(state.title)}.threadwriter`;
-    const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+    const payload = {
+      format: 'threadwriter-file',
+      version: 2,
+      exportedAt: new Date().toISOString(),
+      state: cloneState(state),
+      media: await serializeMediaForIds(imageIdsForState(state))
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const result = await saveBlobAsPortableFile(blob, filename, 'ThreadWriter project', ['.threadwriter']);
     if (result === 'saved' && els.saveStatus) els.saveStatus.textContent = 'Saved file';
     else if (result === 'shared' && els.saveStatus) els.saveStatus.textContent = 'Shared file copy';
@@ -2223,7 +2608,7 @@
     if (!file) return;
     try {
       const parsed = JSON.parse(await file.text());
-      const result = restoreProjectBackup(parsed);
+      const result = await restoreProjectBackup(parsed);
       renderProjectsDialog();
       alert(`Restored “${projectLibrary.projects[result.projectId]?.name || 'project'}” with ${result.documentIds.length} scene${result.documentIds.length === 1 ? '' : 's'}.`);
     } catch (error) {
@@ -2257,7 +2642,12 @@
     if (!file) return;
     try {
       const parsed = JSON.parse(await file.text());
-      const imported = normalizeState(parsed);
+      let importedSource = parsed;
+      if (parsed?.format === 'threadwriter-file' && parsed?.version >= 2 && parsed?.state) {
+        await restoreEmbeddedMedia(parsed.media);
+        importedSource = parsed.state;
+      }
+      const imported = normalizeState(importedSource);
       checkpointCurrent('Closed / switched thread');
       state = imported;
       currentDocumentId = makeDocumentId();
@@ -2266,10 +2656,22 @@
       els.composer.value = '';
       autoSizeComposer();
       render();
+      scheduleMediaGarbageCollection();
     } catch (err) {
       alert(`Could not import this file: ${err.message}`);
     } finally {
       els.fileInput.value = '';
+    }
+  });
+
+  els.imageInput.addEventListener('change', async () => {
+    const file = els.imageInput.files?.[0];
+    const targetId = imageTargetItemId;
+    imageTargetItemId = null;
+    try {
+      if (file && targetId) await attachImageToItem(targetId, file);
+    } finally {
+      els.imageInput.value = '';
     }
   });
 
@@ -2309,12 +2711,15 @@
     if (state.sceneHeader) lines.push(state.sceneHeader, '');
     state.messages.forEach(item => {
       if (isNarrative(item)) {
-        lines.push(item.text, '');
+        lines.push(item.text);
+        if (item.imageAttachment) lines.push(`[Image attachment: ${item.imageAttachment.name || 'image'}]`);
+        lines.push('');
         return;
       }
       const p = getParticipant(item.speakerId);
       const stamp = item.displayTimestamp ? ` [${item.displayTimestamp}]` : '';
       lines.push(`${p?.name || 'Unknown'}${stamp}: ${item.text}`);
+      if (item.imageAttachment) lines.push(`    [Image attachment: ${item.imageAttachment.name || 'image'}]`);
       if (item.annotation) {
         String(item.annotation).split('\n').forEach(line => lines.push(`    ${line}`));
       }
@@ -2382,6 +2787,46 @@
     return result.length ? result : [''];
   }
 
+  function fitImageBox(attachment, maxWidth, maxHeight = Infinity) {
+    const meta = normalizeImageAttachment(attachment);
+    if (!meta) return { width: 0, height: 0 };
+    const scale = Math.min(1, maxWidth / meta.width, maxHeight / meta.height);
+    return {
+      width: Math.max(1, Math.round(meta.width * scale)),
+      height: Math.max(1, Math.round(meta.height * scale))
+    };
+  }
+
+  async function loadCanvasImagesForState(project) {
+    const images = new Map();
+    for (const id of imageIdsForState(project)) {
+      const record = await getMediaRecord(id);
+      if (!record?.blob) continue;
+      try {
+        if (typeof createImageBitmap === 'function') {
+          images.set(id, await createImageBitmap(record.blob));
+        } else {
+          const url = await getMediaObjectUrl(id);
+          if (!url) continue;
+          const img = await new Promise((resolve, reject) => {
+            const element = new Image();
+            element.onload = () => resolve(element);
+            element.onerror = reject;
+            element.src = url;
+          });
+          images.set(id, img);
+        }
+      } catch (error) {
+        console.warn('Could not decode an image for PNG export.', error);
+      }
+    }
+    return images;
+  }
+
+  function closeCanvasImages(images) {
+    for (const source of images.values()) source?.close?.();
+  }
+
   function roundedRectPath(ctx, x, y, width, height, radius) {
     const r = Math.min(radius, width / 2, height / 2);
     ctx.beginPath();
@@ -2393,7 +2838,7 @@
     ctx.closePath();
   }
 
-  function paintPngThread(ctx, draw = false) {
+  function paintPngThread(ctx, draw = false, imageMap = new Map()) {
     const W = 1080;
     const left = 72;
     const right = 72;
@@ -2437,7 +2882,29 @@
           lines.forEach((line, lineIndex) => ctx.fillText(line, W / 2, y + lineIndex * 31));
           ctx.textAlign = 'left';
         }
-        y += Math.max(1, lines.length) * 31 + 22;
+        y += Math.max(1, lines.length) * 31 + 10;
+        if (item.imageAttachment) {
+          const box = fitImageBox(item.imageAttachment, contentWidth * 0.68, 680);
+          y += 8;
+          const x = (W - box.width) / 2;
+          if (draw && box.width && box.height) {
+            const source = imageMap.get(item.imageAttachment.id);
+            if (source) {
+              ctx.drawImage(source, x, y, box.width, box.height);
+            } else {
+              ctx.fillStyle = '#e5e5ea';
+              roundedRectPath(ctx, x, y, box.width, box.height, 16);
+              ctx.fill();
+              ctx.fillStyle = '#686872';
+              ctx.font = '500 16px Arial, sans-serif';
+              ctx.textAlign = 'center';
+              ctx.fillText('Image unavailable', W / 2, y + Math.max(12, box.height / 2 - 8));
+              ctx.textAlign = 'left';
+            }
+          }
+          y += box.height + 12;
+        }
+        y += 12;
         return;
       }
 
@@ -2507,6 +2974,30 @@
         y += bubbleHeight;
       }
 
+      if (item.imageAttachment) {
+        y += 10;
+        const imageMaxWidth = transcript ? Math.min(620, contentWidth) : Math.min(620, maxBubbleWidth);
+        const box = fitImageBox(item.imageAttachment, imageMaxWidth, 720);
+        const imageX = transcript || side === 'left' ? left : W - right - box.width;
+        if (draw && box.width && box.height) {
+          const source = imageMap.get(item.imageAttachment.id);
+          if (source) {
+            ctx.drawImage(source, imageX, y, box.width, box.height);
+          } else {
+            ctx.fillStyle = '#e5e5ea';
+            roundedRectPath(ctx, imageX, y, box.width, box.height, 16);
+            ctx.fill();
+            ctx.fillStyle = '#686872';
+            ctx.font = '500 16px Arial, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('Image unavailable', imageX + box.width / 2, y + Math.max(12, box.height / 2 - 8));
+            ctx.textAlign = 'left';
+          }
+        }
+        annotationMaxWidth = Math.max(annotationMaxWidth, box.width);
+        y += box.height;
+      }
+
       if (item.annotation) {
         y += 9;
         ctx.font = 'italic 500 18px Arial, sans-serif';
@@ -2524,13 +3015,16 @@
     return y + 72;
   }
 
-  function exportPng() {
+  async function exportPng() {
+    let imageMap = new Map();
     try {
+      if (els.saveStatus) els.saveStatus.textContent = 'Preparing PNG…';
+      imageMap = await loadCanvasImagesForState(state);
       const measure = document.createElement('canvas');
       measure.width = 1080;
       measure.height = 100;
       const measureCtx = measure.getContext('2d');
-      const height = Math.ceil(paintPngThread(measureCtx, false));
+      const height = Math.ceil(paintPngThread(measureCtx, false, imageMap));
       const maxHeight = 15000;
       if (height > maxHeight) {
         alert('This thread is too tall for a reliable single PNG in some browsers. Use PDF for this one for now; split-image export is on the roadmap.');
@@ -2543,17 +3037,15 @@
       const ctx = canvas.getContext('2d');
       ctx.fillStyle = state.conversationStyle === 'transcript' ? '#ffffff' : '#f4f4f7';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
-      paintPngThread(ctx, true);
-      canvas.toBlob(blob => {
-        if (!blob) {
-          alert('PNG export failed in this browser. PDF export is still available.');
-          return;
-        }
-        downloadBlob(blob, `${safeName(state.title)}.png`);
-      }, 'image/png');
+      paintPngThread(ctx, true, imageMap);
+      const blob = await canvasToBlob(canvas, 'image/png');
+      downloadBlob(blob, `${safeName(state.title)}.png`);
+      if (els.saveStatus) els.saveStatus.textContent = 'PNG exported';
     } catch (err) {
       console.error(err);
       alert('PNG export failed in this browser. PDF export is still available.');
+    } finally {
+      closeCanvasImages(imageMap);
     }
   }
 
@@ -2573,12 +3065,16 @@
     return match ? match[1].toUpperCase() : fallback;
   }
 
-  function documentPackage(documentXml, stylesXml) {
+  function documentPackage(documentXml, stylesXml, mediaFiles = {}, imageRelationships = []) {
+    const imageRels = imageRelationships.map(rel => `  <Relationship Id="${rel.id}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="${rel.target}"/>`).join('\n');
     const files = {
       '[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
   <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
   <Default Extension="xml" ContentType="application/xml"/>
+  <Default Extension="jpg" ContentType="image/jpeg"/>
+  <Default Extension="jpeg" ContentType="image/jpeg"/>
+  <Default Extension="png" ContentType="image/png"/>
   <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
   <Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>
 </Types>`,
@@ -2591,7 +3087,9 @@
       'word/_rels/document.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rIdStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
-</Relationships>`
+${imageRels}
+</Relationships>`,
+      ...mediaFiles
     };
     return new Blob([makeStoredZip(files)], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
   }
@@ -2649,12 +3147,14 @@
     for (const item of state.messages) {
       if (isNarrative(item)) {
         paragraphs.push(wordNarrativeParagraph(item.text));
+        if (item.imageAttachment) paragraphs.push(`<w:p><w:pPr><w:jc w:val="center"/><w:spacing w:after="180"/></w:pPr><w:r><w:rPr><w:i/><w:color w:val="777780"/></w:rPr><w:t>[Image attachment: ${xmlEscape(item.imageAttachment.name || 'image')}]</w:t></w:r></w:p>`);
         continue;
       }
       const p = getParticipant(item.speakerId);
       const timestampRun = item.displayTimestamp ? `<w:r><w:rPr><w:i/><w:color w:val="6D6D78"/><w:sz w:val="19"/><w:szCs w:val="19"/></w:rPr><w:t xml:space="preserve">  ${xmlEscape(item.displayTimestamp)}</w:t></w:r>` : '';
       paragraphs.push(`<w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:rPr><w:b/></w:rPr><w:t>${xmlEscape(p?.name || 'Unknown')}</w:t></w:r>${timestampRun}</w:p>`);
-      paragraphs.push(`<w:p><w:pPr><w:spacing w:after="${item.annotation ? 60 : 180}"/></w:pPr>${textRuns(item.text)}</w:p>`);
+      paragraphs.push(`<w:p><w:pPr><w:spacing w:after="${item.imageAttachment || item.annotation ? 60 : 180}"/></w:pPr>${textRuns(item.text)}</w:p>`);
+      if (item.imageAttachment) paragraphs.push(`<w:p><w:pPr><w:spacing w:after="${item.annotation ? 60 : 180}"/></w:pPr><w:r><w:rPr><w:i/><w:color w:val="777780"/></w:rPr><w:t>[Image attachment: ${xmlEscape(item.imageAttachment.name || 'image')}]</w:t></w:r></w:p>`);
       if (item.annotation) paragraphs.push(wordAnnotationParagraph(item.annotation, 'left'));
     }
 
@@ -2729,7 +3229,7 @@
     </w:tc>`;
   }
 
-  function richMessageTable(message, participant, continuesSpeaker) {
+  function richMessageTable(message, participant, continuesSpeaker, includeAnnotation = true) {
     const CONTENT_WIDTH = 10080;
     const bubbleWidth = Math.round(CONTENT_WIDTH * estimateBubblePercent(message.text) / 100);
     const spacerWidth = CONTENT_WIDTH - bubbleWidth;
@@ -2742,7 +3242,7 @@
     const labelRow = continuesSpeaker ? '' : `<w:tr><w:trPr><w:cantSplit/></w:trPr>${labelCell(name, side)}</w:tr>`;
     const bubbleRow = `<w:tr><w:trPr><w:cantSplit/></w:trPr>${side === 'left' ? `${bubbleCell(bubbleWidth, message.text, fill)}${emptyCell(spacerWidth)}` : `${emptyCell(spacerWidth)}${bubbleCell(bubbleWidth, message.text, fill)}`}</w:tr>`;
     const timestampRow = message.displayTimestamp ? `<w:tr><w:trPr><w:cantSplit/></w:trPr>${side === 'left' ? `${timestampCell(bubbleWidth, message.displayTimestamp, side)}${emptyCell(spacerWidth)}` : `${emptyCell(spacerWidth)}${timestampCell(bubbleWidth, message.displayTimestamp, side)}`}</w:tr>` : '';
-    const annotationRow = message.annotation ? `<w:tr><w:trPr><w:cantSplit/></w:trPr>${side === 'left' ? `${annotationCell(bubbleWidth, message.annotation, side)}${emptyCell(spacerWidth)}` : `${emptyCell(spacerWidth)}${annotationCell(bubbleWidth, message.annotation, side)}`}</w:tr>` : '';
+    const annotationRow = includeAnnotation && message.annotation ? `<w:tr><w:trPr><w:cantSplit/></w:trPr>${side === 'left' ? `${annotationCell(bubbleWidth, message.annotation, side)}${emptyCell(spacerWidth)}` : `${emptyCell(spacerWidth)}${annotationCell(bubbleWidth, message.annotation, side)}`}</w:tr>` : '';
     // A timestamp is part of the new message beat and sits above the bubble.
     const gap = message.displayTimestamp
       ? (continuesSpeaker ? 220 : 260)
@@ -2764,33 +3264,112 @@
 </w:tbl>`;
   }
 
-  function richTranscriptMessage(message, participant) {
+  function richTranscriptMessage(message, participant, includeAnnotation = true) {
     const name = participant?.name || 'Unknown';
     const timestamp = message.displayTimestamp
       ? `<w:r><w:rPr><w:color w:val="7A7A84"/><w:sz w:val="17"/><w:szCs w:val="17"/></w:rPr><w:t xml:space="preserve">  ${xmlEscape(message.displayTimestamp)}</w:t></w:r>`
       : '';
-    const annotation = message.annotation ? wordAnnotationParagraph(message.annotation, 'left') : '';
+    const annotation = includeAnnotation && message.annotation ? wordAnnotationParagraph(message.annotation, 'left') : '';
     return `<w:p><w:pPr><w:spacing w:before="180" w:after="45"/></w:pPr><w:r><w:rPr><w:b/><w:smallCaps/><w:color w:val="6D6D78"/><w:sz w:val="18"/><w:szCs w:val="18"/></w:rPr><w:t>${xmlEscape(name)}</w:t></w:r>${timestamp}</w:p>
 <w:p><w:pPr><w:spacing w:before="0" w:after="${message.annotation ? 35 : 90}"/></w:pPr>${richTextRuns(message.text)}</w:p>${annotation}`;
   }
 
+  async function prepareDocxImages(project) {
+    const images = new Map();
+    const mediaFiles = {};
+    const relationships = [];
+    let index = 1;
+    for (const id of imageIdsForState(project)) {
+      const record = await getMediaRecord(id);
+      if (!record?.blob) continue;
+      const ext = record.mime === 'image/png' ? 'png' : 'jpg';
+      const relId = `rIdImage${index}`;
+      const target = `media/image${index}.${ext}`;
+      const packagePath = `word/${target}`;
+      const bytes = new Uint8Array(await record.blob.arrayBuffer());
+      const info = {
+        relId,
+        target,
+        packagePath,
+        name: record.name || `image${index}.${ext}`,
+        mime: record.mime || (ext === 'png' ? 'image/png' : 'image/jpeg'),
+        width: Number(record.width) || 1,
+        height: Number(record.height) || 1,
+        docPrId: index
+      };
+      images.set(id, info);
+      mediaFiles[packagePath] = bytes;
+      relationships.push({ id: relId, target });
+      index += 1;
+    }
+    return { images, mediaFiles, relationships };
+  }
+
+  function wordImageParagraph(info, align = 'left', maxWidthInches = 5.4, maxHeightInches = 6.5) {
+    if (!info) return '';
+    const EMU_PER_INCH = 914400;
+    const intrinsicWidth = Math.max(1, info.width) / 96 * EMU_PER_INCH;
+    const intrinsicHeight = Math.max(1, info.height) / 96 * EMU_PER_INCH;
+    const scale = Math.min(1, maxWidthInches * EMU_PER_INCH / intrinsicWidth, maxHeightInches * EMU_PER_INCH / intrinsicHeight);
+    const cx = Math.max(1, Math.round(intrinsicWidth * scale));
+    const cy = Math.max(1, Math.round(intrinsicHeight * scale));
+    return `<w:p>
+  <w:pPr><w:jc w:val="${align}"/><w:spacing w:before="70" w:after="120"/></w:pPr>
+  <w:r><w:drawing>
+    <wp:inline distT="0" distB="0" distL="0" distR="0">
+      <wp:extent cx="${cx}" cy="${cy}"/>
+      <wp:effectExtent l="0" t="0" r="0" b="0"/>
+      <wp:docPr id="${info.docPrId}" name="${xmlEscape(info.name)}"/>
+      <wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr>
+      <a:graphic>
+        <a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">
+          <pic:pic>
+            <pic:nvPicPr><pic:cNvPr id="0" name="${xmlEscape(info.name)}"/><pic:cNvPicPr/></pic:nvPicPr>
+            <pic:blipFill><a:blip r:embed="${info.relId}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>
+            <pic:spPr>
+              <a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm>
+              <a:prstGeom prst="rect"><a:avLst/></a:prstGeom>
+            </pic:spPr>
+          </pic:pic>
+        </a:graphicData>
+      </a:graphic>
+    </wp:inline>
+  </w:drawing></w:r>
+</w:p>`;
+  }
+
   async function buildRichDocx() {
+    const prepared = await prepareDocxImages(state);
     const blocks = [];
     blocks.push(`<w:p><w:pPr><w:pStyle w:val="Title"/></w:pPr><w:r><w:t>${xmlEscape(state.title || 'Untitled Thread')}</w:t></w:r></w:p>`);
     if (state.sceneHeader) blocks.push(wordSceneHeaderParagraph());
     state.messages.forEach((item, index) => {
+      const imageInfo = item.imageAttachment ? prepared.images.get(item.imageAttachment.id) : null;
       if (isNarrative(item)) {
         blocks.push(wordNarrativeParagraph(item.text));
+        if (imageInfo) blocks.push(wordImageParagraph(imageInfo, 'center', 5.4, 6.5));
         return;
       }
       const p = getParticipant(item.speakerId);
       const previous = state.messages[index - 1];
       const continuesSpeaker = isMessage(previous) && previous?.speakerId === item.speakerId;
-      blocks.push(state.conversationStyle === 'transcript' ? richTranscriptMessage(item, p) : richMessageTable(item, p, continuesSpeaker));
+      const includeAnnotation = !imageInfo;
+      blocks.push(state.conversationStyle === 'transcript'
+        ? richTranscriptMessage(item, p, includeAnnotation)
+        : richMessageTable(item, p, continuesSpeaker, includeAnnotation));
+      if (imageInfo) {
+        const align = state.conversationStyle === 'transcript' ? 'left' : (p?.side === 'right' ? 'right' : 'left');
+        blocks.push(wordImageParagraph(imageInfo, align, state.conversationStyle === 'transcript' ? 5.4 : 4.7, 6.3));
+        if (item.annotation) blocks.push(wordAnnotationParagraph(item.annotation, align));
+      }
     });
 
     const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+  xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
+  xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
+  xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">
   <w:body>
     ${blocks.join('\n')}
     <w:p><w:pPr><w:spacing w:after="120"/></w:pPr></w:p>
@@ -2801,7 +3380,7 @@
   </w:body>
 </w:document>`;
 
-    return documentPackage(documentXml, baseStylesXml);
+    return documentPackage(documentXml, baseStylesXml, prepared.mediaFiles, prepared.relationships);
   }
 
   function makeStoredZip(files) {
@@ -2812,7 +3391,11 @@
 
     for (const [name, content] of Object.entries(files)) {
       const nameBytes = encoder.encode(name);
-      const data = encoder.encode(content);
+      const data = content instanceof Uint8Array
+        ? content
+        : content instanceof ArrayBuffer
+          ? new Uint8Array(content)
+          : encoder.encode(String(content));
       const crc = crc32(data);
       const local = new Uint8Array(30 + nameBytes.length + data.length);
       const view = new DataView(local.buffer);

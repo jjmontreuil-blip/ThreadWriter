@@ -858,3 +858,67 @@ dialog::backdrop { background: rgba(0,0,0,.45); backdrop-filter: blur(3px); }
   .narrative-card { width: 78%; break-inside: avoid; }
   .narrative-text, .message-annotation { color: #555; }
 }
+
+/* v0.9: single-image attachments */
+.image-attachment {
+  margin-top: 8px;
+  min-width: 120px;
+}
+.image-attachment-message {
+  max-width: min(100%, 520px);
+}
+.message-row.right .image-attachment-message { margin-left: auto; }
+.image-attachment-narrative {
+  width: min(100%, 560px);
+  margin-left: auto;
+  margin-right: auto;
+}
+.attached-image {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: min(58vh, 620px);
+  border-radius: 14px;
+  object-fit: contain;
+  background: color-mix(in srgb, var(--field) 90%, transparent);
+  box-shadow: 0 1px 0 rgba(0,0,0,.06);
+}
+.message-row.right .attached-image { margin-left: auto; }
+.image-attachment-narrative .attached-image { margin-left: auto; margin-right: auto; }
+.image-attachment-placeholder {
+  max-width: 100%;
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  padding: 14px;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--field) 78%, transparent);
+  font-size: 11px;
+  text-align: center;
+}
+.thread.style-transcript .image-attachment-message {
+  max-width: min(72%, 560px);
+  margin-left: 0;
+  margin-right: auto;
+}
+.thread.style-transcript .message-row.right .attached-image { margin-left: 0; }
+
+@media (max-width: 700px) {
+  .image-attachment-message { max-width: 100%; }
+  .thread.style-transcript .image-attachment-message { max-width: min(88%, 560px); }
+  .attached-image { max-height: 54vh; }
+}
+
+@media print {
+  .image-attachment { break-inside: avoid; }
+  .attached-image {
+    max-width: 100%;
+    max-height: 6.5in;
+    border-radius: 0;
+    box-shadow: none;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .image-attachment-placeholder { display: none; }
+}
+.narrative-actions { top: 8px; transform: none; }
