@@ -722,3 +722,67 @@ dialog::backdrop { background: rgba(0,0,0,.45); backdrop-filter: blur(3px); }
   .history-item { grid-template-columns: 1fr; }
   .history-item > button { justify-self: start; }
 }
+
+/* v0.8: writer-first narrative blocks and under-message annotations */
+.message-annotation {
+  margin: 7px 10px 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-style: italic;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.message-row.right .message-annotation { text-align: right; }
+.message-annotation.find-match { box-shadow: inset 3px 0 rgba(232, 172, 26, .55); padding-left: 8px; }
+.message-annotation.find-current { box-shadow: inset 3px 0 rgba(224, 121, 18, .9); padding-left: 8px; }
+.message-row.right .message-annotation.find-match,
+.message-row.right .message-annotation.find-current { box-shadow: inset -3px 0 rgba(224, 121, 18, .78); padding-left: 0; padding-right: 8px; }
+
+.narrative-row {
+  display: flex;
+  justify-content: center;
+  margin: 24px 0;
+}
+.narrative-card {
+  position: relative;
+  width: min(78%, 680px);
+}
+.narrative-text {
+  color: var(--muted);
+  text-align: center;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 14px;
+  font-style: italic;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding: 2px 10px;
+}
+.narrative-actions {
+  right: -42px;
+}
+.narrative-actions .message-menu { right: 0; }
+.narrative-card:hover .message-menu-button,
+.narrative-card:focus-within .message-menu-button { opacity: .72; }
+.narrative-row.find-match .narrative-text { box-shadow: inset 3px 0 rgba(232, 172, 26, .55), inset -3px 0 rgba(232, 172, 26, .55); }
+.narrative-row.find-current .narrative-text { box-shadow: inset 3px 0 rgba(224, 121, 18, .9), inset -3px 0 rgba(224, 121, 18, .9); }
+
+.thread.style-transcript .message-annotation,
+.thread.style-transcript .message-row.right .message-annotation {
+  margin: 6px 0 0;
+  text-align: left;
+}
+.thread.style-transcript .narrative-row { margin: 22px 0; }
+.thread.style-transcript .narrative-card { width: min(88%, 720px); }
+
+@media (max-width: 700px) {
+  .narrative-card { width: min(82%, 680px); }
+  .narrative-actions { right: -34px; }
+}
+
+@media print {
+  .narrative-card { width: 78%; break-inside: avoid; }
+  .narrative-text, .message-annotation { color: #555; }
+}

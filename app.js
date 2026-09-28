@@ -1,14 +1,14 @@
 (() => {
-  const APP_VERSION = '0.7.2';
+  const APP_VERSION = '0.8';
   const LEGACY_STORAGE_KEY = 'threadwriter.project.v1';
   const LIBRARY_KEY = 'threadwriter.library.v1';
   const DOCUMENT_PREFIX = 'threadwriter.document.v1.';
   const PROJECT_LIBRARY_KEY = 'threadwriter.projects.v1';
   const HISTORY_PREFIX = 'threadwriter.history.v1.';
-  const HISTORY_MAX = 12;
+  const HISTORY_MAX = 6;
   const HISTORY_INTERVAL_MS = 5 * 60 * 1000;
   const defaultState = () => ({
-    version: 2,
+    version: 3,
     title: 'Untitled Thread',
     sceneHeader: '',
     headerFont: 'rounded',
@@ -29,6 +29,9 @@
   let selectedProjectId = projectIdForDocument(currentDocumentId) || projectLibrary.lastProjectId || Object.keys(projectLibrary.projects)[0] || null;
   let saveTimer = null;
   let timestampMessageId = null;
+  let annotationMessageId = null;
+  let narrativeBlockId = null;
+  let narrativeInsertIndex = null;
   let pendingInsertId = null;
   const findState = { query: '', replacement: '', caseSensitive: false, matches: [], current: 0 };
 
@@ -50,6 +53,7 @@
     exportMenu: document.getElementById('exportMenu'),
     participantsBtn: document.getElementById('participantsBtn'),
     headerBtn: document.getElementById('headerBtn'),
+    narrativeBtn: document.getElementById('narrativeBtn'),
     conversationStyle: document.getElementById('conversationStyle'),
     findBtn: document.getElementById('findBtn'),
     saveAsBtn: document.getElementById('saveAsBtn'),
@@ -85,6 +89,16 @@
     useMessageTimeBtn: document.getElementById('useMessageTimeBtn'),
     removeTimestampBtn: document.getElementById('removeTimestampBtn'),
     saveTimestampBtn: document.getElementById('saveTimestampBtn'),
+    annotationDialog: document.getElementById('annotationDialog'),
+    annotationInput: document.getElementById('annotationInput'),
+    closeAnnotationDialogBtn: document.getElementById('closeAnnotationDialogBtn'),
+    removeAnnotationBtn: document.getElementById('removeAnnotationBtn'),
+    saveAnnotationBtn: document.getElementById('saveAnnotationBtn'),
+    narrativeDialog: document.getElementById('narrativeDialog'),
+    narrativeInput: document.getElementById('narrativeInput'),
+    closeNarrativeDialogBtn: document.getElementById('closeNarrativeDialogBtn'),
+    removeNarrativeBtn: document.getElementById('removeNarrativeBtn'),
+    saveNarrativeBtn: document.getElementById('saveNarrativeBtn'),
     headerDialog: document.getElementById('headerDialog'),
     headerInput: document.getElementById('headerInput'),
     headerFont: document.getElementById('headerFont'),
@@ -301,27 +315,50 @@
     const base = defaultState();
     if (!project || !Array.isArray(project.participants) || !Array.isArray(project.messages)) throw new Error('Bad project');
     const allowedFonts = new Set(['rounded', 'sans', 'serif', 'mono']);
+    const participants = project.participants.map((p, index) => ({
+      id: p.id || `p${index + 1}`,
+      name: typeof p.name === 'string' && p.name.trim() ? p.name : `Participant ${index + 1}`,
+      side: p.side === 'right' ? 'right' : 'left',
+      color: /^#?[0-9a-fA-F]{6}$/.test(String(p.color || '')) ? (String(p.color).startsWith('#') ? p.color : `#${p.color}`) : '#e5e5ea'
+    }));
+    const fallbackSpeakerId = participants[0]?.id || null;
     return {
       ...project,
-      version: 2,
+      version: 3,
       title: typeof project.title === 'string' ? project.title : base.title,
       sceneHeader: typeof project.sceneHeader === 'string' ? project.sceneHeader : '',
       headerFont: allowedFonts.has(project.headerFont) ? project.headerFont : 'rounded',
       conversationStyle: project.conversationStyle === 'transcript' ? 'transcript' : 'chat',
-      activeParticipantId: project.activeParticipantId || project.participants[0]?.id || null,
-      participants: project.participants.map((p, index) => ({
-        id: p.id || `p${index + 1}`,
-        name: typeof p.name === 'string' && p.name.trim() ? p.name : `Participant ${index + 1}`,
-        side: p.side === 'right' ? 'right' : 'left',
-        color: /^#?[0-9a-fA-F]{6}$/.test(String(p.color || '')) ? (String(p.color).startsWith('#') ? p.color : `#${p.color}`) : '#e5e5ea'
-      })),
-      messages: project.messages.map((m, index) => ({
-        ...m,
-        id: m.id || `m${Date.now()}-${index}`,
-        text: typeof m.text === 'string' ? m.text : String(m.text ?? ''),
-        createdAt: m.createdAt || new Date().toISOString()
-      }))
+      activeParticipantId: project.activeParticipantId || fallbackSpeakerId,
+      participants,
+      messages: project.messages.map((m, index) => {
+        const kind = m?.kind === 'narrative' ? 'narrative' : 'message';
+        const item = {
+          ...m,
+          kind,
+          id: m?.id || `m${Date.now()}-${index}`,
+          text: typeof m?.text === 'string' ? m.text : String(m?.text ?? ''),
+          createdAt: m?.createdAt || new Date().toISOString()
+        };
+        if (kind === 'narrative') {
+          delete item.speakerId;
+          delete item.annotation;
+          delete item.displayTimestamp;
+        } else {
+          item.speakerId = m?.speakerId || fallbackSpeakerId;
+          item.annotation = typeof m?.annotation === 'string' ? m.annotation : '';
+        }
+        return item;
+      })
     };
+  }
+
+  function isNarrative(item) {
+    return item?.kind === 'narrative';
+  }
+
+  function isMessage(item) {
+    return !isNarrative(item);
   }
 
   function makeDocumentId() {
@@ -461,11 +498,11 @@
   }
 
   function wordCountForState(project) {
-    return project.messages.reduce((sum, message) => sum + countWordsInText(message.text), 0);
+    return project.messages.reduce((sum, item) => sum + countWordsInText(item.text), 0);
   }
 
   function previewForState(project) {
-    const first = project.messages.find(message => String(message.text || '').trim());
+    const first = project.messages.find(item => String(item.text || '').trim());
     if (!first) return 'Empty thread';
     const clean = String(first.text).replace(/\s+/g, ' ').trim();
     return clean.length > 110 ? `${clean.slice(0, 107)}…` : clean;
@@ -624,28 +661,82 @@
     if (!state.messages.length) {
       const empty = document.createElement('div');
       empty.className = 'empty-state';
-      empty.innerHTML = '<strong>Your thread is empty.</strong><br>Choose a participant, type below, and press Enter. Tab switches speakers.';
+      empty.innerHTML = '<strong>Your thread is empty.</strong><br>Choose a participant and write below, or add a Narrative block from Text.';
       els.thread.appendChild(empty);
       return;
     }
 
     if (findState.query) findState.matches = computeFindMatches();
-    const matchingIds = new Set(findState.matches.map(match => match.messageId));
+    const textMatchIds = new Set(findState.matches.filter(match => match.field === 'text').map(match => match.messageId));
+    const annotationMatchIds = new Set(findState.matches.filter(match => match.field === 'annotation').map(match => match.messageId));
     const currentMatch = findState.matches[findState.current];
 
-    state.messages.forEach((msg, index) => {
-      const p = getParticipant(msg.speakerId);
+    state.messages.forEach((item, index) => {
+      if (isNarrative(item)) {
+        const row = document.createElement('article');
+        row.className = 'narrative-row';
+        if (textMatchIds.has(item.id)) row.classList.add('find-match');
+        if (currentMatch?.messageId === item.id && currentMatch.field === 'text') row.classList.add('find-current');
+        row.dataset.messageId = item.id;
+
+        const card = document.createElement('div');
+        card.className = 'narrative-card';
+        const text = document.createElement('div');
+        text.className = 'narrative-text';
+        text.textContent = item.text;
+        text.tabIndex = 0;
+
+        const actions = document.createElement('div');
+        actions.className = 'message-actions narrative-actions';
+        const menuButton = document.createElement('button');
+        menuButton.type = 'button';
+        menuButton.className = 'message-menu-button';
+        menuButton.textContent = '⋯';
+        menuButton.setAttribute('aria-label', 'Options for narrative block');
+        menuButton.setAttribute('aria-expanded', 'false');
+
+        const menu = document.createElement('div');
+        menu.className = 'message-menu';
+        menu.hidden = true;
+        menu.setAttribute('role', 'menu');
+        const edit = makeToolButton('Edit', () => { closeMessageMenus(); openNarrativeDialog(item.id); });
+        const insertAbove = makeToolButton('Insert message above', () => { closeMessageMenus(); insertMessageAdjacent(item.id, 0); });
+        const insertBelow = makeToolButton('Insert message below', () => { closeMessageMenus(); insertMessageAdjacent(item.id, 1); });
+        const moveUp = makeToolButton('Move up', () => { closeMessageMenus(); moveMessage(item.id, -1); });
+        const moveDown = makeToolButton('Move down', () => { closeMessageMenus(); moveMessage(item.id, 1); });
+        moveUp.disabled = index === 0;
+        moveDown.disabled = index === state.messages.length - 1;
+        const del = makeToolButton('Delete', () => { closeMessageMenus(); deleteMessage(item.id); }, true);
+        menu.append(edit, insertAbove, insertBelow, moveUp, moveDown, del);
+
+        menuButton.addEventListener('click', e => {
+          e.stopPropagation();
+          const opening = menu.hidden;
+          closeMessageMenus();
+          menu.hidden = !opening;
+          menuButton.setAttribute('aria-expanded', String(opening));
+          if (opening) requestAnimationFrame(() => positionMessageMenu(menu, menuButton, row));
+        });
+        menu.addEventListener('click', e => e.stopPropagation());
+        actions.append(menuButton, menu);
+        card.append(text, actions);
+        row.appendChild(card);
+        els.thread.appendChild(row);
+        return;
+      }
+
+      const p = getParticipant(item.speakerId);
       if (!p) return;
 
       const previous = state.messages[index - 1];
-      const continuesSpeaker = previous?.speakerId === msg.speakerId;
+      const continuesSpeaker = isMessage(previous) && previous?.speakerId === item.speakerId;
       const showSpeakerLabel = state.conversationStyle === 'transcript' || !continuesSpeaker;
 
       const row = document.createElement('article');
-      row.className = `message-row ${p.side}${continuesSpeaker ? ' continuation' : ' speaker-start'}${msg.displayTimestamp ? ' timestamped' : ''}`;
-      if (matchingIds.has(msg.id)) row.classList.add('find-match');
-      if (currentMatch?.messageId === msg.id) row.classList.add('find-current');
-      row.dataset.messageId = msg.id;
+      row.className = `message-row ${p.side}${continuesSpeaker ? ' continuation' : ' speaker-start'}${item.displayTimestamp ? ' timestamped' : ''}`;
+      if (textMatchIds.has(item.id)) row.classList.add('find-match');
+      if (currentMatch?.messageId === item.id && currentMatch.field === 'text') row.classList.add('find-current');
+      row.dataset.messageId = item.id;
 
       const card = document.createElement('div');
       card.className = 'message-card';
@@ -657,10 +748,10 @@
         card.appendChild(label);
       }
 
-      if (msg.displayTimestamp) {
+      if (item.displayTimestamp) {
         const timestamp = document.createElement('div');
         timestamp.className = 'message-timestamp';
-        timestamp.textContent = msg.displayTimestamp;
+        timestamp.textContent = item.displayTimestamp;
         card.appendChild(timestamp);
       }
 
@@ -670,7 +761,7 @@
       const bubble = document.createElement('div');
       bubble.className = 'bubble';
       bubble.style.setProperty('--bubble-color', p.color);
-      bubble.textContent = msg.text;
+      bubble.textContent = item.text;
       bubble.tabIndex = 0;
 
       const actions = document.createElement('div');
@@ -688,17 +779,19 @@
       menu.hidden = true;
       menu.setAttribute('role', 'menu');
 
-      const edit = makeToolButton('Edit', () => { closeMessageMenus(); startEditMessage(msg.id, bubble); });
-      const insertAbove = makeToolButton('Insert above', () => { closeMessageMenus(); insertMessageAdjacent(msg.id, 0); });
-      const insertBelow = makeToolButton('Insert below', () => { closeMessageMenus(); insertMessageAdjacent(msg.id, 1); });
-      const swap = makeToolButton('Change speaker', () => { closeMessageMenus(); cycleMessageSpeaker(msg.id); });
-      const timestamp = makeToolButton(msg.displayTimestamp ? 'Edit timestamp…' : 'Add timestamp…', () => { closeMessageMenus(); openTimestampDialog(msg.id); });
-      const moveUp = makeToolButton('Move up', () => { closeMessageMenus(); moveMessage(msg.id, -1); });
-      const moveDown = makeToolButton('Move down', () => { closeMessageMenus(); moveMessage(msg.id, 1); });
+      const edit = makeToolButton('Edit', () => { closeMessageMenus(); startEditMessage(item.id, bubble); });
+      const insertAbove = makeToolButton('Insert above', () => { closeMessageMenus(); insertMessageAdjacent(item.id, 0); });
+      const insertBelow = makeToolButton('Insert below', () => { closeMessageMenus(); insertMessageAdjacent(item.id, 1); });
+      const insertNarrative = makeToolButton('Insert narrative below…', () => { closeMessageMenus(); openNarrativeDialog(null, index + 1); });
+      const swap = makeToolButton('Change speaker', () => { closeMessageMenus(); cycleMessageSpeaker(item.id); });
+      const annotation = makeToolButton(item.annotation ? 'Edit annotation…' : 'Add annotation…', () => { closeMessageMenus(); openAnnotationDialog(item.id); });
+      const timestamp = makeToolButton(item.displayTimestamp ? 'Edit timestamp…' : 'Add timestamp…', () => { closeMessageMenus(); openTimestampDialog(item.id); });
+      const moveUp = makeToolButton('Move up', () => { closeMessageMenus(); moveMessage(item.id, -1); });
+      const moveDown = makeToolButton('Move down', () => { closeMessageMenus(); moveMessage(item.id, 1); });
       moveUp.disabled = index === 0;
       moveDown.disabled = index === state.messages.length - 1;
-      const del = makeToolButton('Delete', () => { closeMessageMenus(); deleteMessage(msg.id); }, true);
-      menu.append(edit, insertAbove, insertBelow, swap, timestamp, moveUp, moveDown, del);
+      const del = makeToolButton('Delete', () => { closeMessageMenus(); deleteMessage(item.id); }, true);
+      menu.append(edit, insertAbove, insertBelow, insertNarrative, swap, annotation, timestamp, moveUp, moveDown, del);
 
       menuButton.addEventListener('click', e => {
         e.stopPropagation();
@@ -713,6 +806,24 @@
       actions.append(menuButton, menu);
       bubbleWrap.append(bubble, actions);
       card.appendChild(bubbleWrap);
+
+      if (item.annotation) {
+        const note = document.createElement('div');
+        note.className = 'message-annotation';
+        if (annotationMatchIds.has(item.id)) note.classList.add('find-match');
+        if (currentMatch?.messageId === item.id && currentMatch.field === 'annotation') note.classList.add('find-current');
+        note.textContent = item.annotation;
+        note.tabIndex = 0;
+        note.title = 'Edit message annotation';
+        note.addEventListener('click', () => openAnnotationDialog(item.id));
+        note.addEventListener('keydown', e => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            openAnnotationDialog(item.id);
+          }
+        });
+        card.appendChild(note);
+      }
 
       row.appendChild(card);
       els.thread.appendChild(row);
@@ -754,13 +865,16 @@
   }
 
   function insertMessageAdjacent(referenceId, offset) {
-    const referenceIndex = state.messages.findIndex(message => message.id === referenceId);
+    const referenceIndex = state.messages.findIndex(item => item.id === referenceId);
     if (referenceIndex < 0) return;
     const reference = state.messages[referenceIndex];
+    const speakerId = isMessage(reference) && getParticipant(reference.speakerId) ? reference.speakerId : state.activeParticipantId;
     const newMessage = {
+      kind: 'message',
       id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random(),
-      speakerId: reference.speakerId,
+      speakerId,
       text: '',
+      annotation: '',
       createdAt: new Date().toISOString()
     };
     const insertIndex = referenceIndex + offset;
@@ -857,7 +971,7 @@
 
   function startEditMessage(id, bubble, { removeIfBlank = false } = {}) {
     const msg = state.messages.find(m => m.id === id);
-    if (!msg) return;
+    if (!msg || !isMessage(msg)) return;
     const editing = bubble.contentEditable === 'true';
     if (editing) {
       msg.text = bubble.textContent.trimEnd();
@@ -918,8 +1032,9 @@
   function cycleMessageSpeaker(id) {
     if (state.participants.length < 2) return;
     const msg = state.messages.find(m => m.id === id);
+    if (!msg || !isMessage(msg)) return;
     const idx = state.participants.findIndex(p => p.id === msg.speakerId);
-    msg.speakerId = state.participants[(idx + 1) % state.participants.length].id;
+    msg.speakerId = state.participants[(idx + 1 + state.participants.length) % state.participants.length].id;
     scheduleSave();
     renderThread();
   }
@@ -933,7 +1048,7 @@
 
   function openTimestampDialog(id) {
     const msg = state.messages.find(m => m.id === id);
-    if (!msg) return;
+    if (!msg || !isMessage(msg)) return;
     timestampMessageId = id;
     els.timestampInput.value = msg.displayTimestamp || '';
     els.removeTimestampBtn.disabled = !msg.displayTimestamp;
@@ -987,6 +1102,116 @@
     }
   });
 
+  function openAnnotationDialog(id) {
+    const msg = state.messages.find(item => item.id === id);
+    if (!msg || !isMessage(msg)) return;
+    annotationMessageId = id;
+    els.annotationInput.value = msg.annotation || '';
+    els.removeAnnotationBtn.disabled = !msg.annotation;
+    els.annotationDialog.showModal();
+    requestAnimationFrame(() => {
+      els.annotationInput.focus();
+      els.annotationInput.select();
+    });
+  }
+
+  function closeAnnotationDialog() {
+    annotationMessageId = null;
+    if (els.annotationDialog.open) els.annotationDialog.close();
+  }
+
+  els.closeAnnotationDialogBtn.addEventListener('click', closeAnnotationDialog);
+  els.removeAnnotationBtn.addEventListener('click', () => {
+    const msg = state.messages.find(item => item.id === annotationMessageId);
+    if (!msg || !isMessage(msg)) return closeAnnotationDialog();
+    msg.annotation = '';
+    scheduleSave();
+    renderThread();
+    closeAnnotationDialog();
+  });
+  els.saveAnnotationBtn.addEventListener('click', () => {
+    const msg = state.messages.find(item => item.id === annotationMessageId);
+    if (!msg || !isMessage(msg)) return closeAnnotationDialog();
+    msg.annotation = els.annotationInput.value.trimEnd();
+    scheduleSave();
+    renderThread();
+    closeAnnotationDialog();
+  });
+  els.annotationInput.addEventListener('keydown', e => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      e.preventDefault();
+      els.saveAnnotationBtn.click();
+    }
+  });
+
+  function openNarrativeDialog(id = null, insertIndex = null) {
+    const block = id ? state.messages.find(item => item.id === id && isNarrative(item)) : null;
+    narrativeBlockId = block?.id || null;
+    narrativeInsertIndex = Number.isInteger(insertIndex) ? insertIndex : state.messages.length;
+    els.narrativeInput.value = block?.text || '';
+    els.removeNarrativeBtn.disabled = !block;
+    els.narrativeDialog.showModal();
+    requestAnimationFrame(() => {
+      els.narrativeInput.focus();
+      if (block) els.narrativeInput.select();
+    });
+  }
+
+  function closeNarrativeDialog() {
+    narrativeBlockId = null;
+    narrativeInsertIndex = null;
+    if (els.narrativeDialog.open) els.narrativeDialog.close();
+  }
+
+  function saveNarrativeBlock() {
+    const text = els.narrativeInput.value.trimEnd();
+    if (!text.trim()) {
+      if (narrativeBlockId) {
+        state.messages = state.messages.filter(item => item.id !== narrativeBlockId);
+        scheduleSave();
+        renderThread();
+      }
+      return closeNarrativeDialog();
+    }
+
+    if (narrativeBlockId) {
+      const block = state.messages.find(item => item.id === narrativeBlockId && isNarrative(item));
+      if (block) block.text = text;
+    } else {
+      const block = {
+        kind: 'narrative',
+        id: crypto.randomUUID ? crypto.randomUUID() : `narrative-${Date.now()}-${Math.random()}`,
+        text,
+        createdAt: new Date().toISOString()
+      };
+      const index = Math.max(0, Math.min(Number.isInteger(narrativeInsertIndex) ? narrativeInsertIndex : state.messages.length, state.messages.length));
+      state.messages.splice(index, 0, block);
+    }
+    scheduleSave();
+    renderThread();
+    closeNarrativeDialog();
+  }
+
+  els.narrativeBtn.addEventListener('click', () => {
+    closeTopMenus();
+    openNarrativeDialog(null, state.messages.length);
+  });
+  els.closeNarrativeDialogBtn.addEventListener('click', closeNarrativeDialog);
+  els.removeNarrativeBtn.addEventListener('click', () => {
+    if (!narrativeBlockId) return closeNarrativeDialog();
+    state.messages = state.messages.filter(item => item.id !== narrativeBlockId);
+    scheduleSave();
+    renderThread();
+    closeNarrativeDialog();
+  });
+  els.saveNarrativeBtn.addEventListener('click', saveNarrativeBlock);
+  els.narrativeInput.addEventListener('keydown', e => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      e.preventDefault();
+      saveNarrativeBlock();
+    }
+  });
+
   function openHeaderDialog() {
     els.headerInput.value = state.sceneHeader || '';
     els.headerFont.value = state.headerFont || 'rounded';
@@ -1028,15 +1253,23 @@
     if (!query) return [];
     const needle = findState.caseSensitive ? query : query.toLocaleLowerCase();
     const matches = [];
-    state.messages.forEach(message => {
-      const haystack = findState.caseSensitive ? message.text : message.text.toLocaleLowerCase();
+
+    const collect = (item, field) => {
+      const value = String(item?.[field] || '');
+      if (!value) return;
+      const haystack = findState.caseSensitive ? value : value.toLocaleLowerCase();
       let from = 0;
       while (from <= haystack.length) {
         const at = haystack.indexOf(needle, from);
         if (at === -1) break;
-        matches.push({ messageId: message.id, start: at, length: query.length });
+        matches.push({ messageId: item.id, field, start: at, length: query.length });
         from = at + Math.max(1, query.length);
       }
+    };
+
+    state.messages.forEach(item => {
+      collect(item, 'text');
+      if (isMessage(item)) collect(item, 'annotation');
     });
     return matches;
   }
@@ -1051,7 +1284,7 @@
     if (!findState.matches.length) {
       findState.current = 0;
     } else if (oldMatch) {
-      const same = findState.matches.findIndex(match => match.messageId === oldMatch.messageId && match.start === oldMatch.start);
+      const same = findState.matches.findIndex(match => match.messageId === oldMatch.messageId && match.field === oldMatch.field && match.start === oldMatch.start);
       findState.current = same >= 0 ? same : Math.min(findState.current, findState.matches.length - 1);
     } else {
       findState.current = Math.min(findState.current, findState.matches.length - 1);
@@ -1068,7 +1301,7 @@
   function scrollToCurrentFindMatch() {
     const match = findState.matches[findState.current];
     if (!match) return;
-    const row = [...els.thread.querySelectorAll('.message-row')].find(el => el.dataset.messageId === match.messageId);
+    const row = [...els.thread.querySelectorAll('[data-message-id]')].find(el => el.dataset.messageId === match.messageId);
     row?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
 
@@ -1085,9 +1318,9 @@
     refreshFindMatches({ preserveCurrent: true });
     const match = findState.matches[findState.current];
     if (!match) return;
-    const message = state.messages.find(item => item.id === match.messageId);
-    if (!message) return;
-    message.text = message.text.slice(0, match.start) + els.replaceInput.value + message.text.slice(match.start + match.length);
+    const item = state.messages.find(entry => entry.id === match.messageId);
+    if (!item || typeof item[match.field] !== 'string') return;
+    item[match.field] = item[match.field].slice(0, match.start) + els.replaceInput.value + item[match.field].slice(match.start + match.length);
     scheduleSave();
     findState.matches = computeFindMatches();
     if (findState.current >= findState.matches.length) findState.current = Math.max(0, findState.matches.length - 1);
@@ -1102,11 +1335,16 @@
     const flags = findState.caseSensitive ? 'g' : 'gi';
     const regex = new RegExp(escaped, flags);
     let count = 0;
-    state.messages.forEach(message => {
-      message.text = message.text.replace(regex, () => {
+    const replaceField = (item, field) => {
+      if (typeof item[field] !== 'string' || !item[field]) return;
+      item[field] = item[field].replace(regex, () => {
         count += 1;
         return els.replaceInput.value;
       });
+    };
+    state.messages.forEach(item => {
+      replaceField(item, 'text');
+      if (isMessage(item)) replaceField(item, 'annotation');
     });
     scheduleSave();
     findState.matches = [];
@@ -1167,9 +1405,11 @@
     const text = els.composer.value.trimEnd();
     if (!text.trim() || !state.activeParticipantId) return;
     state.messages.push({
+      kind: 'message',
       id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random(),
       speakerId: state.activeParticipantId,
       text,
+      annotation: '',
       createdAt: new Date().toISOString()
     });
     els.composer.value = '';
@@ -1249,7 +1489,7 @@
     }));
     const validIds = new Set(newParticipants.map(p => p.id));
     const fallbackId = newParticipants[0].id;
-    state.messages.forEach(m => { if (!validIds.has(m.speakerId)) m.speakerId = fallbackId; });
+    state.messages.forEach(m => { if (isMessage(m) && !validIds.has(m.speakerId)) m.speakerId = fallbackId; });
     state.participants = newParticipants;
     ensureActiveParticipant();
     scheduleSave();
@@ -1415,6 +1655,16 @@
     if (!raw) return [];
     const needle = raw.toLocaleLowerCase();
     const results = [];
+    const addTextResult = (documentId, title, kind, value) => {
+      const clean = String(value || '').replace(/\s+/g, ' ').trim();
+      const at = clean.toLocaleLowerCase().indexOf(needle);
+      if (at === -1) return;
+      const start = Math.max(0, at - 45);
+      const end = Math.min(clean.length, at + raw.length + 80);
+      const snippet = `${start > 0 ? '…' : ''}${clean.slice(start, end)}${end < clean.length ? '…' : ''}`;
+      results.push({ documentId, title, kind, snippet });
+    };
+
     for (const documentId of project.documentIds) {
       const documentState = documentId === currentDocumentId ? state : readStoredDocument(documentId);
       if (!documentState) continue;
@@ -1425,15 +1675,14 @@
       } else if (header.toLocaleLowerCase().includes(needle)) {
         results.push({ documentId, title, kind: 'Header', snippet: header.replace(/\s+/g, ' ').trim() });
       }
-      for (const message of documentState.messages) {
-        const participant = documentState.participants.find(p => p.id === message.speakerId);
-        const clean = String(message.text || '').replace(/\s+/g, ' ').trim();
-        const at = clean.toLocaleLowerCase().indexOf(needle);
-        if (at === -1) continue;
-        const start = Math.max(0, at - 45);
-        const end = Math.min(clean.length, at + raw.length + 80);
-        const snippet = `${start > 0 ? '…' : ''}${clean.slice(start, end)}${end < clean.length ? '…' : ''}`;
-        results.push({ documentId, title, kind: participant?.name || 'Message', snippet });
+      for (const item of documentState.messages) {
+        if (isNarrative(item)) {
+          addTextResult(documentId, title, 'Narrative', item.text);
+        } else {
+          const participant = documentState.participants.find(p => p.id === item.speakerId);
+          addTextResult(documentId, title, participant?.name || 'Message', item.text);
+          if (item.annotation) addTextResult(documentId, title, `${participant?.name || 'Message'} annotation`, item.annotation);
+        }
         if (results.length >= 60) return results;
       }
     }
@@ -1939,10 +2188,18 @@
   function buildTranscript() {
     const lines = [state.title || 'Untitled Thread', ''];
     if (state.sceneHeader) lines.push(state.sceneHeader, '');
-    state.messages.forEach(m => {
-      const p = getParticipant(m.speakerId);
-      const stamp = m.displayTimestamp ? ` [${m.displayTimestamp}]` : '';
-      lines.push(`${p?.name || 'Unknown'}${stamp}: ${m.text}`, '');
+    state.messages.forEach(item => {
+      if (isNarrative(item)) {
+        lines.push(item.text, '');
+        return;
+      }
+      const p = getParticipant(item.speakerId);
+      const stamp = item.displayTimestamp ? ` [${item.displayTimestamp}]` : '';
+      lines.push(`${p?.name || 'Unknown'}${stamp}: ${item.text}`);
+      if (item.annotation) {
+        String(item.annotation).split('\n').forEach(line => lines.push(`    ${line}`));
+      }
+      lines.push('');
     });
     return lines.join('\n');
   }
@@ -2048,14 +2305,29 @@
       y += headerLines.length * 38 + 34;
     }
 
-    state.messages.forEach((message, index) => {
-      const participant = getParticipant(message.speakerId);
-      if (!participant) return;
-      const previous = state.messages[index - 1];
-      const continues = previous?.speakerId === message.speakerId;
+    state.messages.forEach((item, index) => {
       const transcript = state.conversationStyle === 'transcript';
 
-      if (message.displayTimestamp && index > 0) y += 26;
+      if (isNarrative(item)) {
+        if (index > 0) y += 26;
+        ctx.font = 'italic 500 22px Georgia, "Times New Roman", serif';
+        const lines = wrapCanvasText(ctx, item.text, contentWidth * 0.78);
+        if (draw) {
+          ctx.fillStyle = '#666670';
+          ctx.textAlign = 'center';
+          lines.forEach((line, lineIndex) => ctx.fillText(line, W / 2, y + lineIndex * 31));
+          ctx.textAlign = 'left';
+        }
+        y += Math.max(1, lines.length) * 31 + 22;
+        return;
+      }
+
+      const participant = getParticipant(item.speakerId);
+      if (!participant) return;
+      const previous = state.messages[index - 1];
+      const continues = isMessage(previous) && previous?.speakerId === item.speakerId;
+
+      if (item.displayTimestamp && index > 0) y += 26;
       else if (index > 0) y += transcript ? 18 : (continues ? 8 : 18);
 
       const side = participant.side === 'right' ? 'right' : 'left';
@@ -2073,45 +2345,61 @@
         y += 23;
       }
 
-      if (message.displayTimestamp) {
+      if (item.displayTimestamp) {
         ctx.font = '500 15px Arial, sans-serif';
         if (draw) {
           ctx.fillStyle = '#777780';
           ctx.textAlign = transcript || side === 'left' ? 'left' : 'right';
-          ctx.fillText(message.displayTimestamp, transcript || side === 'left' ? left : W - right, y);
+          ctx.fillText(item.displayTimestamp, transcript || side === 'left' ? left : W - right, y);
           ctx.textAlign = 'left';
         }
         y += 22;
       }
 
       ctx.font = '400 26px Arial, sans-serif';
+      let annotationAnchorX = left;
+      let annotationMaxWidth = contentWidth - 10;
       if (transcript) {
-        const lines = wrapCanvasText(ctx, message.text, contentWidth - 10);
+        const lines = wrapCanvasText(ctx, item.text, contentWidth - 10);
         if (draw) {
           ctx.fillStyle = '#17171b';
           lines.forEach((line, lineIndex) => ctx.fillText(line, left, y + lineIndex * 35));
         }
         y += Math.max(1, lines.length) * 35;
-        return;
+      } else {
+        const padX = 20;
+        const padY = 15;
+        const maxInner = maxBubbleWidth - padX * 2;
+        const lines = wrapCanvasText(ctx, item.text, maxInner);
+        const measured = Math.max(1, ...lines.map(line => ctx.measureText(line || ' ').width));
+        const bubbleWidth = Math.max(92, Math.min(maxBubbleWidth, measured + padX * 2));
+        const bubbleHeight = Math.max(58, lines.length * 35 + padY * 2);
+        const x = side === 'right' ? W - right - bubbleWidth : left;
+        annotationAnchorX = side === 'right' ? W - right : left;
+        annotationMaxWidth = bubbleWidth;
+
+        if (draw) {
+          ctx.fillStyle = participant.color || '#e5e5ea';
+          roundedRectPath(ctx, x, y, bubbleWidth, bubbleHeight, 23);
+          ctx.fill();
+          ctx.fillStyle = '#151518';
+          lines.forEach((line, lineIndex) => ctx.fillText(line, x + padX, y + padY + lineIndex * 35));
+        }
+        y += bubbleHeight;
       }
 
-      const padX = 20;
-      const padY = 15;
-      const maxInner = maxBubbleWidth - padX * 2;
-      const lines = wrapCanvasText(ctx, message.text, maxInner);
-      const measured = Math.max(1, ...lines.map(line => ctx.measureText(line || ' ').width));
-      const bubbleWidth = Math.max(92, Math.min(maxBubbleWidth, measured + padX * 2));
-      const bubbleHeight = Math.max(58, lines.length * 35 + padY * 2);
-      const x = side === 'right' ? W - right - bubbleWidth : left;
-
-      if (draw) {
-        ctx.fillStyle = participant.color || '#e5e5ea';
-        roundedRectPath(ctx, x, y, bubbleWidth, bubbleHeight, 23);
-        ctx.fill();
-        ctx.fillStyle = '#151518';
-        lines.forEach((line, lineIndex) => ctx.fillText(line, x + padX, y + padY + lineIndex * 35));
+      if (item.annotation) {
+        y += 9;
+        ctx.font = 'italic 500 18px Arial, sans-serif';
+        const lines = wrapCanvasText(ctx, item.annotation, Math.max(120, annotationMaxWidth));
+        if (draw) {
+          ctx.fillStyle = '#686872';
+          ctx.textAlign = transcript || side === 'left' ? 'left' : 'right';
+          lines.forEach((line, lineIndex) => ctx.fillText(line, annotationAnchorX, y + lineIndex * 25));
+          ctx.textAlign = 'left';
+        }
+        y += Math.max(1, lines.length) * 25;
       }
-      y += bubbleHeight;
     });
 
     return y + 72;
@@ -2219,15 +2507,36 @@
     return `<w:p><w:pPr><w:jc w:val="center"/><w:spacing w:before="40" w:after="300"/></w:pPr>${runs}</w:p>`;
   }
 
+  function wordNarrativeParagraph(text) {
+    const runs = String(text).split('\n').map((line, index) => {
+      const br = index ? '<w:r><w:br/></w:r>' : '';
+      return `${br}<w:r><w:rPr><w:i/><w:color w:val="666670"/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr><w:t xml:space="preserve">${xmlEscape(line)}</w:t></w:r>`;
+    }).join('');
+    return `<w:p><w:pPr><w:jc w:val="center"/><w:spacing w:before="160" w:after="200"/></w:pPr>${runs}</w:p>`;
+  }
+
+  function wordAnnotationParagraph(text, side = 'left') {
+    const runs = String(text).split('\n').map((line, index) => {
+      const br = index ? '<w:r><w:br/></w:r>' : '';
+      return `${br}<w:r><w:rPr><w:i/><w:color w:val="6D6D78"/><w:sz w:val="19"/><w:szCs w:val="19"/></w:rPr><w:t xml:space="preserve">${xmlEscape(line)}</w:t></w:r>`;
+    }).join('');
+    return `<w:p><w:pPr><w:jc w:val="${side === 'right' ? 'right' : 'left'}"/><w:spacing w:before="0" w:after="180"/></w:pPr>${runs}</w:p>`;
+  }
+
   async function buildPortableDocx() {
     const paragraphs = [];
     paragraphs.push(`<w:p><w:pPr><w:pStyle w:val="Title"/></w:pPr><w:r><w:t>${xmlEscape(state.title || 'Untitled Thread')}</w:t></w:r></w:p>`);
     if (state.sceneHeader) paragraphs.push(wordSceneHeaderParagraph());
-    for (const m of state.messages) {
-      const p = getParticipant(m.speakerId);
-      const timestampRun = m.displayTimestamp ? `<w:r><w:rPr><w:i/><w:color w:val="6D6D78"/><w:sz w:val="19"/><w:szCs w:val="19"/></w:rPr><w:t xml:space="preserve">  ${xmlEscape(m.displayTimestamp)}</w:t></w:r>` : '';
+    for (const item of state.messages) {
+      if (isNarrative(item)) {
+        paragraphs.push(wordNarrativeParagraph(item.text));
+        continue;
+      }
+      const p = getParticipant(item.speakerId);
+      const timestampRun = item.displayTimestamp ? `<w:r><w:rPr><w:i/><w:color w:val="6D6D78"/><w:sz w:val="19"/><w:szCs w:val="19"/></w:rPr><w:t xml:space="preserve">  ${xmlEscape(item.displayTimestamp)}</w:t></w:r>` : '';
       paragraphs.push(`<w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:rPr><w:b/></w:rPr><w:t>${xmlEscape(p?.name || 'Unknown')}</w:t></w:r>${timestampRun}</w:p>`);
-      paragraphs.push(`<w:p><w:pPr><w:spacing w:after="180"/></w:pPr>${textRuns(m.text)}</w:p>`);
+      paragraphs.push(`<w:p><w:pPr><w:spacing w:after="${item.annotation ? 60 : 180}"/></w:pPr>${textRuns(item.text)}</w:p>`);
+      if (item.annotation) paragraphs.push(wordAnnotationParagraph(item.annotation, 'left'));
     }
 
     const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -2290,6 +2599,17 @@
     </w:tc>`;
   }
 
+  function annotationCell(width, text, side) {
+    const runs = String(text).split('\n').map((line, index) => {
+      const br = index ? '<w:r><w:br/></w:r>' : '';
+      return `${br}<w:r><w:rPr><w:i/><w:color w:val="6D6D78"/><w:sz w:val="18"/><w:szCs w:val="18"/></w:rPr><w:t xml:space="preserve">${xmlEscape(line)}</w:t></w:r>`;
+    }).join('');
+    return `<w:tc>
+      <w:tcPr><w:tcW w:w="${width}" w:type="dxa"/><w:tcBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/></w:tcBorders></w:tcPr>
+      <w:p><w:pPr><w:jc w:val="${side === 'right' ? 'right' : 'left'}"/><w:spacing w:before="55" w:after="0"/></w:pPr>${runs}</w:p>
+    </w:tc>`;
+  }
+
   function richMessageTable(message, participant, continuesSpeaker) {
     const CONTENT_WIDTH = 10080;
     const bubbleWidth = Math.round(CONTENT_WIDTH * estimateBubblePercent(message.text) / 100);
@@ -2303,6 +2623,7 @@
     const labelRow = continuesSpeaker ? '' : `<w:tr><w:trPr><w:cantSplit/></w:trPr>${labelCell(name, side)}</w:tr>`;
     const bubbleRow = `<w:tr><w:trPr><w:cantSplit/></w:trPr>${side === 'left' ? `${bubbleCell(bubbleWidth, message.text, fill)}${emptyCell(spacerWidth)}` : `${emptyCell(spacerWidth)}${bubbleCell(bubbleWidth, message.text, fill)}`}</w:tr>`;
     const timestampRow = message.displayTimestamp ? `<w:tr><w:trPr><w:cantSplit/></w:trPr>${side === 'left' ? `${timestampCell(bubbleWidth, message.displayTimestamp, side)}${emptyCell(spacerWidth)}` : `${emptyCell(spacerWidth)}${timestampCell(bubbleWidth, message.displayTimestamp, side)}`}</w:tr>` : '';
+    const annotationRow = message.annotation ? `<w:tr><w:trPr><w:cantSplit/></w:trPr>${side === 'left' ? `${annotationCell(bubbleWidth, message.annotation, side)}${emptyCell(spacerWidth)}` : `${emptyCell(spacerWidth)}${annotationCell(bubbleWidth, message.annotation, side)}`}</w:tr>` : '';
     // A timestamp is part of the new message beat and sits above the bubble.
     const gap = message.displayTimestamp
       ? (continuesSpeaker ? 220 : 260)
@@ -2320,6 +2641,7 @@
   ${labelRow}
   ${timestampRow}
   ${bubbleRow}
+  ${annotationRow}
 </w:tbl>`;
   }
 
@@ -2328,19 +2650,24 @@
     const timestamp = message.displayTimestamp
       ? `<w:r><w:rPr><w:color w:val="7A7A84"/><w:sz w:val="17"/><w:szCs w:val="17"/></w:rPr><w:t xml:space="preserve">  ${xmlEscape(message.displayTimestamp)}</w:t></w:r>`
       : '';
+    const annotation = message.annotation ? wordAnnotationParagraph(message.annotation, 'left') : '';
     return `<w:p><w:pPr><w:spacing w:before="180" w:after="45"/></w:pPr><w:r><w:rPr><w:b/><w:smallCaps/><w:color w:val="6D6D78"/><w:sz w:val="18"/><w:szCs w:val="18"/></w:rPr><w:t>${xmlEscape(name)}</w:t></w:r>${timestamp}</w:p>
-<w:p><w:pPr><w:spacing w:before="0" w:after="90"/></w:pPr>${richTextRuns(message.text)}</w:p>`;
+<w:p><w:pPr><w:spacing w:before="0" w:after="${message.annotation ? 35 : 90}"/></w:pPr>${richTextRuns(message.text)}</w:p>${annotation}`;
   }
 
   async function buildRichDocx() {
     const blocks = [];
     blocks.push(`<w:p><w:pPr><w:pStyle w:val="Title"/></w:pPr><w:r><w:t>${xmlEscape(state.title || 'Untitled Thread')}</w:t></w:r></w:p>`);
     if (state.sceneHeader) blocks.push(wordSceneHeaderParagraph());
-    state.messages.forEach((m, index) => {
-      const p = getParticipant(m.speakerId);
+    state.messages.forEach((item, index) => {
+      if (isNarrative(item)) {
+        blocks.push(wordNarrativeParagraph(item.text));
+        return;
+      }
+      const p = getParticipant(item.speakerId);
       const previous = state.messages[index - 1];
-      const continuesSpeaker = previous?.speakerId === m.speakerId;
-      blocks.push(state.conversationStyle === 'transcript' ? richTranscriptMessage(m, p) : richMessageTable(m, p, continuesSpeaker));
+      const continuesSpeaker = isMessage(previous) && previous?.speakerId === item.speakerId;
+      blocks.push(state.conversationStyle === 'transcript' ? richTranscriptMessage(item, p) : richMessageTable(item, p, continuesSpeaker));
     });
 
     const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

@@ -1,4 +1,4 @@
-# ThreadWriter v0.7.2
+# ThreadWriter v0.8
 
 A small local-first dialogue editor that looks and behaves like a message thread, but can also switch into a plain transcript-style drafting view.
 
@@ -24,10 +24,12 @@ A small local-first dialogue editor that looks and behaves like a message thread
 - Optional editable timestamps, including free-form story labels such as “two hours later”
 - Timestamped messages create a visual time-break before the new message beat
 - Move Up / Move Down controls in each message menu for reliable one-step reordering
-- Find & Replace across message text, including next/previous navigation and case-sensitive search
-- Live thread word count for committed message text (headers, timestamps, and participant labels are excluded)
+- Find & Replace across message, narrative, and annotation text, including next/previous navigation and case-sensitive search
+- Live thread word count for committed message and narrative text (headers, timestamps, annotations, and participant labels are excluded)
 - Insert Above / Insert Below commands for adding a message directly where it belongs in an existing thread
-- Optional centered scene header for chapter names, dates, channels, AI-session labels, interstitial jokes, etc.
+- General-purpose narrative / system blocks in the ordered thread flow
+- Multiline under-message annotations for actions, stage directions, read receipts, reactions, metrics, and notes
+- Optional centered scene header for chapter names, dates/times, group names, scene labels, interstitials, etc.
 - Four simple header-font families: Rounded, Sans, Serif, and Mono
 - Conversation Styles: **Mobile Chat** and **Transcript**
 - PNG image export for shareable rendered conversations
@@ -58,12 +60,34 @@ GitHub Pages is also a good fit: place these files at the publishing root and ad
 
 
 
+## New in v0.8
+
+### Narrative / system blocks
+
+- Added **Text → Narrative block…** for unassigned text that belongs between messages: narration, stage directions, scene context, time jumps, system notices, and similar material.
+- Narrative blocks live in the same ordered flow as messages, can be moved up/down or deleted, and can have ordinary messages inserted around them.
+- Message menus also include **Insert narrative below…** for placing a block directly in context.
+- Narrative text is included in thread/project word counts and project-wide search.
+- Narrative blocks carry through TXT, Portable DOCX, Rich DOCX, PNG, and Print/PDF output.
+
+### Under-message annotations
+
+- Messages can now carry a multiline **annotation** beneath the bubble or transcript text. Use it for actions, stage directions, read receipts, reactions, metrics, or other message-adjacent notes.
+- Annotations are searchable and replaceable but are deliberately excluded from the manuscript word count.
+- Annotations carry through TXT, both DOCX modes, PNG, and Print/PDF output.
+
+### Reliability / housekeeping
+
+- Version History now keeps up to **6** local snapshots per conversation rather than 12, reducing browser-storage growth while retaining a useful rollback window.
+- Scene-header guidance now uses generic examples such as scene numbers, dates/times, group chats, and time jumps instead of project-specific examples.
+- v0.7.x and earlier `.threadwriter` files remain compatible; older messages are normalized into the v0.8 document model on open.
+
 ## New in v0.7.2
 
 ### Local version history
 
 - Added **File → Version History…** for the current conversation.
-- ThreadWriter keeps up to **12 local snapshots per thread** in the same browser. Automatic snapshots are spaced roughly five minutes apart while the thread changes, with extra checkpoints when a thread is switched/closed and before destructive edits.
+- v0.7.2 originally introduced up to **12 local snapshots per thread** in the same browser; v0.8 reduces the current cap to 6. Automatic snapshots are spaced roughly five minutes apart while the thread changes, with extra checkpoints when a thread is switched/closed and before destructive edits.
 - **Create snapshot now** makes an explicit checkpoint whenever you want one.
 - Restoring a snapshot first saves the current state as **Before restore**, so using history does not casually destroy the version you are leaving.
 - Snapshot entries show date/time, reason, word count, and a short preview.
@@ -168,13 +192,13 @@ Use **Move up** or **Move down** in a message's `…` menu to shift it one posit
 
 ### Find & Replace
 
-The **Find** button searches message text and highlights matching messages. You can step through matches, replace the current match, replace all matches, and optionally use case-sensitive search.
+The **Find** button searches message, narrative, and annotation text and highlights matching content. You can step through matches, replace the current match, replace all matches, and optionally use case-sensitive search.
 
 Participant names are intentionally not altered by Find & Replace; rename a participant once in **Participants** and every message assigned to that participant updates automatically.
 
 ### Scene headers
 
-**Header** adds optional centered text above the conversation. It can function as a chapter/scene title, date marker, channel name, CHIRP session label, transcript heading, or narrative interstitial. The header can use Rounded, Sans, Serif, or Mono typography.
+**Header** adds optional centered text above the conversation. It can function as a chapter/scene title, date marker, group/channel name, transcript heading, or narrative interstitial. The header can use Rounded, Sans, Serif, or Mono typography.
 
 ### Conversation Styles
 
@@ -220,8 +244,12 @@ v0.6 project files add fields for the scene header and Conversation Style, but o
 
 ### Output / sharing
 
-- JPG export
+- HTML export
+- JPG / TIFF export
+- Screen / High-Resolution / Print / Custom image sizing
+- Color or grayscale image output
 - Split/subdivided image export for very long threads
+- Cleaner, more deliberate PDF output / pagination
 
 ### Projects
 
@@ -230,9 +258,7 @@ v0.6 project files add fields for the scene header and Conversation Style, but o
 
 ### Authoring tools
 
-- Under-message annotations for actions, metrics, read receipts, or system notes
-- General-purpose narrative / system text blocks
-- Single-image attachments
+- Single-image attachments, with captions / alt text
 - Faux link previews
 
 ### Import / migration
