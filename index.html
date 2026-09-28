@@ -4,10 +4,10 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#f4f4f7" />
-  <title>ThreadWriter v0.9</title>
-  <link rel="manifest" href="manifest.webmanifest?v=0.9" />
-  <link rel="icon" href="icon.svg?v=0.9" type="image/svg+xml" />
-  <link rel="stylesheet" href="styles.css?v=0.9" />
+  <title>ThreadWriter v0.9.1</title>
+  <link rel="manifest" href="manifest.webmanifest?v=0.9.1" />
+  <link rel="icon" href="icon.svg?v=0.9.1" type="image/svg+xml" />
+  <link rel="stylesheet" href="styles.css?v=0.9.1" />
 </head>
 <body>
   <div class="app-shell">
@@ -71,7 +71,7 @@
       </div>
       <div class="composer-meta">
         <div class="shortcut-hint">Enter = new message · Shift+Enter = line break · Ctrl/Cmd+Enter = narrative · Tab / Shift+Tab = switch speaker</div>
-        <div id="wordCount" class="word-count" title="Counts committed message and narrative text; headers, timestamps, and annotations are excluded">0 words</div>
+        <div id="wordCount" class="word-count" title="Counts committed message, narrative, and image-caption text; headers, timestamps, annotations, and alt text are excluded">0 words</div>
       </div>
     </footer>
   </div>
@@ -166,6 +166,27 @@
     </div>
   </dialog>
 
+  <dialog id="imageDetailsDialog">
+    <div class="dialog-card">
+      <div class="dialog-head">
+        <h2>Image caption &amp; alt text</h2>
+        <button type="button" id="closeImageDetailsDialogBtn" class="icon-btn" aria-label="Close">×</button>
+      </div>
+      <p class="dialog-copy">Add optional publishing metadata to the attached image. The caption appears beneath the image and counts toward the thread word count. Alt text is used for accessibility and is not displayed in the thread.</p>
+      <div id="imageDetailsName" class="image-details-name"></div>
+      <label class="timestamp-field-label" for="imageCaptionInput">Caption</label>
+      <textarea id="imageCaptionInput" class="header-input" rows="3" maxlength="1200" placeholder="e.g. Mara at the station just before midnight."></textarea>
+      <label class="timestamp-field-label" for="imageAltInput">Alt text</label>
+      <textarea id="imageAltInput" class="header-input" rows="4" maxlength="1200" placeholder="Describe the important visual information for someone who cannot see the image."></textarea>
+      <div class="timestamp-actions">
+        <span></span>
+        <div class="timestamp-actions-right">
+          <button type="button" id="saveImageDetailsBtn" class="primary-action">Save</button>
+        </div>
+      </div>
+    </div>
+  </dialog>
+
   <dialog id="headerDialog">
     <div class="dialog-card">
       <div class="dialog-head">
@@ -197,7 +218,7 @@
         <h2>Find &amp; Replace</h2>
         <button type="button" id="closeFindDialogBtn" class="icon-btn" aria-label="Close">×</button>
       </div>
-      <p class="dialog-copy">Searches message, narrative, and annotation text. Participant names can be changed globally from Participants.</p>
+      <p class="dialog-copy">Searches message, narrative, annotation, image-caption, and alt-text content. Participant names can be changed globally from Participants.</p>
       <div class="find-grid">
         <label>
           <span>Find</span>
@@ -311,6 +332,6 @@
     </div>
   </template>
 
-  <script src="app.js?v=0.9"></script>
+  <script src="app.js?v=0.9.1"></script>
 </body>
 </html>

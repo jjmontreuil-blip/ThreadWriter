@@ -1,4 +1,4 @@
-# ThreadWriter v0.9
+# ThreadWriter v0.9.1
 
 A small local-first dialogue editor that looks and behaves like a message thread, but can also switch into a plain transcript-style drafting view.
 
@@ -26,12 +26,12 @@ A small local-first dialogue editor that looks and behaves like a message thread
 - Optional editable timestamps, including free-form story labels such as “two hours later”
 - Timestamped messages create a visual time-break before the new message beat
 - Move Up / Move Down controls in each message menu for reliable one-step reordering
-- Find & Replace across message, narrative, and annotation text, including next/previous navigation and case-sensitive search
-- Live thread word count for committed message and narrative text (headers, timestamps, annotations, and participant labels are excluded)
+- Find & Replace across message, narrative, annotation, image-caption, and alt-text content, including next/previous navigation and case-sensitive search
+- Live thread word count for committed message, narrative, and visible image-caption text (headers, timestamps, annotations, alt text, and participant labels are excluded)
 - Insert Above / Insert Below commands for adding a message directly where it belongs in an existing thread
 - General-purpose narrative / system blocks in the ordered thread flow
 - Multiline under-message annotations for actions, stage directions, read receipts, reactions, metrics, and notes
-- One static image attachment per message or narrative block, stored once in IndexedDB rather than duplicated through local version-history snapshots
+- One static image attachment per message or narrative block, with optional visible captions and accessibility alt text; image binaries are stored once in IndexedDB rather than duplicated through local version-history snapshots
 - Browser-readable image imports are normalized to PNG or JPEG and resized to a maximum 2400-pixel dimension for saner local storage
 - Optional centered scene header for chapter names, dates/times, group names, scene labels, interstitials, etc.
 - Four simple header-font families: Rounded, Sans, Serif, and Mono
@@ -40,7 +40,7 @@ A small local-first dialogue editor that looks and behaves like a message thread
 - Two `.docx` export modes with no external libraries: Portable transcript and Rich layout
 - Plain `.txt` transcript export
 - Clean Print / Save as PDF stylesheet, including box-free Transcript output and no app status/project/version metadata
-- Headers, timestamps, Transcript style, and image attachments carry through the relevant visual exports; TXT and Portable DOCX use readable image placeholders
+- Headers, timestamps, Transcript style, images, and visible image captions carry through the relevant visual exports; TXT and Portable DOCX preserve readable image placeholders plus caption/alt metadata
 - Installable PWA behavior when served over HTTP/HTTPS
 
 ## Running it
@@ -61,6 +61,18 @@ Then open `http://localhost:8000/` in your browser. Service-worker/offline insta
 
 GitHub Pages is also a good fit: place these files at the publishing root and add the resulting site to an iPhone/iPad Home Screen if desired.
 
+
+## New in v0.9.1
+
+### Image captions and alt text
+
+- Every attached image can now carry an optional **caption** and **alt text**, edited from **Edit → Image details…** on either a message or Narrative block.
+- Captions render directly beneath their image in Mobile Chat and Transcript views, Print/PDF, PNG, and Rich DOCX. Captions count toward thread and project word counts because they are visible authored text.
+- Alt text is not shown in the conversation. It becomes the browser image's accessible alternative text and is embedded into Rich DOCX image metadata.
+- TXT and Portable DOCX preserve both values explicitly alongside the image placeholder so caption/alt work is not lost when moving into a plain manuscript workflow.
+- Find & Replace and project-wide search now include captions and alt text. A current alt-text search match highlights the associated image even though the alt text itself is intentionally invisible.
+- Replacing an image preserves its caption and alt text, which is useful when swapping in a corrected or higher-resolution version of the same illustration. Removing the attachment removes its metadata with it.
+- Caption/alt metadata lives in the lightweight document state, not the binary media store, so Version History, Recent, Save As, and project backups carry it without duplicating image payloads.
 
 ## New in v0.9
 

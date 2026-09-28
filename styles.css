@@ -859,10 +859,56 @@ dialog::backdrop { background: rgba(0,0,0,.45); backdrop-filter: blur(3px); }
   .narrative-text, .message-annotation { color: #555; }
 }
 
-/* v0.9: single-image attachments */
+/* v0.9.1: single-image attachments plus captions / alt text */
 .image-attachment {
-  margin-top: 8px;
+  margin: 8px 0 0;
   min-width: 120px;
+}
+.image-details-name {
+  margin: -2px 0 12px;
+  color: var(--muted);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.image-caption {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.message-row.right .image-caption { text-align: right; }
+.image-attachment-narrative .image-caption { text-align: center; }
+.thread.style-transcript .message-row.right .image-caption { text-align: left; }
+.image-caption.find-match {
+  box-shadow: inset 3px 0 rgba(232, 172, 26, .55);
+  padding-left: 7px;
+}
+.image-caption.find-current {
+  box-shadow: inset 3px 0 rgba(224, 121, 18, .9);
+  padding-left: 7px;
+}
+.message-row.right .image-caption.find-match,
+.message-row.right .image-caption.find-current {
+  box-shadow: inset -3px 0 rgba(224, 121, 18, .78);
+  padding-left: 0;
+  padding-right: 7px;
+}
+.thread.style-transcript .message-row.right .image-caption.find-match,
+.thread.style-transcript .message-row.right .image-caption.find-current {
+  box-shadow: inset 3px 0 rgba(224, 121, 18, .78);
+  padding-left: 7px;
+  padding-right: 0;
+}
+.image-attachment.image-alt-match {
+  outline: 2px solid rgba(232, 172, 26, .55);
+  outline-offset: 3px;
+  border-radius: 15px;
+}
+.image-attachment.image-alt-current {
+  outline: 3px solid rgba(224, 121, 18, .9);
 }
 .image-attachment-message {
   max-width: min(100%, 520px);
@@ -920,5 +966,6 @@ dialog::backdrop { background: rgba(0,0,0,.45); backdrop-filter: blur(3px); }
     print-color-adjust: exact;
   }
   .image-attachment-placeholder { display: none; }
+  .image-caption { color: #555; }
 }
 .narrative-actions { top: 8px; transform: none; }

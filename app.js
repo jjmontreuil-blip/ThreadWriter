@@ -1,5 +1,5 @@
 (() => {
-  const APP_VERSION = '0.9';
+  const APP_VERSION = '0.9.1';
   const LEGACY_STORAGE_KEY = 'threadwriter.project.v1';
   const LIBRARY_KEY = 'threadwriter.library.v1';
   const DOCUMENT_PREFIX = 'threadwriter.document.v1.';
@@ -12,7 +12,7 @@
   const MAX_IMAGE_DIMENSION = 2400;
   const MAX_IMAGE_FILE_BYTES = 25 * 1024 * 1024;
   const defaultState = () => ({
-    version: 4,
+    version: 5,
     title: 'Untitled Thread',
     sceneHeader: '',
     headerFont: 'rounded',
@@ -39,6 +39,7 @@
   let narrativeReturnFocusToComposer = false;
   let pendingInsertId = null;
   let imageTargetItemId = null;
+  let imageDetailsItemId = null;
   let mediaDbPromise = null;
   let mediaGcTimer = null;
   const mediaObjectUrls = new Map();
@@ -86,6 +87,12 @@
     importBtn: document.getElementById('importBtn'),
     fileInput: document.getElementById('fileInput'),
     imageInput: document.getElementById('imageInput'),
+    imageDetailsDialog: document.getElementById('imageDetailsDialog'),
+    imageDetailsName: document.getElementById('imageDetailsName'),
+    imageCaptionInput: document.getElementById('imageCaptionInput'),
+    imageAltInput: document.getElementById('imageAltInput'),
+    closeImageDetailsDialogBtn: document.getElementById('closeImageDetailsDialogBtn'),
+    saveImageDetailsBtn: document.getElementById('saveImageDetailsBtn'),
     exportDocxBtn: document.getElementById('exportDocxBtn'),
     docxDialog: document.getElementById('docxDialog'),
     closeDocxDialogBtn: document.getElementById('closeDocxDialogBtn'),
@@ -248,7 +255,9 @@
       mime: ['image/jpeg', 'image/png'].includes(value.mime) ? value.mime : 'image/jpeg',
       width: Math.max(1, Number(value.width) || 1),
       height: Math.max(1, Number(value.height) || 1),
-      size: Math.max(0, Number(value.size) || 0)
+      size: Math.max(0, Number(value.size) || 0),
+      caption: typeof value.caption === 'string' ? value.caption : '',
+      altText: typeof value.altText === 'string' ? value.altText : ''
     };
   }
 
@@ -413,14 +422,17 @@
     return record;
   }
 
-  function imageAttachmentFromRecord(record) {
+  function imageAttachmentFromRecord(record, previous = null) {
+    const old = normalizeImageAttachment(previous);
     return {
       id: record.id,
       name: record.name || 'image',
       mime: record.mime || 'image/jpeg',
       width: record.width,
       height: record.height,
-      size: record.size || record.blob?.size || 0
+      size: record.size || record.blob?.size || 0,
+      caption: old?.caption || '',
+      altText: old?.altText || ''
     };
   }
 
@@ -438,7 +450,7 @@
     if (els.saveStatus) els.saveStatus.textContent = 'Preparing image…';
     try {
       const record = await normalizeAndStoreImage(file);
-      item.imageAttachment = imageAttachmentFromRecord(record);
+      item.imageAttachment = imageAttachmentFromRecord(record, item.imageAttachment);
       scheduleSave();
       renderThread();
       if (els.saveStatus) els.saveStatus.textContent = 'Image attached';
@@ -458,6 +470,48 @@
     renderThread();
     scheduleMediaGarbageCollection();
   }
+
+  function openImageDetailsDialog(itemId) {
+    const item = state.messages.find(entry => entry.id === itemId);
+    const attachment = normalizeImageAttachment(item?.imageAttachment);
+    if (!item || !attachment || !els.imageDetailsDialog) return;
+    imageDetailsItemId = itemId;
+    if (els.imageDetailsName) els.imageDetailsName.textContent = attachment.name || 'Image attachment';
+    if (els.imageCaptionInput) els.imageCaptionInput.value = attachment.caption || '';
+    if (els.imageAltInput) els.imageAltInput.value = attachment.altText || '';
+    els.imageDetailsDialog.showModal();
+    requestAnimationFrame(() => els.imageCaptionInput?.focus());
+  }
+
+  function closeImageDetailsDialog() {
+    imageDetailsItemId = null;
+    if (els.imageDetailsDialog?.open) els.imageDetailsDialog.close();
+  }
+
+  function saveImageDetails() {
+    const item = state.messages.find(entry => entry.id === imageDetailsItemId);
+    const attachment = normalizeImageAttachment(item?.imageAttachment);
+    if (!item || !attachment) { closeImageDetailsDialog(); return; }
+    attachment.caption = String(els.imageCaptionInput?.value || '').trim();
+    attachment.altText = String(els.imageAltInput?.value || '').trim();
+    item.imageAttachment = attachment;
+    scheduleSave();
+    renderThread();
+    closeImageDetailsDialog();
+  }
+
+  els.closeImageDetailsDialogBtn?.addEventListener('click', closeImageDetailsDialog);
+  els.saveImageDetailsBtn?.addEventListener('click', saveImageDetails);
+  els.imageDetailsDialog?.addEventListener('cancel', event => {
+    event.preventDefault();
+    closeImageDetailsDialog();
+  });
+  [els.imageCaptionInput, els.imageAltInput].forEach(input => input?.addEventListener('keydown', event => {
+    if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+      event.preventDefault();
+      saveImageDetails();
+    }
+  }));
 
   async function garbageCollectMedia() {
     try {
@@ -628,7 +682,7 @@
     const fallbackSpeakerId = participants[0]?.id || null;
     return {
       ...project,
-      version: 4,
+      version: 5,
       title: typeof project.title === 'string' ? project.title : base.title,
       sceneHeader: typeof project.sceneHeader === 'string' ? project.sceneHeader : '',
       headerFont: allowedFonts.has(project.headerFont) ? project.headerFont : 'rounded',
@@ -810,8 +864,13 @@
     }
   }
 
+  function wordCountForItem(item) {
+    const caption = normalizeImageAttachment(item?.imageAttachment)?.caption || '';
+    return countWordsInText(item?.text || '') + countWordsInText(caption);
+  }
+
   function wordCountForState(project) {
-    return project.messages.reduce((sum, item) => sum + countWordsInText(item.text), 0);
+    return project.messages.reduce((sum, item) => sum + wordCountForItem(item), 0);
   }
 
   function previewForState(project) {
@@ -950,16 +1009,18 @@
     });
   }
 
-  function makeImageAttachmentElement(item, kind = 'message') {
+  function makeImageAttachmentElement(item, kind = 'message', findFlags = {}) {
     const attachment = normalizeImageAttachment(item?.imageAttachment);
     if (!attachment) return null;
-    const frame = document.createElement('div');
+    const frame = document.createElement('figure');
     frame.className = `image-attachment image-attachment-${kind}`;
     frame.title = attachment.name || 'Image attachment';
+    if (findFlags.altMatch) frame.classList.add('image-alt-match');
+    if (findFlags.altCurrent) frame.classList.add('image-alt-current');
 
     const img = document.createElement('img');
     img.className = 'attached-image';
-    img.alt = 'Image attachment';
+    img.alt = attachment.altText || `Image attachment: ${attachment.name || 'image'}`;
     img.loading = 'eager';
     if (attachment.width && attachment.height) {
       img.width = attachment.width;
@@ -971,6 +1032,25 @@
     placeholder.className = 'image-attachment-placeholder';
     placeholder.textContent = `Loading image…`;
     frame.append(img, placeholder);
+
+    if (attachment.caption) {
+      const caption = document.createElement('figcaption');
+      caption.className = 'image-caption';
+      if (findFlags.captionMatch) caption.classList.add('find-match');
+      if (findFlags.captionCurrent) caption.classList.add('find-current');
+      caption.textContent = attachment.caption;
+      caption.tabIndex = 0;
+      caption.title = 'Edit image caption and alt text';
+      caption.addEventListener('click', () => openImageDetailsDialog(item.id));
+      caption.addEventListener('keydown', event => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          openImageDetailsDialog(item.id);
+        }
+      });
+      frame.appendChild(caption);
+    }
+
     mountAttachmentImage(img, attachment, placeholder);
     return frame;
   }
@@ -1007,6 +1087,8 @@
     if (findState.query) findState.matches = computeFindMatches();
     const textMatchIds = new Set(findState.matches.filter(match => match.field === 'text').map(match => match.messageId));
     const annotationMatchIds = new Set(findState.matches.filter(match => match.field === 'annotation').map(match => match.messageId));
+    const captionMatchIds = new Set(findState.matches.filter(match => match.field === 'imageCaption').map(match => match.messageId));
+    const altTextMatchIds = new Set(findState.matches.filter(match => match.field === 'imageAltText').map(match => match.messageId));
     const currentMatch = findState.matches[findState.current];
 
     state.messages.forEach((item, index) => {
@@ -1051,6 +1133,7 @@
         const showEdit = () => {
           const controls = [
             makeToolButton('Text', () => { closeMessageMenus(); openNarrativeDialog(item.id); }),
+            makeToolButton('Image details…', () => { closeMessageMenus(); openImageDetailsDialog(item.id); }),
             makeToolButton('Replace image…', () => { closeMessageMenus(); startImagePicker(item.id); }),
             makeToolButton('Remove image', () => { closeMessageMenus(); removeImageFromItem(item.id); }, true)
           ];
@@ -1089,7 +1172,12 @@
         menu.addEventListener('click', e => e.stopPropagation());
         actions.append(menuButton, menu);
         card.appendChild(text);
-        const narrativeImage = makeImageAttachmentElement(item, 'narrative');
+        const narrativeImage = makeImageAttachmentElement(item, 'narrative', {
+          captionMatch: captionMatchIds.has(item.id),
+          captionCurrent: currentMatch?.messageId === item.id && currentMatch.field === 'imageCaption',
+          altMatch: altTextMatchIds.has(item.id),
+          altCurrent: currentMatch?.messageId === item.id && currentMatch.field === 'imageAltText'
+        });
         if (narrativeImage) card.appendChild(narrativeImage);
         card.appendChild(actions);
         row.appendChild(card);
@@ -1173,6 +1261,7 @@
         if (hasAnnotation) controls.push(makeToolButton('Annotation…', () => { closeMessageMenus(); openAnnotationDialog(item.id); }));
         if (hasTimestamp) controls.push(makeToolButton('Timestamp…', () => { closeMessageMenus(); openTimestampDialog(item.id); }));
         if (hasImage) {
+          controls.push(makeToolButton('Image details…', () => { closeMessageMenus(); openImageDetailsDialog(item.id); }));
           controls.push(makeToolButton('Replace image…', () => { closeMessageMenus(); startImagePicker(item.id); }));
           controls.push(makeToolButton('Remove image', () => { closeMessageMenus(); removeImageFromItem(item.id); }, true));
         }
@@ -1217,7 +1306,12 @@
       bubbleWrap.append(bubble, actions);
       card.appendChild(bubbleWrap);
 
-      const messageImage = makeImageAttachmentElement(item, 'message');
+      const messageImage = makeImageAttachmentElement(item, 'message', {
+        captionMatch: captionMatchIds.has(item.id),
+        captionCurrent: currentMatch?.messageId === item.id && currentMatch.field === 'imageCaption',
+        altMatch: altTextMatchIds.has(item.id),
+        altCurrent: currentMatch?.messageId === item.id && currentMatch.field === 'imageAltText'
+      });
       if (messageImage) card.appendChild(messageImage);
 
       if (item.annotation) {
@@ -1263,7 +1357,7 @@
   }
 
   function updateWordCount() {
-    const count = state.messages.reduce((sum, message) => sum + countWordsInText(message.text), 0);
+    const count = wordCountForState(state);
     if (els.wordCount) els.wordCount.textContent = `${count.toLocaleString()} ${count === 1 ? 'word' : 'words'}`;
   }
 
@@ -1732,6 +1826,26 @@
     closeTopMenus();
   });
 
+  function findFieldValue(item, field) {
+    if (field === 'imageCaption') return normalizeImageAttachment(item?.imageAttachment)?.caption || '';
+    if (field === 'imageAltText') return normalizeImageAttachment(item?.imageAttachment)?.altText || '';
+    return typeof item?.[field] === 'string' ? item[field] : '';
+  }
+
+  function setFindFieldValue(item, field, value) {
+    if (field === 'imageCaption' || field === 'imageAltText') {
+      const attachment = normalizeImageAttachment(item?.imageAttachment);
+      if (!attachment) return false;
+      if (field === 'imageCaption') attachment.caption = value;
+      else attachment.altText = value;
+      item.imageAttachment = attachment;
+      return true;
+    }
+    if (typeof item?.[field] !== 'string') return false;
+    item[field] = value;
+    return true;
+  }
+
   function computeFindMatches() {
     const query = findState.query;
     if (!query) return [];
@@ -1739,7 +1853,7 @@
     const matches = [];
 
     const collect = (item, field) => {
-      const value = String(item?.[field] || '');
+      const value = findFieldValue(item, field);
       if (!value) return;
       const haystack = findState.caseSensitive ? value : value.toLocaleLowerCase();
       let from = 0;
@@ -1754,6 +1868,10 @@
     state.messages.forEach(item => {
       collect(item, 'text');
       if (isMessage(item)) collect(item, 'annotation');
+      if (item.imageAttachment) {
+        collect(item, 'imageCaption');
+        collect(item, 'imageAltText');
+      }
     });
     return matches;
   }
@@ -1803,8 +1921,11 @@
     const match = findState.matches[findState.current];
     if (!match) return;
     const item = state.messages.find(entry => entry.id === match.messageId);
-    if (!item || typeof item[match.field] !== 'string') return;
-    item[match.field] = item[match.field].slice(0, match.start) + els.replaceInput.value + item[match.field].slice(match.start + match.length);
+    if (!item) return;
+    const currentValue = findFieldValue(item, match.field);
+    if (!currentValue && match.start !== 0) return;
+    const nextValue = currentValue.slice(0, match.start) + els.replaceInput.value + currentValue.slice(match.start + match.length);
+    if (!setFindFieldValue(item, match.field, nextValue)) return;
     scheduleSave();
     findState.matches = computeFindMatches();
     if (findState.current >= findState.matches.length) findState.current = Math.max(0, findState.matches.length - 1);
@@ -1820,15 +1941,21 @@
     const regex = new RegExp(escaped, flags);
     let count = 0;
     const replaceField = (item, field) => {
-      if (typeof item[field] !== 'string' || !item[field]) return;
-      item[field] = item[field].replace(regex, () => {
+      const value = findFieldValue(item, field);
+      if (!value) return;
+      const nextValue = value.replace(regex, () => {
         count += 1;
         return els.replaceInput.value;
       });
+      if (nextValue !== value) setFindFieldValue(item, field, nextValue);
     };
     state.messages.forEach(item => {
       replaceField(item, 'text');
       if (isMessage(item)) replaceField(item, 'annotation');
+      if (item.imageAttachment) {
+        replaceField(item, 'imageCaption');
+        replaceField(item, 'imageAltText');
+      }
     });
     scheduleSave();
     findState.matches = [];
@@ -2165,12 +2292,18 @@
         results.push({ documentId, title, kind: 'Header', snippet: header.replace(/\s+/g, ' ').trim() });
       }
       for (const item of documentState.messages) {
+        const attachment = normalizeImageAttachment(item.imageAttachment);
         if (isNarrative(item)) {
           addTextResult(documentId, title, 'Narrative', item.text);
+          if (attachment?.caption) addTextResult(documentId, title, 'Narrative image caption', attachment.caption);
+          if (attachment?.altText) addTextResult(documentId, title, 'Narrative image alt text', attachment.altText);
         } else {
           const participant = documentState.participants.find(p => p.id === item.speakerId);
-          addTextResult(documentId, title, participant?.name || 'Message', item.text);
-          if (item.annotation) addTextResult(documentId, title, `${participant?.name || 'Message'} annotation`, item.annotation);
+          const name = participant?.name || 'Message';
+          addTextResult(documentId, title, name, item.text);
+          if (item.annotation) addTextResult(documentId, title, `${name} annotation`, item.annotation);
+          if (attachment?.caption) addTextResult(documentId, title, `${name} image caption`, attachment.caption);
+          if (attachment?.altText) addTextResult(documentId, title, `${name} image alt text`, attachment.altText);
         }
         if (results.length >= 60) return results;
       }
@@ -2706,20 +2839,35 @@
     return (name || 'thread').replace(/[\\/:*?"<>|]+/g, '-').trim() || 'thread';
   }
 
+  function transcriptImageMetadataLines(item, indent = '') {
+    const attachment = normalizeImageAttachment(item?.imageAttachment);
+    if (!attachment) return [];
+    const lines = [`${indent}[Image attachment: ${attachment.name || 'image'}]`];
+    const addMultiline = (label, value) => {
+      if (!value) return;
+      const parts = String(value).split('\n');
+      lines.push(`${indent}${label}: ${parts[0] || ''}`);
+      parts.slice(1).forEach(part => lines.push(`${indent}  ${part}`));
+    };
+    addMultiline('Caption', attachment.caption);
+    addMultiline('Alt text', attachment.altText);
+    return lines;
+  }
+
   function buildTranscript() {
     const lines = [state.title || 'Untitled Thread', ''];
     if (state.sceneHeader) lines.push(state.sceneHeader, '');
     state.messages.forEach(item => {
       if (isNarrative(item)) {
         lines.push(item.text);
-        if (item.imageAttachment) lines.push(`[Image attachment: ${item.imageAttachment.name || 'image'}]`);
+        lines.push(...transcriptImageMetadataLines(item));
         lines.push('');
         return;
       }
       const p = getParticipant(item.speakerId);
       const stamp = item.displayTimestamp ? ` [${item.displayTimestamp}]` : '';
       lines.push(`${p?.name || 'Unknown'}${stamp}: ${item.text}`);
-      if (item.imageAttachment) lines.push(`    [Image attachment: ${item.imageAttachment.name || 'image'}]`);
+      lines.push(...transcriptImageMetadataLines(item, '    '));
       if (item.annotation) {
         String(item.annotation).split('\n').forEach(line => lines.push(`    ${line}`));
       }
@@ -2838,6 +2986,19 @@
     ctx.closePath();
   }
 
+  function paintPngImageCaption(ctx, text, x, y, maxWidth, align = 'left', draw = false) {
+    if (!text) return 0;
+    ctx.font = '400 18px Arial, sans-serif';
+    const lines = wrapCanvasText(ctx, text, Math.max(120, maxWidth));
+    if (draw) {
+      ctx.fillStyle = '#5f5f68';
+      ctx.textAlign = align;
+      lines.forEach((line, lineIndex) => ctx.fillText(line, x, y + lineIndex * 25));
+      ctx.textAlign = 'left';
+    }
+    return Math.max(1, lines.length) * 25;
+  }
+
   function paintPngThread(ctx, draw = false, imageMap = new Map()) {
     const W = 1080;
     const left = 72;
@@ -2902,7 +3063,12 @@
               ctx.textAlign = 'left';
             }
           }
-          y += box.height + 12;
+          y += box.height;
+          if (item.imageAttachment.caption) {
+            y += 8;
+            y += paintPngImageCaption(ctx, item.imageAttachment.caption, W / 2, y, box.width, 'center', draw);
+          }
+          y += 12;
         }
         y += 12;
         return;
@@ -2996,6 +3162,12 @@
         }
         annotationMaxWidth = Math.max(annotationMaxWidth, box.width);
         y += box.height;
+        if (item.imageAttachment.caption) {
+          y += 8;
+          const captionAlign = transcript || side === 'left' ? 'left' : 'right';
+          const captionX = captionAlign === 'right' ? imageX + box.width : imageX;
+          y += paintPngImageCaption(ctx, item.imageAttachment.caption, captionX, y, box.width, captionAlign, draw);
+        }
       }
 
       if (item.annotation) {
@@ -3140,6 +3312,23 @@ ${imageRels}
     return `<w:p><w:pPr><w:jc w:val="${side === 'right' ? 'right' : 'left'}"/><w:spacing w:before="0" w:after="180"/></w:pPr>${runs}</w:p>`;
   }
 
+  function wordPortableImageMetadata(attachment, align = 'left', trailingAfter = 180) {
+    const image = normalizeImageAttachment(attachment);
+    if (!image) return [];
+    const paragraphs = [];
+    const makeParagraph = (text, { italic = false, size = 18, color = '666670', after = 50 } = {}) => {
+      const runs = String(text).split('\n').map((line, index) => {
+        const br = index ? '<w:r><w:br/></w:r>' : '';
+        return `${br}<w:r><w:rPr>${italic ? '<w:i/>' : ''}<w:color w:val="${color}"/><w:sz w:val="${size}"/><w:szCs w:val="${size}"/></w:rPr><w:t xml:space="preserve">${xmlEscape(line)}</w:t></w:r>`;
+      }).join('');
+      return `<w:p><w:pPr><w:jc w:val="${align}"/><w:spacing w:before="0" w:after="${after}"/></w:pPr>${runs}</w:p>`;
+    };
+    paragraphs.push(makeParagraph(`[Image attachment: ${image.name || 'image'}]`, { italic: true, size: 18, color: '777780', after: image.caption || image.altText ? 45 : trailingAfter }));
+    if (image.caption) paragraphs.push(makeParagraph(`Caption: ${image.caption}`, { size: 19, color: '555560', after: image.altText ? 45 : trailingAfter }));
+    if (image.altText) paragraphs.push(makeParagraph(`Alt text: ${image.altText}`, { italic: true, size: 17, color: '777780', after: trailingAfter }));
+    return paragraphs;
+  }
+
   async function buildPortableDocx() {
     const paragraphs = [];
     paragraphs.push(`<w:p><w:pPr><w:pStyle w:val="Title"/></w:pPr><w:r><w:t>${xmlEscape(state.title || 'Untitled Thread')}</w:t></w:r></w:p>`);
@@ -3147,14 +3336,14 @@ ${imageRels}
     for (const item of state.messages) {
       if (isNarrative(item)) {
         paragraphs.push(wordNarrativeParagraph(item.text));
-        if (item.imageAttachment) paragraphs.push(`<w:p><w:pPr><w:jc w:val="center"/><w:spacing w:after="180"/></w:pPr><w:r><w:rPr><w:i/><w:color w:val="777780"/></w:rPr><w:t>[Image attachment: ${xmlEscape(item.imageAttachment.name || 'image')}]</w:t></w:r></w:p>`);
+        paragraphs.push(...wordPortableImageMetadata(item.imageAttachment, 'center', 180));
         continue;
       }
       const p = getParticipant(item.speakerId);
       const timestampRun = item.displayTimestamp ? `<w:r><w:rPr><w:i/><w:color w:val="6D6D78"/><w:sz w:val="19"/><w:szCs w:val="19"/></w:rPr><w:t xml:space="preserve">  ${xmlEscape(item.displayTimestamp)}</w:t></w:r>` : '';
       paragraphs.push(`<w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:rPr><w:b/></w:rPr><w:t>${xmlEscape(p?.name || 'Unknown')}</w:t></w:r>${timestampRun}</w:p>`);
       paragraphs.push(`<w:p><w:pPr><w:spacing w:after="${item.imageAttachment || item.annotation ? 60 : 180}"/></w:pPr>${textRuns(item.text)}</w:p>`);
-      if (item.imageAttachment) paragraphs.push(`<w:p><w:pPr><w:spacing w:after="${item.annotation ? 60 : 180}"/></w:pPr><w:r><w:rPr><w:i/><w:color w:val="777780"/></w:rPr><w:t>[Image attachment: ${xmlEscape(item.imageAttachment.name || 'image')}]</w:t></w:r></w:p>`);
+      paragraphs.push(...wordPortableImageMetadata(item.imageAttachment, 'left', item.annotation ? 60 : 180));
       if (item.annotation) paragraphs.push(wordAnnotationParagraph(item.annotation, 'left'));
     }
 
@@ -3305,7 +3494,7 @@ ${imageRels}
     return { images, mediaFiles, relationships };
   }
 
-  function wordImageParagraph(info, align = 'left', maxWidthInches = 5.4, maxHeightInches = 6.5) {
+  function wordImageParagraph(info, align = 'left', maxWidthInches = 5.4, maxHeightInches = 6.5, altText = '') {
     if (!info) return '';
     const EMU_PER_INCH = 914400;
     const intrinsicWidth = Math.max(1, info.width) / 96 * EMU_PER_INCH;
@@ -3319,12 +3508,12 @@ ${imageRels}
     <wp:inline distT="0" distB="0" distL="0" distR="0">
       <wp:extent cx="${cx}" cy="${cy}"/>
       <wp:effectExtent l="0" t="0" r="0" b="0"/>
-      <wp:docPr id="${info.docPrId}" name="${xmlEscape(info.name)}"/>
+      <wp:docPr id="${info.docPrId}" name="${xmlEscape(info.name)}" descr="${xmlEscape(altText || '')}"/>
       <wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr>
       <a:graphic>
         <a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">
           <pic:pic>
-            <pic:nvPicPr><pic:cNvPr id="0" name="${xmlEscape(info.name)}"/><pic:cNvPicPr/></pic:nvPicPr>
+            <pic:nvPicPr><pic:cNvPr id="0" name="${xmlEscape(info.name)}" descr="${xmlEscape(altText || '')}"/><pic:cNvPicPr/></pic:nvPicPr>
             <pic:blipFill><a:blip r:embed="${info.relId}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>
             <pic:spPr>
               <a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm>
@@ -3338,6 +3527,15 @@ ${imageRels}
 </w:p>`;
   }
 
+  function wordImageCaptionParagraph(text, align = 'left') {
+    if (!text) return '';
+    const runs = String(text).split('\n').map((line, index) => {
+      const br = index ? '<w:r><w:br/></w:r>' : '';
+      return `${br}<w:r><w:rPr><w:color w:val="5F5F68"/><w:sz w:val="19"/><w:szCs w:val="19"/></w:rPr><w:t xml:space="preserve">${xmlEscape(line)}</w:t></w:r>`;
+    }).join('');
+    return `<w:p><w:pPr><w:jc w:val="${align}"/><w:spacing w:before="0" w:after="120"/></w:pPr>${runs}</w:p>`;
+  }
+
   async function buildRichDocx() {
     const prepared = await prepareDocxImages(state);
     const blocks = [];
@@ -3347,7 +3545,10 @@ ${imageRels}
       const imageInfo = item.imageAttachment ? prepared.images.get(item.imageAttachment.id) : null;
       if (isNarrative(item)) {
         blocks.push(wordNarrativeParagraph(item.text));
-        if (imageInfo) blocks.push(wordImageParagraph(imageInfo, 'center', 5.4, 6.5));
+        if (imageInfo) {
+          blocks.push(wordImageParagraph(imageInfo, 'center', 5.4, 6.5, item.imageAttachment?.altText || ''));
+          if (item.imageAttachment?.caption) blocks.push(wordImageCaptionParagraph(item.imageAttachment.caption, 'center'));
+        }
         return;
       }
       const p = getParticipant(item.speakerId);
@@ -3359,7 +3560,8 @@ ${imageRels}
         : richMessageTable(item, p, continuesSpeaker, includeAnnotation));
       if (imageInfo) {
         const align = state.conversationStyle === 'transcript' ? 'left' : (p?.side === 'right' ? 'right' : 'left');
-        blocks.push(wordImageParagraph(imageInfo, align, state.conversationStyle === 'transcript' ? 5.4 : 4.7, 6.3));
+        blocks.push(wordImageParagraph(imageInfo, align, state.conversationStyle === 'transcript' ? 5.4 : 4.7, 6.3, item.imageAttachment?.altText || ''));
+        if (item.imageAttachment?.caption) blocks.push(wordImageCaptionParagraph(item.imageAttachment.caption, align));
         if (item.annotation) blocks.push(wordAnnotationParagraph(item.annotation, align));
       }
     });
