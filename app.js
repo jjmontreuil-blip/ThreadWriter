@@ -1,5 +1,5 @@
 (() => {
-  const APP_VERSION = '0.11.2';
+  const APP_VERSION = '0.12';
   const LEGACY_STORAGE_KEY = 'threadwriter.project.v1';
   const LIBRARY_KEY = 'threadwriter.library.v1';
   const DOCUMENT_PREFIX = 'threadwriter.document.v1.';
@@ -14,7 +14,7 @@
   const MAX_IMAGE_DIMENSION = 2400;
   const MAX_IMAGE_FILE_BYTES = 25 * 1024 * 1024;
   const defaultState = () => ({
-    version: 8,
+    version: 9,
     title: 'Untitled Thread',
     sceneHeader: '',
     headerFont: 'rounded',
@@ -22,10 +22,16 @@
     conversationWidth: 'wide',
     conversationBackground: { mode: 'default', solid: '#f4f4f7', colors: ['#f4f4f7', '#d9e6ff'], direction: 'vertical' },
     highContrastLabels: false,
+    avatarMode: 'off',
+    avatarPlacement: 'alongside',
+    avatarAlignment: 'side',
+    avatarShape: 'circle',
+    avatarSize: 'small',
+    bubbleTails: false,
     activeParticipantId: 'p1',
     participants: [
-      { id: 'p1', name: 'Participant 1', side: 'left', color: '#d9e6ff', textColorMode: 'auto', textColor: '#151518' },
-      { id: 'p2', name: 'Participant 2', side: 'right', color: '#c9f2d0', textColorMode: 'auto', textColor: '#151518' }
+      { id: 'p1', name: 'Participant 1', side: 'left', color: '#d9e6ff', textColorMode: 'auto', textColor: '#151518', avatarType: 'none', avatarInitials: 'P1', avatarEmoji: '🙂', avatarEmojiBackground: true },
+      { id: 'p2', name: 'Participant 2', side: 'right', color: '#c9f2d0', textColorMode: 'auto', textColor: '#151518', avatarType: 'none', avatarInitials: 'P2', avatarEmoji: '🙂', avatarEmojiBackground: true }
     ],
     messages: []
   });
@@ -48,6 +54,8 @@
   let imageDetailsItemId = null;
   let linkPreviewItemId = null;
   let linkPreviewImageTargetId = null;
+  let avatarImageTargetRow = null;
+  const stagedAvatarImageIds = new Set();
   let migrationImportSession = null;
   let mediaDbPromise = null;
   let mediaGcTimer = null;
@@ -82,6 +90,18 @@
     quickNarrativeBtn: document.getElementById('quickNarrativeBtn'),
     conversationStyle: document.getElementById('conversationStyle'),
     conversationWidth: document.getElementById('conversationWidth'),
+    chatAppearanceBtn: document.getElementById('chatAppearanceBtn'),
+    chatAppearanceDialog: document.getElementById('chatAppearanceDialog'),
+    closeChatAppearanceDialogBtn: document.getElementById('closeChatAppearanceDialogBtn'),
+    avatarMode: document.getElementById('avatarMode'),
+    avatarPlacement: document.getElementById('avatarPlacement'),
+    avatarAlignmentField: document.getElementById('avatarAlignmentField'),
+    avatarAlignment: document.getElementById('avatarAlignment'),
+    avatarShape: document.getElementById('avatarShape'),
+    avatarSize: document.getElementById('avatarSize'),
+    bubbleTailsInput: document.getElementById('bubbleTailsInput'),
+    resetChatAppearanceBtn: document.getElementById('resetChatAppearanceBtn'),
+    saveChatAppearanceBtn: document.getElementById('saveChatAppearanceBtn'),
     backgroundBtn: document.getElementById('backgroundBtn'),
     backgroundDialog: document.getElementById('backgroundDialog'),
     closeBackgroundDialogBtn: document.getElementById('closeBackgroundDialogBtn'),
@@ -152,6 +172,7 @@
     commitMigrationImportBtn: document.getElementById('commitMigrationImportBtn'),
     imageInput: document.getElementById('imageInput'),
     linkPreviewImageInput: document.getElementById('linkPreviewImageInput'),
+    avatarImageInput: document.getElementById('avatarImageInput'),
     imageDetailsDialog: document.getElementById('imageDetailsDialog'),
     imageDetailsName: document.getElementById('imageDetailsName'),
     imageCaptionInput: document.getElementById('imageCaptionInput'),
@@ -428,6 +449,10 @@
 
   function imageIdsForState(project) {
     const ids = new Set();
+    for (const participant of project?.participants || []) {
+      const avatar = normalizeImageAttachment(participant?.avatarImage);
+      if (avatar?.id) ids.add(avatar.id);
+    }
     for (const item of project?.messages || []) {
       const attachment = normalizeImageAttachment(item?.imageAttachment);
       if (attachment?.id) ids.add(attachment.id);
@@ -805,8 +830,10 @@
     try {
       const referenced = new Set();
       mergeImageIds(referenced, state);
+      stagedAvatarImageIds.forEach(id => referenced.add(id));
       undoStack.forEach(entry => mergeImageIds(referenced, entry.state));
       redoStack.forEach(entry => mergeImageIds(referenced, entry.state));
+      for (const preset of conversationPresetLibrary.presets || []) mergeImageIds(referenced, preset);
       for (const id of Object.keys(library.documents || {})) {
         const doc = id === currentDocumentId ? state : readStoredDocument(id);
         if (doc) mergeImageIds(referenced, doc);
@@ -865,6 +892,48 @@
     return value === 'tablet' || value === 'phone' ? value : 'wide';
   }
 
+  function normalizeAvatarMode(value) {
+    return value === 'initial' || value === 'persistent' ? value : 'off';
+  }
+
+  function normalizeAvatarPlacement(value) {
+    return value === 'above' ? 'above' : 'alongside';
+  }
+
+  function normalizeAvatarAlignment(value) {
+    return value === 'center' ? 'center' : 'side';
+  }
+
+  function normalizeAvatarShape(value) {
+    return value === 'square' ? 'square' : 'circle';
+  }
+
+  function normalizeAvatarSize(value) {
+    return value === 'large' ? 'large' : 'small';
+  }
+
+  function normalizeAvatarType(value) {
+    return value === 'image' || value === 'initials' || value === 'emoji' ? value : 'none';
+  }
+
+  function defaultAvatarInitials(name) {
+    const words = String(name || '').trim().split(/\s+/).filter(Boolean);
+    if (!words.length) return '?';
+    const first = Array.from(words[0])[0] || '?';
+    const second = words.length > 1 ? (Array.from(words[words.length - 1])[0] || '') : (Array.from(words[0])[1] || '');
+    return `${first}${second}`.toLocaleUpperCase().slice(0, 2);
+  }
+
+  function normalizeAvatarInitials(value, name = '') {
+    const cleaned = Array.from(String(value || '').trim()).filter(char => !/\s/.test(char)).slice(0, 2).join('');
+    return cleaned || defaultAvatarInitials(name);
+  }
+
+  function normalizeAvatarEmoji(value) {
+    const trimmed = String(value || '').trim();
+    return trimmed || '🙂';
+  }
+
   function normalizeBubbleTextMode(value) {
     return value === 'black' || value === 'white' || value === 'custom' ? value : 'auto';
   }
@@ -897,13 +966,23 @@
 
   function normalizeConversationPreset(value, index = 0) {
     if (!value || typeof value !== 'object') return null;
-    const participants = Array.isArray(value.participants) ? value.participants.map((participant, participantIndex) => ({
-      name: typeof participant?.name === 'string' && participant.name.trim() ? participant.name.trim() : `Participant ${participantIndex + 1}`,
-      side: participant?.side === 'right' ? 'right' : 'left',
-      color: normalizeHex(participant?.color, '#e5e5ea'),
-      textColorMode: normalizeBubbleTextMode(participant?.textColorMode),
-      textColor: normalizeHex(participant?.textColor, '#ff2d55')
-    })).slice(0, 24) : [];
+    const participants = Array.isArray(value.participants) ? value.participants.map((participant, participantIndex) => {
+      const name = typeof participant?.name === 'string' && participant.name.trim() ? participant.name.trim() : `Participant ${participantIndex + 1}`;
+      const avatarImage = normalizeImageAttachment(participant?.avatarImage);
+      const normalized = {
+        name,
+        side: participant?.side === 'right' ? 'right' : 'left',
+        color: normalizeHex(participant?.color, '#e5e5ea'),
+        textColorMode: normalizeBubbleTextMode(participant?.textColorMode),
+        textColor: normalizeHex(participant?.textColor, '#ff2d55'),
+        avatarType: normalizeAvatarType(participant?.avatarType),
+        avatarInitials: normalizeAvatarInitials(participant?.avatarInitials, name),
+        avatarEmoji: normalizeAvatarEmoji(participant?.avatarEmoji),
+        avatarEmojiBackground: participant?.avatarEmojiBackground !== false
+      };
+      if (normalized.avatarType === 'image' && avatarImage) normalized.avatarImage = avatarImage;
+      return normalized;
+    }).slice(0, 24) : [];
     if (!participants.length) return null;
     return {
       id: typeof value.id === 'string' && value.id ? value.id : `preset-${Date.now()}-${index}-${Math.random().toString(16).slice(2)}`,
@@ -912,6 +991,12 @@
       conversationWidth: normalizeConversationWidth(value.conversationWidth),
       conversationBackground: normalizeConversationBackground(value.conversationBackground),
       highContrastLabels: value.highContrastLabels === true,
+      avatarMode: normalizeAvatarMode(value.avatarMode),
+      avatarPlacement: normalizeAvatarPlacement(value.avatarPlacement),
+      avatarAlignment: normalizeAvatarAlignment(value.avatarAlignment),
+      avatarShape: normalizeAvatarShape(value.avatarShape),
+      avatarSize: normalizeAvatarSize(value.avatarSize),
+      bubbleTails: value.bubbleTails === true,
       participants,
       createdAt: value.createdAt || new Date().toISOString(),
       updatedAt: value.updatedAt || value.createdAt || new Date().toISOString()
@@ -1042,18 +1127,28 @@
     const base = defaultState();
     if (!project || !Array.isArray(project.participants) || !Array.isArray(project.messages)) throw new Error('Bad project');
     const allowedFonts = new Set(['rounded', 'sans', 'serif', 'mono']);
-    const participants = project.participants.map((p, index) => ({
-      id: p.id || `p${index + 1}`,
-      name: typeof p.name === 'string' && p.name.trim() ? p.name : `Participant ${index + 1}`,
-      side: p.side === 'right' ? 'right' : 'left',
-      color: /^#?[0-9a-fA-F]{6}$/.test(String(p.color || '')) ? (String(p.color).startsWith('#') ? p.color : `#${p.color}`) : '#e5e5ea',
-      textColorMode: normalizeBubbleTextMode(p.textColorMode),
-      textColor: normalizeHex(p.textColor, '#ff2d55')
-    }));
+    const participants = project.participants.map((p, index) => {
+      const name = typeof p.name === 'string' && p.name.trim() ? p.name : `Participant ${index + 1}`;
+      const avatarImage = normalizeImageAttachment(p.avatarImage);
+      const normalized = {
+        id: p.id || `p${index + 1}`,
+        name,
+        side: p.side === 'right' ? 'right' : 'left',
+        color: /^#?[0-9a-fA-F]{6}$/.test(String(p.color || '')) ? (String(p.color).startsWith('#') ? p.color : `#${p.color}`) : '#e5e5ea',
+        textColorMode: normalizeBubbleTextMode(p.textColorMode),
+        textColor: normalizeHex(p.textColor, '#ff2d55'),
+        avatarType: normalizeAvatarType(p.avatarType),
+        avatarInitials: normalizeAvatarInitials(p.avatarInitials, name),
+        avatarEmoji: normalizeAvatarEmoji(p.avatarEmoji),
+        avatarEmojiBackground: p.avatarEmojiBackground !== false
+      };
+      if (normalized.avatarType === 'image' && avatarImage) normalized.avatarImage = avatarImage;
+      return normalized;
+    });
     const fallbackSpeakerId = participants[0]?.id || null;
     return {
       ...project,
-      version: 8,
+      version: 9,
       title: typeof project.title === 'string' ? project.title : base.title,
       sceneHeader: typeof project.sceneHeader === 'string' ? project.sceneHeader : '',
       headerFont: allowedFonts.has(project.headerFont) ? project.headerFont : 'rounded',
@@ -1061,6 +1156,12 @@
       conversationWidth: normalizeConversationWidth(project.conversationWidth),
       conversationBackground: normalizeConversationBackground(project.conversationBackground),
       highContrastLabels: project.highContrastLabels === true,
+      avatarMode: normalizeAvatarMode(project.avatarMode),
+      avatarPlacement: normalizeAvatarPlacement(project.avatarPlacement),
+      avatarAlignment: normalizeAvatarAlignment(project.avatarAlignment),
+      avatarShape: normalizeAvatarShape(project.avatarShape),
+      avatarSize: normalizeAvatarSize(project.avatarSize),
+      bubbleTails: project.bubbleTails === true,
       activeParticipantId: project.activeParticipantId || fallbackSpeakerId,
       participants,
       messages: project.messages.map((m, index) => {
@@ -1501,6 +1602,90 @@
     });
   }
 
+  function participantHasAvatar(participant) {
+    const type = normalizeAvatarType(participant?.avatarType);
+    if (type === 'none') return false;
+    if (type === 'image') return Boolean(normalizeImageAttachment(participant?.avatarImage));
+    return true;
+  }
+
+  function messageBurstMeta() {
+    const result = new Array(state.messages.length);
+    const seenParticipants = new Set();
+    let activeBurst = null;
+    const avatarMode = normalizeAvatarMode(state.avatarMode);
+    const alongside = normalizeAvatarPlacement(state.avatarPlacement) === 'alongside';
+
+    state.messages.forEach((item, index) => {
+      if (isNarrative(item)) {
+        result[index] = { burstStart: false, burstEnd: false, showAvatar: false, avatarGutter: false };
+        activeBurst = null;
+        return;
+      }
+      const previous = state.messages[index - 1];
+      const next = state.messages[index + 1];
+      const burstStart = !isMessage(previous) || previous?.speakerId !== item.speakerId;
+      const burstEnd = !isMessage(next) || next?.speakerId !== item.speakerId;
+      if (burstStart) {
+        const participant = getParticipant(item.speakerId);
+        const firstBurst = !seenParticipants.has(item.speakerId);
+        seenParticipants.add(item.speakerId);
+        const eligible = state.conversationStyle === 'chat'
+          && participantHasAvatar(participant)
+          && (avatarMode === 'persistent' || (avatarMode === 'initial' && firstBurst));
+        activeBurst = { speakerId: item.speakerId, avatar: eligible };
+      }
+      const avatarBurst = Boolean(activeBurst?.avatar && activeBurst.speakerId === item.speakerId);
+      result[index] = {
+        burstStart,
+        burstEnd,
+        showAvatar: burstStart && avatarBurst,
+        avatarGutter: avatarBurst && alongside
+      };
+      if (burstEnd) activeBurst = null;
+    });
+    return result;
+  }
+
+  function makeParticipantAvatarElement(participant, extraClass = '') {
+    if (!participantHasAvatar(participant)) return null;
+    const type = normalizeAvatarType(participant.avatarType);
+    const avatar = document.createElement('div');
+    avatar.className = `participant-avatar avatar-${normalizeAvatarShape(state.avatarShape)} avatar-${normalizeAvatarSize(state.avatarSize)} avatar-${type}${extraClass ? ` ${extraClass}` : ''}`;
+    avatar.style.setProperty('--avatar-color', participant.color || '#e5e5ea');
+    avatar.style.setProperty('--avatar-text-color', automaticBubbleTextColor(participant.color || '#e5e5ea'));
+    avatar.setAttribute('aria-label', `${participant.name} avatar`);
+    avatar.title = participant.name;
+
+    if (type === 'initials') {
+      avatar.textContent = normalizeAvatarInitials(participant.avatarInitials, participant.name);
+      return avatar;
+    }
+    if (type === 'emoji') {
+      if (participant.avatarEmojiBackground === false) avatar.classList.add('avatar-no-background');
+      avatar.textContent = normalizeAvatarEmoji(participant.avatarEmoji);
+      return avatar;
+    }
+
+    const fallback = document.createElement('span');
+    fallback.className = 'participant-avatar-fallback';
+    fallback.textContent = defaultAvatarInitials(participant.name);
+    const img = document.createElement('img');
+    img.alt = `${participant.name} avatar`;
+    img.hidden = true;
+    avatar.append(fallback, img);
+    const image = normalizeImageAttachment(participant.avatarImage);
+    if (image) {
+      getMediaObjectUrl(image.id).then(url => {
+        if (!url || !img.isConnected) return;
+        img.src = url;
+        img.hidden = false;
+        fallback.hidden = true;
+      }).catch(() => {});
+    }
+    return avatar;
+  }
+
   function makeImageAttachmentElement(item, kind = 'message', findFlags = {}) {
     const attachment = normalizeImageAttachment(item?.imageAttachment);
     if (!attachment) return null;
@@ -1618,6 +1803,7 @@
     const altTextMatchIds = new Set(findState.matches.filter(match => match.field === 'imageAltText').map(match => match.messageId));
     const linkPreviewMatchIds = new Set(findState.matches.filter(match => match.field.startsWith('linkPreview')).map(match => match.messageId));
     const currentMatch = findState.matches[findState.current];
+    const burstMeta = messageBurstMeta();
 
     state.messages.forEach((item, index) => {
       if (isNarrative(item)) {
@@ -1728,15 +1914,23 @@
       const previous = state.messages[index - 1];
       const continuesSpeaker = isMessage(previous) && previous?.speakerId === item.speakerId;
       const showSpeakerLabel = state.conversationStyle !== 'chat' || !continuesSpeaker;
+      const burst = burstMeta[index] || { burstStart: !continuesSpeaker, burstEnd: true, showAvatar: false, avatarGutter: false };
 
       const row = document.createElement('article');
       row.className = `message-row ${p.side}${continuesSpeaker ? ' continuation' : ' speaker-start'}${item.displayTimestamp ? ' timestamped' : ''}`;
+      if (burst.avatarGutter) row.classList.add('avatar-alongside-burst');
+      if (state.conversationStyle === 'chat' && state.bubbleTails === true && burst.burstEnd) row.classList.add('has-tail');
       if (textMatchIds.has(item.id)) row.classList.add('find-match');
       if (currentMatch?.messageId === item.id && currentMatch.field === 'text') row.classList.add('find-current');
       row.dataset.messageId = item.id;
 
       const card = document.createElement('div');
       card.className = 'message-card';
+
+      if (burst.showAvatar && normalizeAvatarPlacement(state.avatarPlacement) === 'above') {
+        const avatar = makeParticipantAvatarElement(p, `avatar-above avatar-above-${normalizeAvatarAlignment(state.avatarAlignment)}`);
+        if (avatar) card.appendChild(avatar);
+      }
 
       if (showSpeakerLabel) {
         const label = document.createElement('div');
@@ -1901,7 +2095,16 @@
         card.appendChild(note);
       }
 
-      row.appendChild(card);
+      if (burst.avatarGutter) {
+        const avatar = burst.showAvatar ? makeParticipantAvatarElement(p, 'avatar-alongside') : null;
+        const avatarSlot = document.createElement('div');
+        avatarSlot.className = `avatar-slot avatar-slot-${normalizeAvatarSize(state.avatarSize)}`;
+        if (avatar) avatarSlot.appendChild(avatar);
+        if (p.side === 'right') row.append(card, avatarSlot);
+        else row.append(avatarSlot, card);
+      } else {
+        row.appendChild(card);
+      }
       els.thread.appendChild(row);
     });
   }
@@ -2457,6 +2660,78 @@
     closeTopMenus();
   });
 
+  function updateChatAppearanceDialog() {
+    if (!els.chatAppearanceDialog) return;
+    const placement = normalizeAvatarPlacement(els.avatarPlacement?.value);
+    if (els.avatarAlignmentField) els.avatarAlignmentField.hidden = placement !== 'above';
+    const preview = els.chatAppearanceDialog.querySelector('.chat-appearance-preview');
+    const avatar = preview?.querySelector('.chat-preview-avatar');
+    const bubbles = preview?.querySelector('.chat-preview-bubbles');
+    if (avatar) {
+      avatar.hidden = normalizeAvatarMode(els.avatarMode?.value) === 'off';
+      avatar.style.borderRadius = normalizeAvatarShape(els.avatarShape?.value) === 'square' ? '8px' : '50%';
+      const large = normalizeAvatarSize(els.avatarSize?.value) === 'large';
+      avatar.style.width = `${large ? 50 : 34}px`;
+      avatar.style.height = `${large ? 50 : 34}px`;
+      avatar.style.fontSize = `${large ? 15 : 11}px`;
+    }
+    if (preview) {
+      preview.style.alignItems = placement === 'above' ? 'flex-start' : 'flex-end';
+      preview.style.flexDirection = placement === 'above' ? 'column' : 'row';
+    }
+    if (bubbles) bubbles.style.alignSelf = placement === 'above' && normalizeAvatarAlignment(els.avatarAlignment?.value) === 'center' ? 'center' : '';
+    const tail = preview?.querySelector('.chat-preview-bubbles .with-tail');
+    if (tail) tail.classList.toggle('tail-off', !els.bubbleTailsInput?.checked);
+  }
+
+  function openChatAppearanceDialog() {
+    if (!els.chatAppearanceDialog) return;
+    els.avatarMode.value = normalizeAvatarMode(state.avatarMode);
+    els.avatarPlacement.value = normalizeAvatarPlacement(state.avatarPlacement);
+    els.avatarAlignment.value = normalizeAvatarAlignment(state.avatarAlignment);
+    els.avatarShape.value = normalizeAvatarShape(state.avatarShape);
+    els.avatarSize.value = normalizeAvatarSize(state.avatarSize);
+    els.bubbleTailsInput.checked = state.bubbleTails === true;
+    updateChatAppearanceDialog();
+    els.chatAppearanceDialog.showModal();
+  }
+
+  function closeChatAppearanceDialog() {
+    if (els.chatAppearanceDialog?.open) els.chatAppearanceDialog.close();
+  }
+
+  function saveChatAppearance() {
+    const next = {
+      avatarMode: normalizeAvatarMode(els.avatarMode.value),
+      avatarPlacement: normalizeAvatarPlacement(els.avatarPlacement.value),
+      avatarAlignment: normalizeAvatarAlignment(els.avatarAlignment.value),
+      avatarShape: normalizeAvatarShape(els.avatarShape.value),
+      avatarSize: normalizeAvatarSize(els.avatarSize.value),
+      bubbleTails: els.bubbleTailsInput.checked === true
+    };
+    const changed = Object.entries(next).some(([key, value]) => state[key] !== value);
+    if (changed) pushUndoSnapshot('chat appearance change');
+    Object.assign(state, next);
+    scheduleSave();
+    renderThread();
+    closeChatAppearanceDialog();
+  }
+
+  els.chatAppearanceBtn?.addEventListener('click', () => { closeTopMenus(); openChatAppearanceDialog(); });
+  els.closeChatAppearanceDialogBtn?.addEventListener('click', closeChatAppearanceDialog);
+  els.chatAppearanceDialog?.addEventListener('cancel', event => { event.preventDefault(); closeChatAppearanceDialog(); });
+  [els.avatarMode, els.avatarPlacement, els.avatarAlignment, els.avatarShape, els.avatarSize, els.bubbleTailsInput].forEach(control => control?.addEventListener('change', updateChatAppearanceDialog));
+  els.resetChatAppearanceBtn?.addEventListener('click', () => {
+    els.avatarMode.value = 'off';
+    els.avatarPlacement.value = 'alongside';
+    els.avatarAlignment.value = 'side';
+    els.avatarShape.value = 'circle';
+    els.avatarSize.value = 'small';
+    els.bubbleTailsInput.checked = false;
+    updateChatAppearanceDialog();
+  });
+  els.saveChatAppearanceBtn?.addEventListener('click', saveChatAppearance);
+
   const BACKGROUND_PRESETS = {
     spectrum: { mode: 'gradient', colors: ['#ff3b30', '#ffcc00', '#34c759', '#007aff'], direction: 'horizontal' },
     steel: { mode: 'gradient', colors: ['#eef1f4', '#9aa3ad', '#dce1e6'], direction: 'vertical' },
@@ -2611,7 +2886,28 @@
       conversationWidth: normalizeConversationWidth(state.conversationWidth),
       conversationBackground: cloneState(normalizeConversationBackground(state.conversationBackground)),
       highContrastLabels: state.highContrastLabels === true,
-      participants: state.participants.map(participant => ({ name: participant.name, side: participant.side, color: participant.color, textColorMode: normalizeBubbleTextMode(participant.textColorMode), textColor: normalizeHex(participant.textColor, '#ff2d55') })),
+      avatarMode: normalizeAvatarMode(state.avatarMode),
+      avatarPlacement: normalizeAvatarPlacement(state.avatarPlacement),
+      avatarAlignment: normalizeAvatarAlignment(state.avatarAlignment),
+      avatarShape: normalizeAvatarShape(state.avatarShape),
+      avatarSize: normalizeAvatarSize(state.avatarSize),
+      bubbleTails: state.bubbleTails === true,
+      participants: state.participants.map(participant => {
+        const value = {
+          name: participant.name,
+          side: participant.side,
+          color: participant.color,
+          textColorMode: normalizeBubbleTextMode(participant.textColorMode),
+          textColor: normalizeHex(participant.textColor, '#ff2d55'),
+          avatarType: normalizeAvatarType(participant.avatarType),
+          avatarInitials: normalizeAvatarInitials(participant.avatarInitials, participant.name),
+          avatarEmoji: normalizeAvatarEmoji(participant.avatarEmoji),
+          avatarEmojiBackground: participant.avatarEmojiBackground !== false
+        };
+        const avatarImage = normalizeImageAttachment(participant.avatarImage);
+        if (value.avatarType === 'image' && avatarImage) value.avatarImage = avatarImage;
+        return value;
+      }),
       createdAt: existing?.createdAt || now,
       updatedAt: now
     });
@@ -2637,7 +2933,8 @@
       name.textContent = preset.name;
       const meta = document.createElement('div');
       meta.className = 'conversation-preset-meta';
-      meta.textContent = `${conversationStyleLabel(preset.conversationStyle)} · ${normalizeConversationWidth(preset.conversationWidth)} width · ${preset.participants.length} participant${preset.participants.length === 1 ? '' : 's'}${preset.highContrastLabels ? ' · high contrast labels' : ''}`;
+      const avatarNote = normalizeAvatarMode(preset.avatarMode) === 'off' ? '' : ` · ${normalizeAvatarMode(preset.avatarMode) === 'persistent' ? 'persistent' : 'initial'} avatars`;
+      meta.textContent = `${conversationStyleLabel(preset.conversationStyle)} · ${normalizeConversationWidth(preset.conversationWidth)} width · ${preset.participants.length} participant${preset.participants.length === 1 ? '' : 's'}${avatarNote}${preset.bubbleTails ? ' · tails' : ''}${preset.highContrastLabels ? ' · high contrast labels' : ''}`;
       const swatches = document.createElement('div');
       swatches.className = 'conversation-preset-swatches';
       preset.participants.slice(0, 8).forEach(participant => {
@@ -2712,17 +3009,32 @@
     state.conversationWidth = normalizeConversationWidth(preset.conversationWidth);
     state.conversationBackground = cloneState(preset.conversationBackground);
     state.highContrastLabels = preset.highContrastLabels === true;
+    state.avatarMode = normalizeAvatarMode(preset.avatarMode);
+    state.avatarPlacement = normalizeAvatarPlacement(preset.avatarPlacement);
+    state.avatarAlignment = normalizeAvatarAlignment(preset.avatarAlignment);
+    state.avatarShape = normalizeAvatarShape(preset.avatarShape);
+    state.avatarSize = normalizeAvatarSize(preset.avatarSize);
+    state.bubbleTails = preset.bubbleTails === true;
 
     const existing = Array.isArray(state.participants) ? state.participants : [];
     const keepExtras = state.messages.some(item => isMessage(item));
-    const nextParticipants = preset.participants.map((participant, index) => ({
-      id: existing[index]?.id || (crypto.randomUUID ? crypto.randomUUID() : `p-${Date.now()}-${index}`),
-      name: participant.name,
-      side: participant.side,
-      color: participant.color,
-      textColorMode: normalizeBubbleTextMode(participant.textColorMode),
-      textColor: normalizeHex(participant.textColor, '#ff2d55')
-    }));
+    const nextParticipants = preset.participants.map((participant, index) => {
+      const next = {
+        id: existing[index]?.id || (crypto.randomUUID ? crypto.randomUUID() : `p-${Date.now()}-${index}`),
+        name: participant.name,
+        side: participant.side,
+        color: participant.color,
+        textColorMode: normalizeBubbleTextMode(participant.textColorMode),
+        textColor: normalizeHex(participant.textColor, '#ff2d55'),
+        avatarType: normalizeAvatarType(participant.avatarType),
+        avatarInitials: normalizeAvatarInitials(participant.avatarInitials, participant.name),
+        avatarEmoji: normalizeAvatarEmoji(participant.avatarEmoji),
+        avatarEmojiBackground: participant.avatarEmojiBackground !== false
+      };
+      const avatarImage = normalizeImageAttachment(participant.avatarImage);
+      if (next.avatarType === 'image' && avatarImage) next.avatarImage = avatarImage;
+      return next;
+    });
     if (keepExtras && existing.length > nextParticipants.length) {
       existing.slice(nextParticipants.length).forEach(participant => nextParticipants.push({ ...participant }));
     }
@@ -3023,9 +3335,128 @@
 
   els.participantsBtn.addEventListener('click', () => { closeTopMenus(); openParticipantsDialog(); });
   function openParticipantsDialog() {
+    stagedAvatarImageIds.clear();
+    avatarImageTargetRow = null;
     els.editor.innerHTML = '';
     state.participants.forEach(p => appendParticipantEditor(p));
     els.dialog.showModal();
+  }
+
+  const AVATAR_EMOJI_CATALOG = [
+    ['🙂','smile face person'], ['😀','grin happy face'], ['😎','cool sunglasses face'], ['🤓','nerd glasses face'], ['🥸','disguise face'], ['🤠','cowboy face'], ['🫡','salute face'], ['🤖','robot tech'],
+    ['👻','ghost spooky'], ['💀','skull'], ['👽','alien'], ['😈','devil'], ['👑','crown royalty'], ['🧙','wizard magic'], ['🧛','vampire'], ['🦸','hero'],
+    ['🐶','dog'], ['🐱','cat'], ['🐺','wolf'], ['🦊','fox'], ['🐻','bear'], ['🐼','panda'], ['🐸','frog'], ['🦁','lion'], ['🐯','tiger'], ['🐰','rabbit'], ['🐦','bird'], ['🦉','owl'], ['🐙','octopus'], ['🦄','unicorn'],
+    ['❤️','heart love'], ['💙','blue heart'], ['💚','green heart'], ['💜','purple heart'], ['🖤','black heart'], ['✨','sparkles'], ['⭐','star'], ['🔥','fire'], ['⚡','lightning'], ['🌙','moon'], ['☀️','sun'], ['🌈','rainbow'],
+    ['☕','coffee'], ['🍵','tea'], ['🍕','pizza'], ['🍎','apple'], ['🍓','strawberry'], ['🍒','cherries'], ['🌶️','pepper'], ['🍷','wine'],
+    ['🎭','theater masks drama'], ['🎨','palette art'], ['🎸','guitar music'], ['🎧','headphones'], ['🎮','game controller'], ['📚','books'], ['✒️','pen writing'], ['📝','memo writing'], ['📷','camera'], ['💻','computer'],
+    ['🚀','rocket'], ['🚗','car'], ['🛸','ufo'], ['⚔️','swords'], ['🗡️','dagger'], ['🔮','crystal ball'], ['🔧','wrench'], ['💡','idea light'], ['📞','phone'], ['💬','chat bubble']
+  ];
+
+  function avatarImageFromRecord(record) {
+    return {
+      id: record.id,
+      name: record.name || 'avatar',
+      mime: record.mime || 'image/jpeg',
+      width: record.width,
+      height: record.height,
+      size: record.size || record.blob?.size || 0,
+      caption: '',
+      altText: ''
+    };
+  }
+
+  function participantEditorAvatarImage(row) {
+    try { return normalizeImageAttachment(JSON.parse(row.dataset.avatarImage || 'null')); } catch { return null; }
+  }
+
+  function renderParticipantEmojiPicker(row, query = '') {
+    const grid = row.querySelector('.participant-emoji-grid');
+    if (!grid) return;
+    const term = String(query || '').trim().toLocaleLowerCase();
+    grid.innerHTML = '';
+    const matches = AVATAR_EMOJI_CATALOG.filter(([, keywords]) => !term || keywords.includes(term)).slice(0, 120);
+    matches.forEach(([emoji, keywords]) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = emoji;
+      button.title = keywords;
+      button.setAttribute('role', 'option');
+      button.addEventListener('click', () => {
+        row.querySelector('.participant-avatar-emoji').value = emoji;
+        row.querySelector('.participant-emoji-picker').hidden = true;
+        updateParticipantAvatarEditor(row);
+      });
+      grid.appendChild(button);
+    });
+    if (!matches.length) {
+      const empty = document.createElement('div');
+      empty.className = 'participant-emoji-empty';
+      empty.textContent = 'No matching emoji in the quick picker. You can still paste one into the Emoji field.';
+      grid.appendChild(empty);
+    }
+  }
+
+  function updateParticipantAvatarEditor(row) {
+    const type = normalizeAvatarType(row.querySelector('.participant-avatar-type')?.value);
+    const preview = row.querySelector('.participant-avatar-preview');
+    const imageTools = row.querySelector('.participant-avatar-image-tools');
+    const initialsTools = row.querySelector('.participant-avatar-initials-tools');
+    const emojiTools = row.querySelector('.participant-avatar-emoji-tools');
+    if (imageTools) imageTools.hidden = type !== 'image';
+    if (initialsTools) initialsTools.hidden = type !== 'initials';
+    if (emojiTools) emojiTools.hidden = type !== 'emoji';
+    if (!preview) return;
+
+    const name = row.querySelector('.participant-name')?.value || 'Participant';
+    const color = normalizeHex(row.querySelector('.participant-color')?.value, '#e5e5ea');
+    preview.innerHTML = '';
+    preview.style.borderRadius = normalizeAvatarShape(state.avatarShape) === 'square' ? '8px' : '50%';
+    preview.style.background = 'transparent';
+    preview.style.color = 'var(--muted)';
+    preview.style.borderStyle = 'dashed';
+
+    if (type === 'none') {
+      preview.textContent = '—';
+      return;
+    }
+    if (type === 'initials') {
+      const initialsInput = row.querySelector('.participant-avatar-initials');
+      const initials = normalizeAvatarInitials(initialsInput?.value, name);
+      if (initialsInput && !initialsInput.value.trim()) initialsInput.value = initials;
+      preview.textContent = initials;
+      preview.style.background = color;
+      preview.style.color = automaticBubbleTextColor(color);
+      preview.style.borderStyle = 'solid';
+      return;
+    }
+    if (type === 'emoji') {
+      preview.textContent = normalizeAvatarEmoji(row.querySelector('.participant-avatar-emoji')?.value);
+      const withBackground = row.querySelector('.participant-avatar-emoji-background')?.checked !== false;
+      preview.style.background = withBackground ? color : 'transparent';
+      preview.style.color = 'inherit';
+      preview.style.borderStyle = withBackground ? 'solid' : 'dashed';
+      preview.style.fontSize = '25px';
+      return;
+    }
+
+    const image = participantEditorAvatarImage(row);
+    if (!image) {
+      preview.textContent = 'IMG';
+      return;
+    }
+    preview.textContent = defaultAvatarInitials(name);
+    preview.style.background = color;
+    preview.style.color = automaticBubbleTextColor(color);
+    preview.style.borderStyle = 'solid';
+    const token = `${image.id}-${Date.now()}-${Math.random()}`;
+    preview.dataset.previewToken = token;
+    getMediaObjectUrl(image.id).then(url => {
+      if (!url || !preview.isConnected || preview.dataset.previewToken !== token) return;
+      const img = document.createElement('img');
+      img.src = url;
+      img.alt = '';
+      preview.replaceChildren(img);
+    }).catch(() => {});
   }
 
   function appendParticipantEditor(participant = null) {
@@ -3036,7 +3467,11 @@
       side: state.participants.length % 2 ? 'right' : 'left',
       color: '#e5e5ea',
       textColorMode: 'auto',
-      textColor: '#ff2d55'
+      textColor: '#ff2d55',
+      avatarType: 'none',
+      avatarInitials: '',
+      avatarEmoji: '🙂',
+      avatarEmojiBackground: true
     };
     node.dataset.id = p.id;
     node.querySelector('.participant-name').value = p.name;
@@ -3047,31 +3482,111 @@
     bubbleColorInput.value = normalizeHex(p.color, '#e5e5ea');
     textModeInput.value = normalizeBubbleTextMode(p.textColorMode);
     textColorInput.value = normalizeHex(p.textColor, '#ff2d55');
+    const avatarTypeInput = node.querySelector('.participant-avatar-type');
+    const avatarInitialsInput = node.querySelector('.participant-avatar-initials');
+    const avatarEmojiInput = node.querySelector('.participant-avatar-emoji');
+    const avatarEmojiBackgroundInput = node.querySelector('.participant-avatar-emoji-background');
+    avatarTypeInput.value = normalizeAvatarType(p.avatarType);
+    avatarInitialsInput.value = normalizeAvatarInitials(p.avatarInitials, p.name);
+    node.dataset.lastAutoInitials = defaultAvatarInitials(p.name);
+    avatarEmojiInput.value = normalizeAvatarEmoji(p.avatarEmoji);
+    avatarEmojiBackgroundInput.checked = p.avatarEmojiBackground !== false;
+    const avatarImage = normalizeImageAttachment(p.avatarImage);
+    if (avatarImage) node.dataset.avatarImage = JSON.stringify(avatarImage);
     const updateTextColorVisibility = () => { textColorInput.hidden = textModeInput.value !== 'custom'; };
     updateTextColorVisibility();
     textModeInput.addEventListener('change', updateTextColorVisibility);
     node.querySelectorAll('[data-bubble-color]').forEach(button => button.addEventListener('click', () => {
       bubbleColorInput.value = normalizeHex(button.dataset.bubbleColor, '#e5e5ea');
+      updateParticipantAvatarEditor(node);
     }));
+    bubbleColorInput.addEventListener('input', () => updateParticipantAvatarEditor(node));
+    avatarTypeInput.addEventListener('change', () => updateParticipantAvatarEditor(node));
+    avatarInitialsInput.addEventListener('input', () => updateParticipantAvatarEditor(node));
+    avatarEmojiInput.addEventListener('input', () => updateParticipantAvatarEditor(node));
+    avatarEmojiBackgroundInput.addEventListener('change', () => updateParticipantAvatarEditor(node));
+    const nameInput = node.querySelector('.participant-name');
+    nameInput.addEventListener('input', () => {
+      const lastAuto = node.dataset.lastAutoInitials || '';
+      if (avatarInitialsInput.value === lastAuto) {
+        const nextAuto = defaultAvatarInitials(nameInput.value);
+        avatarInitialsInput.value = nextAuto;
+        node.dataset.lastAutoInitials = nextAuto;
+      }
+      updateParticipantAvatarEditor(node);
+    });
+    node.querySelector('.participant-avatar-image-choose').addEventListener('click', () => {
+      avatarImageTargetRow = node;
+      els.avatarImageInput.value = '';
+      els.avatarImageInput.click();
+    });
+    node.querySelector('.participant-avatar-image-clear').addEventListener('click', () => {
+      delete node.dataset.avatarImage;
+      updateParticipantAvatarEditor(node);
+    });
+    const picker = node.querySelector('.participant-emoji-picker');
+    const search = node.querySelector('.participant-emoji-search');
+    node.querySelector('.participant-avatar-emoji-picker-btn').addEventListener('click', () => {
+      [...els.editor.querySelectorAll('.participant-emoji-picker')].forEach(other => { if (other !== picker) other.hidden = true; });
+      picker.hidden = !picker.hidden;
+      if (!picker.hidden) {
+        search.value = '';
+        renderParticipantEmojiPicker(node, '');
+        requestAnimationFrame(() => search.focus());
+      }
+    });
+    search.addEventListener('input', () => renderParticipantEmojiPicker(node, search.value));
     node.querySelector('.remove-participant').addEventListener('click', () => {
       if (els.editor.children.length <= 1) return;
       node.remove();
     });
+    updateParticipantAvatarEditor(node);
     els.editor.appendChild(node);
   }
+
+  els.avatarImageInput?.addEventListener('change', async () => {
+    const file = els.avatarImageInput.files?.[0];
+    const row = avatarImageTargetRow;
+    avatarImageTargetRow = null;
+    if (!file || !row?.isConnected) return;
+    if (els.saveStatus) els.saveStatus.textContent = 'Preparing avatar…';
+    try {
+      const record = await normalizeAndStoreImage(file);
+      stagedAvatarImageIds.add(record.id);
+      row.dataset.avatarImage = JSON.stringify(avatarImageFromRecord(record));
+      row.querySelector('.participant-avatar-type').value = 'image';
+      updateParticipantAvatarEditor(row);
+      if (els.saveStatus) els.saveStatus.textContent = 'Avatar ready';
+    } catch (error) {
+      console.error(error);
+      alert(error.message || 'Could not prepare that avatar image.');
+      if (els.saveStatus) els.saveStatus.textContent = 'Avatar failed';
+    }
+  });
 
   els.addParticipant.addEventListener('click', () => appendParticipantEditor());
   els.saveParticipants.addEventListener('click', e => {
     e.preventDefault();
     const rows = [...els.editor.querySelectorAll('.participant-edit-row')];
-    const newParticipants = rows.map((row, idx) => ({
-      id: row.dataset.id || 'p' + Date.now() + idx,
-      name: row.querySelector('.participant-name').value.trim() || `Participant ${idx + 1}`,
-      side: row.querySelector('.participant-side').value,
-      color: row.querySelector('.participant-color').value,
-      textColorMode: normalizeBubbleTextMode(row.querySelector('.participant-text-mode')?.value),
-      textColor: normalizeHex(row.querySelector('.participant-text-color')?.value, '#ff2d55')
-    }));
+    const newParticipants = rows.map((row, idx) => {
+      const name = row.querySelector('.participant-name').value.trim() || `Participant ${idx + 1}`;
+      const avatarType = normalizeAvatarType(row.querySelector('.participant-avatar-type')?.value);
+      const participant = {
+        id: row.dataset.id || 'p' + Date.now() + idx,
+        name,
+        side: row.querySelector('.participant-side').value,
+        color: row.querySelector('.participant-color').value,
+        textColorMode: normalizeBubbleTextMode(row.querySelector('.participant-text-mode')?.value),
+        textColor: normalizeHex(row.querySelector('.participant-text-color')?.value, '#ff2d55'),
+        avatarType,
+        avatarInitials: normalizeAvatarInitials(row.querySelector('.participant-avatar-initials')?.value, name),
+        avatarEmoji: normalizeAvatarEmoji(row.querySelector('.participant-avatar-emoji')?.value),
+        avatarEmojiBackground: row.querySelector('.participant-avatar-emoji-background')?.checked !== false
+      };
+      const avatarImage = participantEditorAvatarImage(row);
+      if (avatarType === 'image' && avatarImage) participant.avatarImage = avatarImage;
+      return participant;
+    });
     const validIds = new Set(newParticipants.map(p => p.id));
     const speakerRemapNeeded = state.messages.some(m => isMessage(m) && !validIds.has(m.speakerId));
     if (stateSignature(state.participants) !== stateSignature(newParticipants) || speakerRemapNeeded) pushUndoSnapshot('participant edit');
@@ -3082,6 +3597,12 @@
     scheduleSave();
     render();
     els.dialog.close();
+  });
+
+  els.dialog.addEventListener('close', () => {
+    avatarImageTargetRow = null;
+    stagedAvatarImageIds.clear();
+    scheduleMediaGarbageCollection();
   });
 
   function renderHistoryList() {
@@ -4651,6 +5172,49 @@
     ctx.drawImage(source, sx, sy, sWidth, sHeight, dx, dy, dWidth, dHeight);
   }
 
+  function paintCanvasAvatar(ctx, participant, x, y, size, draw = false, imageMap = new Map()) {
+    if (!participantHasAvatar(participant)) return;
+    const type = normalizeAvatarType(participant.avatarType);
+    const shape = normalizeAvatarShape(state.avatarShape);
+    if (!draw) return;
+    ctx.save();
+    const makeShape = () => {
+      if (shape === 'circle') {
+        ctx.beginPath();
+        ctx.arc(x + size / 2, y + size / 2, size / 2, 0, Math.PI * 2);
+        ctx.closePath();
+      } else {
+        roundedRectPath(ctx, x, y, size, size, Math.max(6, size * .16));
+      }
+    };
+    const noEmojiBackground = type === 'emoji' && participant.avatarEmojiBackground === false;
+    if (!noEmojiBackground) {
+      makeShape();
+      ctx.fillStyle = participant.color || '#e5e5ea';
+      ctx.fill();
+    }
+    if (type === 'image') {
+      const image = normalizeImageAttachment(participant.avatarImage);
+      const source = image ? imageMap.get(image.id) : null;
+      if (source) {
+        makeShape();
+        ctx.clip();
+        drawImageCover(ctx, source, x, y, size, size);
+        ctx.restore();
+        return;
+      }
+    }
+    const text = type === 'emoji' ? normalizeAvatarEmoji(participant.avatarEmoji) : (type === 'initials' ? normalizeAvatarInitials(participant.avatarInitials, participant.name) : defaultAvatarInitials(participant.name));
+    ctx.fillStyle = type === 'emoji' ? '#111116' : automaticBubbleTextColor(participant.color || '#e5e5ea');
+    ctx.font = type === 'emoji' ? `400 ${Math.round(size * .58)}px "Apple Color Emoji","Segoe UI Emoji",sans-serif` : `800 ${Math.round(size * .32)}px Arial,sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, x + size / 2, y + size / 2 + (type === 'emoji' ? 1 : 0));
+    ctx.restore();
+    ctx.textBaseline = 'top';
+    ctx.textAlign = 'left';
+  }
+
   function paintPngLinkPreview(ctx, previewValue, x, y, width, draw = false, imageMap = new Map()) {
     const preview = normalizeLinkPreview(previewValue);
     if (!preview) return 0;
@@ -4742,6 +5306,7 @@
       y += headerLines.length * 38 + 34;
     }
 
+    const burstMeta = messageBurstMeta();
     state.messages.forEach((item, index) => {
       if (isNarrative(item)) {
         if (index > 0) y += 26;
@@ -4799,19 +5364,47 @@
       if (!participant) return;
       const previous = state.messages[index - 1];
       const continues = isMessage(previous) && previous?.speakerId === item.speakerId;
+      const burst = burstMeta[index] || { burstEnd: true, showAvatar: false, avatarGutter: false };
 
       if (item.displayTimestamp && index > 0) y += 26;
       else if (index > 0) y += plainDraft ? 18 : (continues ? 8 : 18);
 
       const side = participant.side === 'right' ? 'right' : 'left';
       const showSpeaker = plainDraft || !continues;
+      const avatarSizePx = normalizeAvatarSize(state.avatarSize) === 'large' ? 50 : 34;
+      const avatarOffset = !plainDraft && burst.avatarGutter ? avatarSizePx + 8 : 0;
+      const contentLeft = left + avatarOffset;
+      const contentRight = right + avatarOffset;
+
+      let chatMetrics = null;
+      if (!plainDraft) {
+        ctx.font = '400 26px Arial, sans-serif';
+        const padX = 20;
+        const padY = 15;
+        const maxInner = maxBubbleWidth - padX * 2;
+        const lines = wrapCanvasText(ctx, item.text, maxInner);
+        const measured = Math.max(1, ...lines.map(line => ctx.measureText(line || ' ').width));
+        const bubbleWidth = Math.max(92, Math.min(maxBubbleWidth, measured + padX * 2));
+        const bubbleHeight = Math.max(58, lines.length * 35 + padY * 2);
+        const x = side === 'right' ? W - contentRight - bubbleWidth : contentLeft;
+        chatMetrics = { lines, padX, padY, bubbleWidth, bubbleHeight, x };
+      }
+
+      if (!plainDraft && burst.showAvatar && normalizeAvatarPlacement(state.avatarPlacement) === 'above') {
+        const flushX = side === 'right' ? chatMetrics.x + chatMetrics.bubbleWidth - avatarSizePx : chatMetrics.x;
+        const avatarX = normalizeAvatarAlignment(state.avatarAlignment) === 'center'
+          ? chatMetrics.x + (chatMetrics.bubbleWidth - avatarSizePx) / 2
+          : flushX;
+        paintCanvasAvatar(ctx, participant, avatarX, y, avatarSizePx, draw, imageMap);
+        y += avatarSizePx + 8;
+      }
 
       if (showSpeaker) {
         ctx.font = plainDraft ? '800 16px Arial, sans-serif' : '600 17px Arial, sans-serif';
         const name = plainDraft ? participant.name.toLocaleUpperCase() : participant.name;
         if (draw) {
           const labelAlign = theater || screen ? 'center' : (transcript || side === 'left' ? 'left' : 'right');
-          const labelX = theater || screen ? W / 2 : (transcript || side === 'left' ? left : W - right);
+          const labelX = theater || screen ? W / 2 : (transcript || side === 'left' ? contentLeft : W - contentRight);
           ctx.textAlign = labelAlign;
           if (state.highContrastLabels === true) {
             const labelWidth = Math.ceil(ctx.measureText(name).width);
@@ -4842,7 +5435,7 @@
             ctx.fillText(item.displayTimestamp, W / 2, y);
           } else {
             ctx.textAlign = transcript || side === 'left' ? 'left' : 'right';
-            ctx.fillText(item.displayTimestamp, transcript || side === 'left' ? left : W - right, y);
+            ctx.fillText(item.displayTimestamp, transcript || side === 'left' ? contentLeft : W - contentRight, y);
           }
           ctx.textAlign = 'left';
         }
@@ -4864,21 +5457,32 @@
         annotationMaxWidth = textWidth;
         y += Math.max(1, lines.length) * 35;
       } else {
-        const padX = 20;
-        const padY = 15;
-        const maxInner = maxBubbleWidth - padX * 2;
-        const lines = wrapCanvasText(ctx, item.text, maxInner);
-        const measured = Math.max(1, ...lines.map(line => ctx.measureText(line || ' ').width));
-        const bubbleWidth = Math.max(92, Math.min(maxBubbleWidth, measured + padX * 2));
-        const bubbleHeight = Math.max(58, lines.length * 35 + padY * 2);
-        const x = side === 'right' ? W - right - bubbleWidth : left;
-        annotationAnchorX = side === 'right' ? W - right : left;
+        const { padX, padY, lines, bubbleWidth, bubbleHeight, x } = chatMetrics;
+        annotationAnchorX = side === 'right' ? W - contentRight : contentLeft;
         annotationMaxWidth = bubbleWidth;
 
         if (draw) {
+          if (burst.showAvatar && normalizeAvatarPlacement(state.avatarPlacement) === 'alongside') {
+            const avatarX = side === 'right' ? W - right - avatarSizePx : left;
+            paintCanvasAvatar(ctx, participant, avatarX, y, avatarSizePx, true, imageMap);
+          }
           ctx.fillStyle = participant.color || '#e5e5ea';
           roundedRectPath(ctx, x, y, bubbleWidth, bubbleHeight, 23);
           ctx.fill();
+          if (state.bubbleTails === true && burst.burstEnd) {
+            ctx.beginPath();
+            if (side === 'left') {
+              ctx.moveTo(x + 7, y + bubbleHeight - 18);
+              ctx.lineTo(x - 9, y + bubbleHeight - 1);
+              ctx.lineTo(x + 9, y + bubbleHeight - 4);
+            } else {
+              ctx.moveTo(x + bubbleWidth - 7, y + bubbleHeight - 18);
+              ctx.lineTo(x + bubbleWidth + 9, y + bubbleHeight - 1);
+              ctx.lineTo(x + bubbleWidth - 9, y + bubbleHeight - 4);
+            }
+            ctx.closePath();
+            ctx.fill();
+          }
           ctx.fillStyle = participantBubbleTextColor(participant);
           lines.forEach((line, lineIndex) => ctx.fillText(line, x + padX, y + padY + lineIndex * 35));
         }
@@ -4889,7 +5493,7 @@
         y += 10;
         const imageMaxWidth = plainDraft ? Math.min(620, screen ? contentWidth * 0.72 : contentWidth) : Math.min(620, maxBubbleWidth);
         const box = fitImageBox(item.imageAttachment, imageMaxWidth, 720);
-        const imageX = screen ? (W - box.width) / 2 : (plainDraft || side === 'left' ? left : W - right - box.width);
+        const imageX = screen ? (W - box.width) / 2 : (plainDraft || side === 'left' ? contentLeft : W - contentRight - box.width);
         if (draw && box.width && box.height) {
           const source = imageMap.get(item.imageAttachment.id);
           if (source) {
@@ -4918,7 +5522,7 @@
       if (item.linkPreview) {
         y += 10;
         const previewWidth = plainDraft ? Math.min(650, screen ? contentWidth * 0.72 : contentWidth) : Math.min(620, maxBubbleWidth);
-        const previewX = screen ? (W - previewWidth) / 2 : (plainDraft || side === 'left' ? left : W - right - previewWidth);
+        const previewX = screen ? (W - previewWidth) / 2 : (plainDraft || side === 'left' ? contentLeft : W - contentRight - previewWidth);
         y += paintPngLinkPreview(ctx, item.linkPreview, previewX, y, previewWidth, draw, imageMap);
         annotationMaxWidth = Math.max(annotationMaxWidth, previewWidth);
       }
@@ -5310,6 +5914,22 @@
     return `<div class="link-preview ${alignmentClass}">${thumb}<div class="preview-copy">${preview.site ? `<div class="preview-site">${htmlEscape(preview.site)}</div>` : ''}${preview.title ? `<div class="preview-title">${htmlMultiline(preview.title)}</div>` : ''}${preview.description ? `<div class="preview-description">${htmlMultiline(preview.description)}</div>` : ''}${preview.displayUrl ? `<div class="preview-url">${htmlEscape(preview.displayUrl)}</div>` : ''}</div></div>`;
   }
 
+  function htmlParticipantAvatar(participant, mediaMap, extraClass = '') {
+    if (!participantHasAvatar(participant)) return '';
+    const type = normalizeAvatarType(participant.avatarType);
+    const classes = `avatar avatar-${normalizeAvatarShape(state.avatarShape)} avatar-${normalizeAvatarSize(state.avatarSize)} avatar-${type}${participant.avatarEmojiBackground === false && type === 'emoji' ? ' avatar-no-bg' : ''}${extraClass ? ` ${extraClass}` : ''}`;
+    const style = `--avatar:${htmlEscape(participant.color || '#e5e5ea')};--avatar-text:${htmlEscape(automaticBubbleTextColor(participant.color || '#e5e5ea'))}`;
+    if (type === 'image') {
+      const image = normalizeImageAttachment(participant.avatarImage);
+      const src = image ? mediaMap.get(image.id) || '' : '';
+      return src
+        ? `<div class="${classes}" style="${style}"><img src="${src}" alt="${htmlEscape(participant.name)} avatar"></div>`
+        : `<div class="${classes}" style="${style}">${htmlEscape(defaultAvatarInitials(participant.name))}</div>`;
+    }
+    const content = type === 'emoji' ? normalizeAvatarEmoji(participant.avatarEmoji) : normalizeAvatarInitials(participant.avatarInitials, participant.name);
+    return `<div class="${classes}" style="${style}">${htmlEscape(content)}</div>`;
+  }
+
   async function buildHtmlExport() {
     const mediaMap = await mediaDataUrlsForState(state);
     const style = normalizeConversationStyle(state.conversationStyle);
@@ -5325,7 +5945,9 @@
     const documentMaxWidth = widthMode === 'phone' ? 440 : (widthMode === 'tablet' ? 680 : 820);
     const body = [];
     let previousSpeaker = null;
-    for (const item of state.messages) {
+    const burstMeta = messageBurstMeta();
+    for (let index = 0; index < state.messages.length; index += 1) {
+      const item = state.messages[index];
       if (isNarrative(item)) {
         body.push(`<section class="narrative ${item.narrativeStyle === 'system' ? 'system' : 'prose'}"><div class="narrative-text">${htmlMultiline(item.text)}</div>${htmlAttachment(item.imageAttachment, mediaMap, 'center')}${htmlLinkPreview(item.linkPreview, mediaMap, 'center')}</section>`);
         previousSpeaker = null;
@@ -5342,7 +5964,20 @@
       const bubble = `<div class="bubble"${bubbleStyle}>${htmlMultiline(item.text)}</div>`;
       const annotation = item.annotation ? `<div class="annotation">${htmlMultiline(item.annotation)}</div>` : '';
       const mediaAlign = style === 'screen' ? 'center' : (plainDraft ? 'left' : side);
-      body.push(`<section class="message ${side}${continues && !plainDraft ? ' continuation' : ''}"><div class="message-card">${speaker}${timestamp}${bubble}${htmlAttachment(item.imageAttachment, mediaMap, mediaAlign)}${htmlLinkPreview(item.linkPreview, mediaMap, mediaAlign)}${annotation}</div></section>`);
+      const burst = burstMeta[index] || { burstEnd: true, showAvatar: false, avatarGutter: false };
+      const tail = !plainDraft && state.bubbleTails === true && burst.burstEnd ? ' has-tail' : '';
+      const alongside = burst.avatarGutter ? ' avatar-alongside-burst' : '';
+      const aboveAvatar = burst.showAvatar && normalizeAvatarPlacement(state.avatarPlacement) === 'above'
+        ? htmlParticipantAvatar(p, mediaMap, `avatar-above avatar-above-${normalizeAvatarAlignment(state.avatarAlignment)}`)
+        : '';
+      const card = `<div class="message-card">${aboveAvatar}${speaker}${timestamp}${bubble}${htmlAttachment(item.imageAttachment, mediaMap, mediaAlign)}${htmlLinkPreview(item.linkPreview, mediaMap, mediaAlign)}${annotation}</div>`;
+      if (burst.avatarGutter) {
+        const slotAvatar = burst.showAvatar ? htmlParticipantAvatar(p, mediaMap, 'avatar-alongside') : '';
+        const slot = `<div class="avatar-slot avatar-slot-${normalizeAvatarSize(state.avatarSize)}">${slotAvatar}</div>`;
+        body.push(`<section class="message ${side}${continues && !plainDraft ? ' continuation' : ''}${alongside}${tail}">${side === 'right' ? `${card}${slot}` : `${slot}${card}`}</section>`);
+      } else {
+        body.push(`<section class="message ${side}${continues && !plainDraft ? ' continuation' : ''}${tail}">${card}</section>`);
+      }
       previousSpeaker = item.speakerId;
     }
     const sceneHeader = state.sceneHeader ? `<div class="scene-header ${htmlEscape(state.headerFont || 'rounded')}">${htmlMultiline(state.sceneHeader)}</div>` : '';
@@ -5354,7 +5989,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${title}</title>
 <style>
-*{box-sizing:border-box}body{margin:0;background:${backgroundCss};color:${documentText};font-family:ui-rounded,"SF Pro Rounded","Segoe UI",system-ui,-apple-system,sans-serif}.document{width:min(100%,${documentMaxWidth}px);margin:0 auto;padding:34px 18px 60px}h1{font-size:28px;margin:0 0 24px}.scene-header{text-align:center;font-weight:720;font-size:21px;line-height:1.3;margin:0 auto 30px;white-space:pre-wrap}.scene-header.serif{font-family:Georgia,"Times New Roman",serif}.scene-header.mono{font-family:ui-monospace,Consolas,monospace}.message{display:flex;margin:11px 0}.message.continuation{margin-top:-7px}.message.left{justify-content:flex-start}.message.right{justify-content:flex-end}.message-card{max-width:${plainDraft ? '100%' : '67%'}}.speaker{font-size:12px;color:${documentMuted};margin:0 10px 4px}.high-contrast-labels .speaker{display:block;width:max-content;padding:2px 7px;border-radius:999px;background:rgba(0,0,0,.78);color:#fff!important}.high-contrast-labels .right .speaker{margin-left:auto}.high-contrast-labels.transcript .right .speaker{margin-left:10px;margin-right:10px}.high-contrast-labels.theater .speaker,.high-contrast-labels.screen .speaker{margin-left:auto!important;margin-right:auto!important}.right .speaker,.right .timestamp,.right .annotation,.right figcaption{text-align:right}.timestamp{font-size:10.5px;color:${documentMuted};margin:0 10px 4px}.bubble{background:${plainDraft ? 'transparent' : 'var(--bubble,#e5e5ea)'};padding:${plainDraft ? '0' : '10px 13px'};border-radius:${plainDraft ? '0' : '18px'};color:${plainDraft ? documentText : 'var(--bubble-text,#151518)'};line-height:1.42;white-space:pre-wrap;overflow-wrap:anywhere}.annotation{margin:7px 10px 0;color:${documentMuted};font-size:12px;font-style:italic;line-height:1.4}.narrative{width:min(78%,680px);margin:24px auto;color:${documentMuted};font:italic 14px/1.5 Georgia,"Times New Roman",serif}.narrative.system{font-family:ui-rounded,"Segoe UI",system-ui,sans-serif;font-style:normal;font-weight:560}.narrative-text{text-align:center}.attachment{margin:9px 0 0;max-width:610px}.attachment.center{margin-left:auto;margin-right:auto}.attachment.right{margin-left:auto}.attachment img{display:block;max-width:100%;max-height:70vh;border-radius:12px}.attachment figcaption{margin-top:6px;color:${documentMuted};font-size:12px;line-height:1.4}.attachment.right img{margin-left:auto}.attachment.center img{margin-left:auto;margin-right:auto}.link-preview{display:flex;gap:12px;margin-top:10px;max-width:620px;padding:12px;border:1px solid #d8d8df;border-radius:14px;background:#f7f7f9;color:#17171b;font-family:ui-rounded,"Segoe UI",system-ui,sans-serif;text-align:left}.link-preview.right{margin-left:auto}.link-preview.center{margin-left:auto;margin-right:auto}.preview-thumb{width:min(31%,150px);object-fit:cover;align-self:stretch;max-height:130px}.preview-copy{min-width:0}.preview-site,.preview-url{font-size:11px;color:#777780}.preview-title{font-size:16px;font-weight:750;line-height:1.28;margin:3px 0}.preview-description{font-size:13px;color:#555560;line-height:1.35;margin:3px 0}.missing-image{padding:20px;background:#e5e5ea;color:#686872;text-align:center;border-radius:12px}.transcript .message,.theater .message,.screen .message{justify-content:flex-start;margin:18px 0}.transcript .message-card,.theater .message-card,.screen .message-card{width:100%;max-width:100%}.transcript .right .speaker,.transcript .right .timestamp,.transcript .right .annotation,.transcript .right figcaption,.theater .right .annotation,.screen .right .annotation{text-align:left}.transcript .attachment.right,.transcript .link-preview.right,.theater .attachment.right,.theater .link-preview.right{margin-left:0;margin-right:auto}.theater .speaker,.screen .speaker{text-align:center!important;text-transform:uppercase;font-weight:800;letter-spacing:.07em}.theater .timestamp,.screen .timestamp{text-align:center!important}.theater .bubble{text-align:left}.theater .narrative{margin-left:8%;margin-right:auto}.theater .narrative-text{text-align:left}.screen .bubble{width:min(62%,520px);margin:0 auto;text-align:left}.screen .annotation{width:min(62%,520px);margin-left:auto;margin-right:auto;text-align:left!important}.screen .narrative{width:min(76%,650px)}.screen .narrative-text{text-align:left}@media(max-width:600px){.document{padding:24px 12px 42px}.message-card{max-width:${plainDraft ? '100%' : '78%'}.attachment,.link-preview{max-width:100%}.screen .bubble,.screen .annotation{width:min(76%,520px)}}@media print{@page{margin:.55in}body{background:#fff!important;color:#17171b}.document{width:100%;padding:0}.message-card,.narrative,.attachment,.link-preview{break-inside:avoid}.narrative{color:#000!important}.bubble{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+*{box-sizing:border-box}body{margin:0;background:${backgroundCss};color:${documentText};font-family:ui-rounded,"SF Pro Rounded","Segoe UI",system-ui,-apple-system,sans-serif}.document{width:min(100%,${documentMaxWidth}px);margin:0 auto;padding:34px 18px 60px}h1{font-size:28px;margin:0 0 24px}.scene-header{text-align:center;font-weight:720;font-size:21px;line-height:1.3;margin:0 auto 30px;white-space:pre-wrap}.scene-header.serif{font-family:Georgia,"Times New Roman",serif}.scene-header.mono{font-family:ui-monospace,Consolas,monospace}.message{display:flex;margin:11px 0}.message.continuation{margin-top:-7px}.message.left{justify-content:flex-start}.message.right{justify-content:flex-end}.message-card{max-width:${plainDraft ? '100%' : '67%'}}.message.avatar-alongside-burst{align-items:flex-start;gap:8px}.avatar-slot{flex:0 0 auto;display:flex;justify-content:center}.avatar-slot-small{width:34px}.avatar-slot-large{width:50px}.message.avatar-alongside-burst:not(.continuation) .avatar-slot{margin-top:20px}.avatar{display:grid;place-items:center;overflow:hidden;flex:0 0 auto;background:var(--avatar,#e5e5ea);color:var(--avatar-text,#111116);font-weight:800;line-height:1;box-shadow:0 1px 2px rgba(0,0,0,.08)}.avatar-small{width:34px;height:34px;font-size:13px}.avatar-large{width:50px;height:50px;font-size:17px}.avatar-circle{border-radius:50%}.avatar-square{border-radius:8px}.avatar-emoji{font-size:22px;font-weight:400}.avatar-emoji.avatar-large{font-size:31px}.avatar-no-bg{background:transparent;box-shadow:none}.avatar img{width:100%;height:100%;object-fit:cover;display:block}.avatar-above{margin-bottom:6px}.left .avatar-above-side{margin-left:10px;margin-right:auto}.right .avatar-above-side{margin-left:auto;margin-right:10px}.avatar-above-center{margin-left:auto;margin-right:auto}.speaker{font-size:12px;color:${documentMuted};margin:0 10px 4px}.high-contrast-labels .speaker{display:block;width:max-content;padding:2px 7px;border-radius:999px;background:rgba(0,0,0,.78);color:#fff!important}.high-contrast-labels .right .speaker{margin-left:auto}.high-contrast-labels.transcript .right .speaker{margin-left:10px;margin-right:10px}.high-contrast-labels.theater .speaker,.high-contrast-labels.screen .speaker{margin-left:auto!important;margin-right:auto!important}.right .speaker,.right .timestamp,.right .annotation,.right figcaption{text-align:right}.timestamp{font-size:10.5px;color:${documentMuted};margin:0 10px 4px}.bubble{position:relative;z-index:0;background:${plainDraft ? 'transparent' : 'var(--bubble,#e5e5ea)'};padding:${plainDraft ? '0' : '10px 13px'};border-radius:${plainDraft ? '0' : '18px'};color:${plainDraft ? documentText : 'var(--bubble-text,#151518)'};line-height:1.42;white-space:pre-wrap;overflow-wrap:anywhere}.has-tail.left .bubble{border-bottom-left-radius:10px}.has-tail.right .bubble{border-bottom-right-radius:10px}.has-tail .bubble:after{content:"";position:absolute;bottom:1px;width:14px;height:14px;background:var(--bubble,#e5e5ea);z-index:-1}.has-tail.left .bubble:after{left:-5px;clip-path:polygon(100% 0,100% 100%,0 100%)}.has-tail.right .bubble:after{right:-5px;clip-path:polygon(0 0,100% 100%,0 100%)}.annotation{margin:7px 10px 0;color:${documentMuted};font-size:12px;font-style:italic;line-height:1.4}.narrative{width:min(78%,680px);margin:24px auto;color:${documentMuted};font:italic 14px/1.5 Georgia,"Times New Roman",serif}.narrative.system{font-family:ui-rounded,"Segoe UI",system-ui,sans-serif;font-style:normal;font-weight:560}.narrative-text{text-align:center}.attachment{margin:9px 0 0;max-width:610px}.attachment.center{margin-left:auto;margin-right:auto}.attachment.right{margin-left:auto}.attachment img{display:block;max-width:100%;max-height:70vh;border-radius:12px}.attachment figcaption{margin-top:6px;color:${documentMuted};font-size:12px;line-height:1.4}.attachment.right img{margin-left:auto}.attachment.center img{margin-left:auto;margin-right:auto}.link-preview{display:flex;gap:12px;margin-top:10px;max-width:620px;padding:12px;border:1px solid #d8d8df;border-radius:14px;background:#f7f7f9;color:#17171b;font-family:ui-rounded,"Segoe UI",system-ui,sans-serif;text-align:left}.link-preview.right{margin-left:auto}.link-preview.center{margin-left:auto;margin-right:auto}.preview-thumb{width:min(31%,150px);object-fit:cover;align-self:stretch;max-height:130px}.preview-copy{min-width:0}.preview-site,.preview-url{font-size:11px;color:#777780}.preview-title{font-size:16px;font-weight:750;line-height:1.28;margin:3px 0}.preview-description{font-size:13px;color:#555560;line-height:1.35;margin:3px 0}.missing-image{padding:20px;background:#e5e5ea;color:#686872;text-align:center;border-radius:12px}.transcript .message,.theater .message,.screen .message{justify-content:flex-start;margin:18px 0}.transcript .message-card,.theater .message-card,.screen .message-card{width:100%;max-width:100%}.transcript .right .speaker,.transcript .right .timestamp,.transcript .right .annotation,.transcript .right figcaption,.theater .right .annotation,.screen .right .annotation{text-align:left}.transcript .attachment.right,.transcript .link-preview.right,.theater .attachment.right,.theater .link-preview.right{margin-left:0;margin-right:auto}.theater .speaker,.screen .speaker{text-align:center!important;text-transform:uppercase;font-weight:800;letter-spacing:.07em}.theater .timestamp,.screen .timestamp{text-align:center!important}.theater .bubble{text-align:left}.theater .narrative{margin-left:8%;margin-right:auto}.theater .narrative-text{text-align:left}.screen .bubble{width:min(62%,520px);margin:0 auto;text-align:left}.screen .annotation{width:min(62%,520px);margin-left:auto;margin-right:auto;text-align:left!important}.screen .narrative{width:min(76%,650px)}.screen .narrative-text{text-align:left}@media(max-width:600px){.document{padding:24px 12px 42px}.message-card{max-width:${plainDraft ? '100%' : '78%'}.attachment,.link-preview{max-width:100%}.screen .bubble,.screen .annotation{width:min(76%,520px)}}@media print{@page{margin:.55in}body{background:#fff!important;color:#17171b}.document{width:100%;padding:0}.message-card,.narrative,.attachment,.link-preview{break-inside:avoid}.narrative{color:#000!important}.bubble{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
 </style>
 </head>
 <body><main class="document ${style}${highContrastLabels ? ' high-contrast-labels' : ''}"><h1>${title}</h1>${sceneHeader}${body.join('')}</main></body>
@@ -5893,7 +6528,7 @@ ${imageRels}
   });
 
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-    navigator.serviceWorker.register('./sw.js?v=0.11.2').catch(() => {});
+    navigator.serviceWorker.register('./sw.js?v=0.12').catch(() => {});
   }
 
   if (els.runtimeVersion) els.runtimeVersion.textContent = `v${APP_VERSION}`;

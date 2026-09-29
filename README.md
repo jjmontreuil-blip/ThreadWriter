@@ -1,4 +1,15 @@
-# ThreadWriter v0.11.2
+# ThreadWriter v0.12
+
+## v0.12 — Avatars and bubble tails
+
+- Adds optional **participant avatars** for Mobile Chat. Each participant can use an uploaded image, editable initials, a single emoji, or no avatar. Image avatars use a simple cover crop; initials use the participant color with automatic text contrast.
+- Emoji avatars include a compact searchable desktop-friendly picker while still accepting pasted or typed emoji. Emoji can use the participant color as a tile or render without a background.
+- Adds conversation-level avatar display controls under **Text → Avatars & bubble tails…**: Off / Initial avatars / Persistent avatars; Above / Alongside placement; side-flush or centered Above alignment; Circle / Square shape; and Small / Large size.
+- Avatar display follows **message bursts**. A burst is a consecutive run from one speaker, and Narrative/System blocks break bursts. Initial avatars appear on that participant's first burst; Persistent avatars appear on the first message of every burst. Continuation messages never repeat the avatar.
+- Adds optional **word-balloon tails** to Mobile Chat. Tails appear only on a single-message burst or on the final bubble of a multi-message burst.
+- Avatar and tail presentation carries through the live editor, self-contained HTML, PNG/JPEG/TIFF raster exports, local saves, ThreadWriter files/project backups, Version History, Undo/Redo, and Conversation Presets. Rich/Portable DOCX remain intentionally editability-first and do not add avatar artwork or balloon tails.
+- Uploaded avatar images share ThreadWriter's existing IndexedDB media store and media-reference cleanup system rather than being duplicated into every saved state.
+- Runtime, asset URLs, saved-state schema, and offline cache are bumped to **v0.12**.
 
 ## v0.11.2 — Undo / redo and speaker picker
 
@@ -54,7 +65,7 @@ A small local-first dialogue editor for writing, revising, moving, and publishin
 ## Current features
 
 - Responsive desktop / phone / tablet layout
-- Multiple participants with names, left/right alignment, bubble colors, quick color swatches, and Auto/Black/White/Custom bubble-text colors
+- Multiple participants with names, left/right alignment, bubble colors, quick color swatches, Auto/Black/White/Custom bubble-text colors, and optional image/initials/emoji avatars
 - `Enter` creates a message
 - `Shift+Enter` inserts a line break
 - `Tab` / `Shift+Tab` cycles participants while composing
@@ -88,6 +99,7 @@ A small local-first dialogue editor for writing, revising, moving, and publishin
 - Conversation Styles: **Mobile Chat**, **Transcript**, **Theater Draft**, and **Screen Draft**
 - Conversation backgrounds can use solid colors, editable 2–4 color gradients, quick presets, stop reordering, and one-click gradient reversal
 - Conversation width can be set to Wide, Tablet, or Phone for denser phone-like desktop and exported chat layouts
+- Mobile Chat can show Initial or Persistent burst-aware avatars above/alongside messages, with circle/square and small/large options, plus optional burst-ending word-balloon tails
 - Unified PNG/JPEG/TIFF image export for screen, high-resolution, print, or custom-width conversation graphics, with optional grayscale and smart splitting
 - Two `.docx` export modes with no external libraries: Portable transcript and Rich layout
 - Plain `.txt` transcript export
@@ -425,14 +437,10 @@ v0.6 project files add fields for the scene header and Conversation Style, but o
 
 ### Import / migration
 
-- Import existing TXT / Markdown / DOCX conversations, including speaker-labelled dialogue and two-person left/right-aligned drafts
+- Broader screenplay/play-script conventions only if real-world imports expose useful recurring patterns beyond the current labelled, aligned, and standalone-cue detectors
 
 ### Presentation
 
-- Core drafting styles: Theater Draft and Screen Draft
-- Conversation background control: solid color or 2–4-color gradients with selectable direction
-- Optional participant avatars
-- Optional word-balloon tails
 - Additional decorative Conversation Styles only if real-world demand justifies them
 
 The guiding rule remains: ThreadWriter should make fictional digital conversations easier to write, not become a full messaging platform with a novel trapped inside it.

@@ -4,10 +4,10 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#f4f4f7" />
-  <title>ThreadWriter v0.11.2</title>
-  <link rel="manifest" href="manifest.webmanifest?v=0.11.2" />
-  <link rel="icon" href="icon.svg?v=0.11.2" type="image/svg+xml" />
-  <link rel="stylesheet" href="styles.css?v=0.11.2" />
+  <title>ThreadWriter v0.12</title>
+  <link rel="manifest" href="manifest.webmanifest?v=0.12" />
+  <link rel="icon" href="icon.svg?v=0.12" type="image/svg+xml" />
+  <link rel="stylesheet" href="styles.css?v=0.12" />
 </head>
 <body>
   <div class="app-shell">
@@ -44,6 +44,7 @@
                 <option value="phone">Phone</option>
               </select>
             </label>
+            <button id="chatAppearanceBtn" type="button">Avatars &amp; bubble tails…</button>
             <button id="backgroundBtn" type="button">Conversation background…</button>
             <button id="conversationPresetsBtn" type="button">Conversation presets…</button>
             <button id="findBtn" type="button">Find &amp; Replace</button>
@@ -75,6 +76,7 @@
         <input id="migrationFileInput" type="file" accept="text/plain,.txt,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx" hidden />
         <input id="imageInput" type="file" accept="image/*" hidden />
         <input id="linkPreviewImageInput" type="file" accept="image/*" hidden />
+        <input id="avatarImageInput" type="file" accept="image/*" hidden />
       </div>
     </header>
 
@@ -149,12 +151,73 @@
         <h2>Participants</h2>
         <button value="cancel" class="icon-btn" aria-label="Close">×</button>
       </div>
+      <p class="dialog-copy">Set names, message colors, and optional avatar sources. Avatar frequency, placement, shape, size, and bubble tails live under Text → Avatars &amp; bubble tails.</p>
       <div id="participantsEditor" class="participants-editor"></div>
       <div class="dialog-actions">
         <button type="button" id="addParticipantBtn">Add participant</button>
         <button value="save" id="saveParticipantsBtn">Done</button>
       </div>
     </form>
+  </dialog>
+
+  <dialog id="chatAppearanceDialog">
+    <div class="dialog-card chat-appearance-dialog-card">
+      <div class="dialog-head">
+        <h2>Avatars &amp; bubble tails</h2>
+        <button type="button" id="closeChatAppearanceDialogBtn" class="icon-btn" aria-label="Close">×</button>
+      </div>
+      <p class="dialog-copy">Mobile Chat presentation only. Avatars mark the beginning of speaker bursts; Narrative blocks always break a burst.</p>
+      <div class="chat-appearance-grid">
+        <label>
+          <span>Avatar frequency</span>
+          <select id="avatarMode">
+            <option value="off">Off</option>
+            <option value="initial">Initial avatars · first burst per participant</option>
+            <option value="persistent">Persistent avatars · every burst</option>
+          </select>
+        </label>
+        <label>
+          <span>Avatar placement</span>
+          <select id="avatarPlacement">
+            <option value="alongside">Alongside messages</option>
+            <option value="above">Above messages</option>
+          </select>
+        </label>
+        <label id="avatarAlignmentField">
+          <span>Above alignment</span>
+          <select id="avatarAlignment">
+            <option value="side">Flush to message side</option>
+            <option value="center">Centered over bubble</option>
+          </select>
+        </label>
+        <label>
+          <span>Avatar shape</span>
+          <select id="avatarShape">
+            <option value="circle">Circle</option>
+            <option value="square">Square</option>
+          </select>
+        </label>
+        <label>
+          <span>Avatar size</span>
+          <select id="avatarSize">
+            <option value="small">Small</option>
+            <option value="large">Large</option>
+          </select>
+        </label>
+      </div>
+      <label class="background-contrast-option chat-tail-option">
+        <input id="bubbleTailsInput" type="checkbox" />
+        <span><strong>Bubble tails</strong><small>Show a tail only on a single-message burst or the final message of a multi-message burst.</small></span>
+      </label>
+      <div class="chat-appearance-preview" aria-hidden="true">
+        <div class="chat-preview-avatar">TW</div>
+        <div class="chat-preview-bubbles"><span></span><span class="with-tail"></span></div>
+      </div>
+      <div class="dialog-actions">
+        <button type="button" id="resetChatAppearanceBtn">Defaults</button>
+        <button type="button" id="saveChatAppearanceBtn" class="primary-action">Save</button>
+      </div>
+    </div>
   </dialog>
 
   <dialog id="docxDialog">
@@ -459,7 +522,7 @@
         <h2>Conversation presets</h2>
         <button type="button" id="closeConversationPresetsDialogBtn" class="icon-btn" aria-label="Close">×</button>
       </div>
-      <p class="dialog-copy">Save reusable conversation setups across projects. Presets include Conversation Style, participants, bubble colors and sides, conversation background, and High Contrast Labels. Scene headers and messages are never included.</p>
+      <p class="dialog-copy">Save reusable conversation setups across projects. Presets include Conversation Style, participants, bubble colors and sides, avatar sources and chat appearance, conversation background, and High Contrast Labels. Scene headers and messages are never included.</p>
       <div class="conversation-preset-save-row">
         <input id="conversationPresetNameInput" type="text" maxlength="80" placeholder="e.g. Collodi CHIRP" aria-label="Preset name" />
         <button type="button" id="saveConversationPresetBtn" class="primary-action">Save current</button>
@@ -608,9 +671,38 @@
         </label>
         <input class="participant-text-color" type="color" value="#ff2d55" aria-label="Custom bubble text color" />
       </div>
+      <div class="participant-avatar-row">
+        <div class="participant-avatar-preview" aria-hidden="true"></div>
+        <label class="participant-avatar-setting">
+          <span>Avatar</span>
+          <select class="participant-avatar-type" aria-label="Avatar type">
+            <option value="none">None</option>
+            <option value="image">Image</option>
+            <option value="initials">Initials</option>
+            <option value="emoji">Emoji</option>
+          </select>
+        </label>
+        <div class="participant-avatar-image-tools" hidden>
+          <button type="button" class="participant-avatar-image-choose">Choose image…</button>
+          <button type="button" class="participant-avatar-image-clear">Clear</button>
+        </div>
+        <label class="participant-avatar-initials-tools" hidden>
+          <span>Letters</span>
+          <input class="participant-avatar-initials" type="text" maxlength="2" inputmode="text" aria-label="Avatar initials" />
+        </label>
+        <div class="participant-avatar-emoji-tools" hidden>
+          <label><span>Emoji</span><input class="participant-avatar-emoji" type="text" maxlength="16" aria-label="Avatar emoji" /></label>
+          <button type="button" class="participant-avatar-emoji-picker-btn">Pick…</button>
+          <label class="participant-avatar-emoji-bg"><input class="participant-avatar-emoji-background" type="checkbox" checked /> Color background</label>
+        </div>
+        <div class="participant-emoji-picker" hidden>
+          <input class="participant-emoji-search" type="search" placeholder="Search emoji" aria-label="Search emoji" />
+          <div class="participant-emoji-grid" role="listbox" aria-label="Emoji choices"></div>
+        </div>
+      </div>
     </div>
   </template>
 
-  <script src="app.js?v=0.11.2"></script>
+  <script src="app.js?v=0.12"></script>
 </body>
 </html>
