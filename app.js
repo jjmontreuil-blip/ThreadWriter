@@ -1,9 +1,10 @@
 (() => {
-  const APP_VERSION = '0.10.4';
+  const APP_VERSION = '0.10.5';
   const LEGACY_STORAGE_KEY = 'threadwriter.project.v1';
   const LIBRARY_KEY = 'threadwriter.library.v1';
   const DOCUMENT_PREFIX = 'threadwriter.document.v1.';
   const PROJECT_LIBRARY_KEY = 'threadwriter.projects.v1';
+  const CONVERSATION_PRESETS_KEY = 'threadwriter.conversation-presets.v1';
   const HISTORY_PREFIX = 'threadwriter.history.v1.';
   const HISTORY_MAX = 6;
   const HISTORY_INTERVAL_MS = 5 * 60 * 1000;
@@ -12,12 +13,13 @@
   const MAX_IMAGE_DIMENSION = 2400;
   const MAX_IMAGE_FILE_BYTES = 25 * 1024 * 1024;
   const defaultState = () => ({
-    version: 6,
+    version: 7,
     title: 'Untitled Thread',
     sceneHeader: '',
     headerFont: 'rounded',
     conversationStyle: 'chat',
     conversationBackground: { mode: 'default', solid: '#f4f4f7', colors: ['#f4f4f7', '#d9e6ff'], direction: 'vertical' },
+    highContrastLabels: false,
     activeParticipantId: 'p1',
     participants: [
       { id: 'p1', name: 'Participant 1', side: 'left', color: '#d9e6ff' },
@@ -28,6 +30,7 @@
 
   let library = loadLibraryIndex();
   let projectLibrary = loadProjectLibrary();
+  let conversationPresetLibrary = loadConversationPresetLibrary();
   let currentDocumentId = null;
   let state = initializeLibraryState();
   sanitizeProjectLibrary();
@@ -84,6 +87,8 @@
     backgroundGradientTools: document.getElementById('backgroundGradientTools'),
     backgroundPresetGrid: document.getElementById('backgroundPresetGrid'),
     flipGradientBtn: document.getElementById('flipGradientBtn'),
+    highContrastLabelsInput: document.getElementById('highContrastLabelsInput'),
+    backgroundPreviewLabel: document.getElementById('backgroundPreviewLabel'),
     backgroundColor1: document.getElementById('backgroundColor1'),
     backgroundColor2: document.getElementById('backgroundColor2'),
     backgroundColor3: document.getElementById('backgroundColor3'),
@@ -91,6 +96,13 @@
     backgroundPreview: document.getElementById('backgroundPreview'),
     resetBackgroundBtn: document.getElementById('resetBackgroundBtn'),
     saveBackgroundBtn: document.getElementById('saveBackgroundBtn'),
+    conversationPresetsBtn: document.getElementById('conversationPresetsBtn'),
+    conversationPresetsDialog: document.getElementById('conversationPresetsDialog'),
+    closeConversationPresetsDialogBtn: document.getElementById('closeConversationPresetsDialogBtn'),
+    conversationPresetNameInput: document.getElementById('conversationPresetNameInput'),
+    saveConversationPresetBtn: document.getElementById('saveConversationPresetBtn'),
+    conversationPresetStatus: document.getElementById('conversationPresetStatus'),
+    conversationPresetList: document.getElementById('conversationPresetList'),
     findBtn: document.getElementById('findBtn'),
     saveAsBtn: document.getElementById('saveAsBtn'),
     historyBtn: document.getElementById('historyBtn'),
@@ -809,6 +821,52 @@
     }
   }
 
+  function blankConversationPresetLibrary() {
+    return { version: 1, presets: [] };
+  }
+
+  function normalizeConversationPreset(value, index = 0) {
+    if (!value || typeof value !== 'object') return null;
+    const participants = Array.isArray(value.participants) ? value.participants.map((participant, participantIndex) => ({
+      name: typeof participant?.name === 'string' && participant.name.trim() ? participant.name.trim() : `Participant ${participantIndex + 1}`,
+      side: participant?.side === 'right' ? 'right' : 'left',
+      color: normalizeHex(participant?.color, '#e5e5ea')
+    })).slice(0, 24) : [];
+    if (!participants.length) return null;
+    return {
+      id: typeof value.id === 'string' && value.id ? value.id : `preset-${Date.now()}-${index}-${Math.random().toString(16).slice(2)}`,
+      name: typeof value.name === 'string' && value.name.trim() ? value.name.trim() : `Preset ${index + 1}`,
+      conversationStyle: normalizeConversationStyle(value.conversationStyle),
+      conversationBackground: normalizeConversationBackground(value.conversationBackground),
+      highContrastLabels: value.highContrastLabels === true,
+      participants,
+      createdAt: value.createdAt || new Date().toISOString(),
+      updatedAt: value.updatedAt || value.createdAt || new Date().toISOString()
+    };
+  }
+
+  function loadConversationPresetLibrary() {
+    try {
+      const raw = localStorage.getItem(CONVERSATION_PRESETS_KEY);
+      if (!raw) return blankConversationPresetLibrary();
+      const parsed = JSON.parse(raw);
+      const rawPresets = Array.isArray(parsed?.presets) ? parsed.presets : [];
+      return { version: 1, presets: rawPresets.map(normalizeConversationPreset).filter(Boolean) };
+    } catch {
+      return blankConversationPresetLibrary();
+    }
+  }
+
+  function saveConversationPresetLibrary() {
+    try {
+      localStorage.setItem(CONVERSATION_PRESETS_KEY, JSON.stringify(conversationPresetLibrary));
+      return true;
+    } catch (error) {
+      console.error('ThreadWriter conversation preset save failed', error);
+      return false;
+    }
+  }
+
   function makeProjectId() {
     return crypto.randomUUID ? crypto.randomUUID() : `project-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   }
@@ -920,12 +978,13 @@
     const fallbackSpeakerId = participants[0]?.id || null;
     return {
       ...project,
-      version: 6,
+      version: 7,
       title: typeof project.title === 'string' ? project.title : base.title,
       sceneHeader: typeof project.sceneHeader === 'string' ? project.sceneHeader : '',
       headerFont: allowedFonts.has(project.headerFont) ? project.headerFont : 'rounded',
       conversationStyle: normalizeConversationStyle(project.conversationStyle),
       conversationBackground: normalizeConversationBackground(project.conversationBackground),
+      highContrastLabels: project.highContrastLabels === true,
       activeParticipantId: project.activeParticipantId || fallbackSpeakerId,
       participants,
       messages: project.messages.map((m, index) => {
@@ -1238,6 +1297,7 @@
     els.conversationCanvas.style.background = css || '';
     els.conversationCanvas.classList.toggle('custom-background', background.mode !== 'default');
     els.conversationCanvas.classList.toggle('custom-background-dark', background.mode !== 'default' && customBackgroundIsDark(background));
+    els.conversationCanvas.classList.toggle('high-contrast-labels', state.highContrastLabels === true);
   }
 
   function render() {
@@ -2219,6 +2279,7 @@
       const draft = backgroundDraftFromControls();
       els.backgroundPreview.style.background = conversationBackgroundCss(draft) || 'var(--bg)';
       els.backgroundPreview.classList.toggle('dark-preview', draft.mode !== 'default' && customBackgroundIsDark(draft));
+      els.backgroundPreview.classList.toggle('high-contrast-preview', els.highContrastLabelsInput?.checked === true);
     }
   }
 
@@ -2231,6 +2292,7 @@
     const inputs = backgroundColorInputs();
     const defaults = ['#f4f4f7', '#d9e6ff', '#c9f2d0', '#f6d6ff'];
     inputs.forEach((input, index) => { if (input) input.value = background.colors[index] || defaults[index]; });
+    if (els.highContrastLabelsInput) els.highContrastLabelsInput.checked = state.highContrastLabels === true;
     updateBackgroundDialogPreview();
     els.backgroundDialog.showModal();
   }
@@ -2242,7 +2304,7 @@
   els.backgroundBtn?.addEventListener('click', () => { closeTopMenus(); openBackgroundDialog(); });
   els.closeBackgroundDialogBtn?.addEventListener('click', closeBackgroundDialog);
   els.backgroundDialog?.addEventListener('cancel', event => { event.preventDefault(); closeBackgroundDialog(); });
-  [els.backgroundMode, els.backgroundSolidColor, els.backgroundColorCount, els.backgroundDirection, els.backgroundColor1, els.backgroundColor2, els.backgroundColor3, els.backgroundColor4].forEach(control => control?.addEventListener('input', updateBackgroundDialogPreview));
+  [els.backgroundMode, els.backgroundSolidColor, els.backgroundColorCount, els.backgroundDirection, els.backgroundColor1, els.backgroundColor2, els.backgroundColor3, els.backgroundColor4, els.highContrastLabelsInput].forEach(control => control?.addEventListener('input', updateBackgroundDialogPreview));
   els.backgroundPresetGrid?.addEventListener('click', event => {
     const button = event.target.closest('[data-background-preset]');
     if (!button) return;
@@ -2263,9 +2325,149 @@
   });
   els.saveBackgroundBtn?.addEventListener('click', () => {
     state.conversationBackground = backgroundDraftFromControls();
+    state.highContrastLabels = els.highContrastLabelsInput?.checked === true;
     scheduleSave();
     applyConversationPresentation();
     closeBackgroundDialog();
+  });
+
+  function conversationStyleLabel(style) {
+    return ({ chat: 'Mobile Chat', transcript: 'Transcript', theater: 'Theater Draft', screen: 'Screen Draft' })[normalizeConversationStyle(style)] || 'Mobile Chat';
+  }
+
+  function captureConversationPreset(name, existing = null) {
+    const now = new Date().toISOString();
+    return normalizeConversationPreset({
+      id: existing?.id || (crypto.randomUUID ? crypto.randomUUID() : `preset-${Date.now()}-${Math.random().toString(16).slice(2)}`),
+      name,
+      conversationStyle: state.conversationStyle,
+      conversationBackground: cloneState(normalizeConversationBackground(state.conversationBackground)),
+      highContrastLabels: state.highContrastLabels === true,
+      participants: state.participants.map(participant => ({ name: participant.name, side: participant.side, color: participant.color })),
+      createdAt: existing?.createdAt || now,
+      updatedAt: now
+    });
+  }
+
+  function renderConversationPresetList() {
+    if (!els.conversationPresetList) return;
+    els.conversationPresetList.innerHTML = '';
+    const presets = [...(conversationPresetLibrary.presets || [])].sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+    if (!presets.length) {
+      const empty = document.createElement('div');
+      empty.className = 'conversation-preset-empty';
+      empty.textContent = 'No saved conversation presets yet.';
+      els.conversationPresetList.appendChild(empty);
+      return;
+    }
+    presets.forEach(preset => {
+      const row = document.createElement('div');
+      row.className = 'conversation-preset-item';
+      const main = document.createElement('div');
+      main.className = 'conversation-preset-main';
+      const name = document.createElement('strong');
+      name.textContent = preset.name;
+      const meta = document.createElement('div');
+      meta.className = 'conversation-preset-meta';
+      meta.textContent = `${conversationStyleLabel(preset.conversationStyle)} · ${preset.participants.length} participant${preset.participants.length === 1 ? '' : 's'}${preset.highContrastLabels ? ' · high contrast labels' : ''}`;
+      const swatches = document.createElement('div');
+      swatches.className = 'conversation-preset-swatches';
+      preset.participants.slice(0, 8).forEach(participant => {
+        const swatch = document.createElement('span');
+        swatch.className = 'conversation-preset-swatch';
+        swatch.style.background = participant.color;
+        swatch.title = participant.name;
+        swatches.appendChild(swatch);
+      });
+      main.append(name, meta, swatches);
+      const actions = document.createElement('div');
+      actions.className = 'conversation-preset-actions';
+      const apply = document.createElement('button');
+      apply.type = 'button';
+      apply.textContent = 'Apply';
+      apply.addEventListener('click', () => applyConversationPreset(preset));
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'danger-button';
+      remove.textContent = 'Delete';
+      remove.addEventListener('click', () => {
+        if (!confirm(`Delete the conversation preset “${preset.name}”?`)) return;
+        conversationPresetLibrary.presets = conversationPresetLibrary.presets.filter(item => item.id !== preset.id);
+        if (!saveConversationPresetLibrary()) { alert('ThreadWriter could not update saved conversation presets in this browser.'); return; }
+        renderConversationPresetList();
+      });
+      actions.append(apply, remove);
+      row.append(main, actions);
+      els.conversationPresetList.appendChild(row);
+    });
+  }
+
+  function openConversationPresetsDialog() {
+    if (!els.conversationPresetsDialog) return;
+    if (els.conversationPresetNameInput) els.conversationPresetNameInput.value = '';
+    if (els.conversationPresetStatus) els.conversationPresetStatus.textContent = '';
+    renderConversationPresetList();
+    els.conversationPresetsDialog.showModal();
+    requestAnimationFrame(() => els.conversationPresetNameInput?.focus());
+  }
+
+  function closeConversationPresetsDialog() {
+    if (els.conversationPresetsDialog?.open) els.conversationPresetsDialog.close();
+  }
+
+  function saveCurrentConversationPreset() {
+    const requestedName = String(els.conversationPresetNameInput?.value || '').trim();
+    if (!requestedName) {
+      if (els.conversationPresetStatus) els.conversationPresetStatus.textContent = 'Give this preset a name first.';
+      els.conversationPresetNameInput?.focus();
+      return;
+    }
+    const existing = (conversationPresetLibrary.presets || []).find(preset => preset.name.toLocaleLowerCase() === requestedName.toLocaleLowerCase()) || null;
+    const preset = captureConversationPreset(requestedName, existing);
+    if (!preset) return;
+    if (existing) conversationPresetLibrary.presets = conversationPresetLibrary.presets.map(item => item.id === existing.id ? preset : item);
+    else conversationPresetLibrary.presets.push(preset);
+    if (!saveConversationPresetLibrary()) {
+      if (els.conversationPresetStatus) els.conversationPresetStatus.textContent = 'Could not save presets in this browser.';
+      return;
+    }
+    if (els.conversationPresetStatus) els.conversationPresetStatus.textContent = existing ? `Updated “${requestedName}”.` : `Saved “${requestedName}”.`;
+    renderConversationPresetList();
+  }
+
+  function applyConversationPreset(presetValue) {
+    const preset = normalizeConversationPreset(presetValue);
+    if (!preset) return;
+    createSnapshot(currentDocumentId, state, 'Before applying conversation preset', { force: true });
+    state.conversationStyle = preset.conversationStyle;
+    state.conversationBackground = cloneState(preset.conversationBackground);
+    state.highContrastLabels = preset.highContrastLabels === true;
+
+    const existing = Array.isArray(state.participants) ? state.participants : [];
+    const keepExtras = state.messages.some(item => isMessage(item));
+    const nextParticipants = preset.participants.map((participant, index) => ({
+      id: existing[index]?.id || (crypto.randomUUID ? crypto.randomUUID() : `p-${Date.now()}-${index}`),
+      name: participant.name,
+      side: participant.side,
+      color: participant.color
+    }));
+    if (keepExtras && existing.length > nextParticipants.length) {
+      existing.slice(nextParticipants.length).forEach(participant => nextParticipants.push({ ...participant }));
+    }
+    state.participants = nextParticipants.length ? nextParticipants : existing;
+    ensureActiveParticipant();
+    scheduleSave();
+    render();
+    if (els.saveStatus) els.saveStatus.textContent = `Applied preset: ${preset.name}`;
+    closeConversationPresetsDialog();
+  }
+
+  els.conversationPresetsBtn?.addEventListener('click', () => { closeTopMenus(); openConversationPresetsDialog(); });
+  els.closeConversationPresetsDialogBtn?.addEventListener('click', closeConversationPresetsDialog);
+  els.conversationPresetsDialog?.addEventListener('cancel', event => { event.preventDefault(); closeConversationPresetsDialog(); });
+  els.saveConversationPresetBtn?.addEventListener('click', saveCurrentConversationPreset);
+  els.conversationPresetNameInput?.addEventListener('keydown', event => {
+    if (event.key === 'Enter') { event.preventDefault(); saveCurrentConversationPreset(); }
   });
 
   function findFieldValue(item, field) {
@@ -3702,14 +3904,24 @@
         ctx.font = plainDraft ? '800 16px Arial, sans-serif' : '600 17px Arial, sans-serif';
         const name = plainDraft ? participant.name.toLocaleUpperCase() : participant.name;
         if (draw) {
-          ctx.fillStyle = darkBackground ? '#dedee6' : '#6d6d78';
-          if (theater || screen) {
-            ctx.textAlign = 'center';
-            ctx.fillText(name, W / 2, y);
+          const labelAlign = theater || screen ? 'center' : (transcript || side === 'left' ? 'left' : 'right');
+          const labelX = theater || screen ? W / 2 : (transcript || side === 'left' ? left : W - right);
+          ctx.textAlign = labelAlign;
+          if (state.highContrastLabels === true) {
+            const labelWidth = Math.ceil(ctx.measureText(name).width);
+            const padX = 9;
+            const rectHeight = 23;
+            let rectX = labelX - padX;
+            if (labelAlign === 'center') rectX = labelX - labelWidth / 2 - padX;
+            if (labelAlign === 'right') rectX = labelX - labelWidth - padX;
+            ctx.fillStyle = 'rgba(0,0,0,.78)';
+            roundedRectPath(ctx, rectX, y - 17, labelWidth + padX * 2, rectHeight, 8);
+            ctx.fill();
+            ctx.fillStyle = '#ffffff';
           } else {
-            ctx.textAlign = transcript || side === 'left' ? 'left' : 'right';
-            ctx.fillText(name, transcript || side === 'left' ? left : W - right, y);
+            ctx.fillStyle = darkBackground ? '#dedee6' : '#6d6d78';
           }
+          ctx.fillText(name, labelX, y);
           ctx.textAlign = 'left';
         }
         y += 23;
@@ -4202,6 +4414,7 @@
     const backgroundCss = conversationBackgroundCss(background) || (style === 'chat' ? '#f4f4f7' : '#ffffff');
     const documentText = darkBackground ? '#f7f7fa' : '#17171b';
     const documentMuted = darkBackground ? '#dedee6' : '#6d6d78';
+    const highContrastLabels = state.highContrastLabels === true;
     const body = [];
     let previousSpeaker = null;
     for (const item of state.messages) {
@@ -4233,10 +4446,10 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${title}</title>
 <style>
-*{box-sizing:border-box}body{margin:0;background:${backgroundCss};color:${documentText};font-family:ui-rounded,"SF Pro Rounded","Segoe UI",system-ui,-apple-system,sans-serif}.document{width:min(100%,820px);margin:0 auto;padding:34px 18px 60px}h1{font-size:28px;margin:0 0 24px}.scene-header{text-align:center;font-weight:720;font-size:21px;line-height:1.3;margin:0 auto 30px;white-space:pre-wrap}.scene-header.serif{font-family:Georgia,"Times New Roman",serif}.scene-header.mono{font-family:ui-monospace,Consolas,monospace}.message{display:flex;margin:11px 0}.message.continuation{margin-top:-7px}.message.left{justify-content:flex-start}.message.right{justify-content:flex-end}.message-card{max-width:${plainDraft ? '100%' : '67%'}}.speaker{font-size:12px;color:${documentMuted};margin:0 10px 4px}.right .speaker,.right .timestamp,.right .annotation,.right figcaption{text-align:right}.timestamp{font-size:10.5px;color:${documentMuted};margin:0 10px 4px}.bubble{background:${plainDraft ? 'transparent' : 'var(--bubble,#e5e5ea)'};padding:${plainDraft ? '0' : '10px 13px'};border-radius:${plainDraft ? '0' : '18px'};color:${plainDraft ? documentText : '#151518'};line-height:1.42;white-space:pre-wrap;overflow-wrap:anywhere}.annotation{margin:7px 10px 0;color:${documentMuted};font-size:12px;font-style:italic;line-height:1.4}.narrative{width:min(78%,680px);margin:24px auto;color:${documentMuted};font:italic 14px/1.5 Georgia,"Times New Roman",serif}.narrative-text{text-align:center}.attachment{margin:9px 0 0;max-width:610px}.attachment.center{margin-left:auto;margin-right:auto}.attachment.right{margin-left:auto}.attachment img{display:block;max-width:100%;max-height:70vh;border-radius:12px}.attachment figcaption{margin-top:6px;color:${documentMuted};font-size:12px;line-height:1.4}.attachment.right img{margin-left:auto}.attachment.center img{margin-left:auto;margin-right:auto}.link-preview{display:flex;gap:12px;margin-top:10px;max-width:620px;padding:12px;border:1px solid #d8d8df;border-radius:14px;background:#f7f7f9;color:#17171b;font-family:ui-rounded,"Segoe UI",system-ui,sans-serif;text-align:left}.link-preview.right{margin-left:auto}.link-preview.center{margin-left:auto;margin-right:auto}.preview-thumb{width:min(31%,150px);object-fit:cover;align-self:stretch;max-height:130px}.preview-copy{min-width:0}.preview-site,.preview-url{font-size:11px;color:#777780}.preview-title{font-size:16px;font-weight:750;line-height:1.28;margin:3px 0}.preview-description{font-size:13px;color:#555560;line-height:1.35;margin:3px 0}.missing-image{padding:20px;background:#e5e5ea;color:#686872;text-align:center;border-radius:12px}.transcript .message,.theater .message,.screen .message{justify-content:flex-start;margin:18px 0}.transcript .message-card,.theater .message-card,.screen .message-card{width:100%;max-width:100%}.transcript .right .speaker,.transcript .right .timestamp,.transcript .right .annotation,.transcript .right figcaption,.theater .right .annotation,.screen .right .annotation{text-align:left}.transcript .attachment.right,.transcript .link-preview.right,.theater .attachment.right,.theater .link-preview.right{margin-left:0;margin-right:auto}.theater .speaker,.screen .speaker{text-align:center!important;text-transform:uppercase;font-weight:800;letter-spacing:.07em}.theater .timestamp,.screen .timestamp{text-align:center!important}.theater .bubble{text-align:left}.theater .narrative{margin-left:8%;margin-right:auto}.theater .narrative-text{text-align:left}.screen .bubble{width:min(62%,520px);margin:0 auto;text-align:left}.screen .annotation{width:min(62%,520px);margin-left:auto;margin-right:auto;text-align:left!important}.screen .narrative{width:min(76%,650px)}.screen .narrative-text{text-align:left}@media(max-width:600px){.document{padding:24px 12px 42px}.message-card{max-width:${plainDraft ? '100%' : '78%'}.attachment,.link-preview{max-width:100%}.screen .bubble,.screen .annotation{width:min(76%,520px)}}@media print{@page{margin:.55in}body{background:#fff!important;color:#17171b}.document{width:100%;padding:0}.message-card,.narrative,.attachment,.link-preview{break-inside:avoid}.bubble{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+*{box-sizing:border-box}body{margin:0;background:${backgroundCss};color:${documentText};font-family:ui-rounded,"SF Pro Rounded","Segoe UI",system-ui,-apple-system,sans-serif}.document{width:min(100%,820px);margin:0 auto;padding:34px 18px 60px}h1{font-size:28px;margin:0 0 24px}.scene-header{text-align:center;font-weight:720;font-size:21px;line-height:1.3;margin:0 auto 30px;white-space:pre-wrap}.scene-header.serif{font-family:Georgia,"Times New Roman",serif}.scene-header.mono{font-family:ui-monospace,Consolas,monospace}.message{display:flex;margin:11px 0}.message.continuation{margin-top:-7px}.message.left{justify-content:flex-start}.message.right{justify-content:flex-end}.message-card{max-width:${plainDraft ? '100%' : '67%'}}.speaker{font-size:12px;color:${documentMuted};margin:0 10px 4px}.high-contrast-labels .speaker{display:block;width:max-content;padding:2px 7px;border-radius:999px;background:rgba(0,0,0,.78);color:#fff!important}.high-contrast-labels .right .speaker{margin-left:auto}.high-contrast-labels.transcript .right .speaker{margin-left:10px;margin-right:10px}.high-contrast-labels.theater .speaker,.high-contrast-labels.screen .speaker{margin-left:auto!important;margin-right:auto!important}.right .speaker,.right .timestamp,.right .annotation,.right figcaption{text-align:right}.timestamp{font-size:10.5px;color:${documentMuted};margin:0 10px 4px}.bubble{background:${plainDraft ? 'transparent' : 'var(--bubble,#e5e5ea)'};padding:${plainDraft ? '0' : '10px 13px'};border-radius:${plainDraft ? '0' : '18px'};color:${plainDraft ? documentText : '#151518'};line-height:1.42;white-space:pre-wrap;overflow-wrap:anywhere}.annotation{margin:7px 10px 0;color:${documentMuted};font-size:12px;font-style:italic;line-height:1.4}.narrative{width:min(78%,680px);margin:24px auto;color:${documentMuted};font:italic 14px/1.5 Georgia,"Times New Roman",serif}.narrative-text{text-align:center}.attachment{margin:9px 0 0;max-width:610px}.attachment.center{margin-left:auto;margin-right:auto}.attachment.right{margin-left:auto}.attachment img{display:block;max-width:100%;max-height:70vh;border-radius:12px}.attachment figcaption{margin-top:6px;color:${documentMuted};font-size:12px;line-height:1.4}.attachment.right img{margin-left:auto}.attachment.center img{margin-left:auto;margin-right:auto}.link-preview{display:flex;gap:12px;margin-top:10px;max-width:620px;padding:12px;border:1px solid #d8d8df;border-radius:14px;background:#f7f7f9;color:#17171b;font-family:ui-rounded,"Segoe UI",system-ui,sans-serif;text-align:left}.link-preview.right{margin-left:auto}.link-preview.center{margin-left:auto;margin-right:auto}.preview-thumb{width:min(31%,150px);object-fit:cover;align-self:stretch;max-height:130px}.preview-copy{min-width:0}.preview-site,.preview-url{font-size:11px;color:#777780}.preview-title{font-size:16px;font-weight:750;line-height:1.28;margin:3px 0}.preview-description{font-size:13px;color:#555560;line-height:1.35;margin:3px 0}.missing-image{padding:20px;background:#e5e5ea;color:#686872;text-align:center;border-radius:12px}.transcript .message,.theater .message,.screen .message{justify-content:flex-start;margin:18px 0}.transcript .message-card,.theater .message-card,.screen .message-card{width:100%;max-width:100%}.transcript .right .speaker,.transcript .right .timestamp,.transcript .right .annotation,.transcript .right figcaption,.theater .right .annotation,.screen .right .annotation{text-align:left}.transcript .attachment.right,.transcript .link-preview.right,.theater .attachment.right,.theater .link-preview.right{margin-left:0;margin-right:auto}.theater .speaker,.screen .speaker{text-align:center!important;text-transform:uppercase;font-weight:800;letter-spacing:.07em}.theater .timestamp,.screen .timestamp{text-align:center!important}.theater .bubble{text-align:left}.theater .narrative{margin-left:8%;margin-right:auto}.theater .narrative-text{text-align:left}.screen .bubble{width:min(62%,520px);margin:0 auto;text-align:left}.screen .annotation{width:min(62%,520px);margin-left:auto;margin-right:auto;text-align:left!important}.screen .narrative{width:min(76%,650px)}.screen .narrative-text{text-align:left}@media(max-width:600px){.document{padding:24px 12px 42px}.message-card{max-width:${plainDraft ? '100%' : '78%'}.attachment,.link-preview{max-width:100%}.screen .bubble,.screen .annotation{width:min(76%,520px)}}@media print{@page{margin:.55in}body{background:#fff!important;color:#17171b}.document{width:100%;padding:0}.message-card,.narrative,.attachment,.link-preview{break-inside:avoid}.bubble{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
 </style>
 </head>
-<body><main class="document ${style}"><h1>${title}</h1>${sceneHeader}${body.join('')}</main></body>
+<body><main class="document ${style}${highContrastLabels ? ' high-contrast-labels' : ''}"><h1>${title}</h1>${sceneHeader}${body.join('')}</main></body>
 </html>`;
   }
 
@@ -4766,7 +4979,7 @@ ${imageRels}
   });
 
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-    navigator.serviceWorker.register('./sw.js?v=0.10.4').catch(() => {});
+    navigator.serviceWorker.register('./sw.js?v=0.10.5').catch(() => {});
   }
 
   if (els.runtimeVersion) els.runtimeVersion.textContent = `v${APP_VERSION}`;

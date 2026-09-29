@@ -1299,3 +1299,56 @@ dialog::backdrop { background: rgba(0,0,0,.45); backdrop-filter: blur(3px); }
 .conversation-canvas .thread.style-transcript .bubble { color: var(--conversation-text); }
 .background-grid label[hidden] { display: none !important; }
 .background-color-stop[hidden] { display: none !important; }
+
+
+/* v0.10.5: accessibility-oriented speaker labels and reusable conversation presets */
+.conversation-canvas.high-contrast-labels .speaker-label {
+  display: block;
+  width: max-content;
+  max-width: calc(100% - 20px);
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(0,0,0,.78);
+  color: #fff !important;
+  line-height: 1.35;
+  box-shadow: 0 0 0 1px rgba(255,255,255,.10);
+}
+.conversation-canvas.high-contrast-labels .message-row.right .speaker-label { margin-left: auto; }
+.conversation-canvas.high-contrast-labels .thread.style-transcript .message-row.right .speaker-label { margin-left: 10px; margin-right: 10px; }
+.conversation-canvas.high-contrast-labels .thread.style-theater .speaker-label,
+.conversation-canvas.high-contrast-labels .thread.style-screen .speaker-label { margin-left: auto; margin-right: auto; }
+.background-contrast-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin: 12px 0 0;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--field);
+}
+.background-contrast-option input { margin-top: 2px; }
+.background-contrast-option span { display: grid; gap: 2px; }
+.background-contrast-option strong { font-size: 12px; }
+.background-contrast-option small { color: var(--muted); font-size: 10.5px; line-height: 1.35; }
+.background-preview-label { padding: 3px 8px; border-radius: 999px; }
+.background-preview.high-contrast-preview .background-preview-label { background: rgba(0,0,0,.78); color: #fff; }
+.conversation-presets-dialog-card { width: min(94vw, 680px); }
+.conversation-preset-save-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin: 12px 0 4px; }
+.conversation-preset-save-row input { min-width: 0; border: 1px solid var(--border); border-radius: 10px; padding: 9px 10px; background: var(--field); color: var(--text); font: inherit; }
+.conversation-preset-save-row button { min-height: 38px; }
+.conversation-preset-status { min-height: 18px; color: var(--muted); font-size: 11px; margin-bottom: 5px; }
+.conversation-preset-list { display: grid; gap: 8px; max-height: min(52vh, 430px); overflow-y: auto; }
+.conversation-preset-item { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 12px; align-items: center; padding: 10px; border: 1px solid var(--border); border-radius: 11px; background: var(--field); }
+.conversation-preset-main { min-width: 0; display: grid; gap: 4px; }
+.conversation-preset-main strong { overflow-wrap: anywhere; }
+.conversation-preset-meta { color: var(--muted); font-size: 10.5px; line-height: 1.35; }
+.conversation-preset-swatches { display: flex; gap: 4px; }
+.conversation-preset-swatch { width: 15px; height: 15px; border-radius: 50%; border: 1px solid rgba(127,127,127,.32); }
+.conversation-preset-actions { display: flex; gap: 6px; }
+.conversation-preset-empty { padding: 18px 10px; color: var(--muted); text-align: center; }
+@media (max-width: 560px) {
+  .conversation-preset-save-row { grid-template-columns: 1fr; }
+  .conversation-preset-item { grid-template-columns: 1fr; }
+  .conversation-preset-actions { justify-content: flex-end; }
+}

@@ -1,6 +1,13 @@
-# ThreadWriter v0.10.4
+# ThreadWriter v0.10.5
 
 A small local-first dialogue editor for writing, revising, moving, and publishing conversation-heavy material, with chat, transcript, theater-draft, and screen-draft presentation styles.
+
+## v0.10.5
+
+- Adds **High Contrast Speaker Labels**, stored per conversation and carried through ThreadWriter files, history/project backups, HTML, and raster image exports.
+- Adds browser-global **Conversation Presets** for reusable style/participant/background setups across projects. Saving a preset with an existing name updates it. Applying a preset to a populated thread never removes extra existing speakers, avoiding orphaned dialogue.
+- Keeps scene headers and message content out of presets by design.
+
 
 ## Current features
 
@@ -65,7 +72,7 @@ Then open `http://localhost:8000/` in your browser. Service-worker/offline insta
 GitHub Pages is also a good fit: place these files at the publishing root and add the resulting site to an iPhone/iPad Home Screen if desired.
 
 
-## New in v0.10.4
+## New in v0.10.5
 
 - Added eight editable **Conversation Background presets**: Spectrum, Steel, Terminal, Ocean, Sunset, Twilight, Paper, and Midnight. Presets are generic visual recipes rather than replicas of specific apps.
 - Gradient color stops can now be reordered with simple left/right controls; unavailable moves disable automatically at the ends of the active stop list.

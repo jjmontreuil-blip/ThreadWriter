@@ -4,10 +4,10 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#f4f4f7" />
-  <title>ThreadWriter v0.10.4</title>
-  <link rel="manifest" href="manifest.webmanifest?v=0.10.4" />
-  <link rel="icon" href="icon.svg?v=0.10.4" type="image/svg+xml" />
-  <link rel="stylesheet" href="styles.css?v=0.10.4" />
+  <title>ThreadWriter v0.10.5</title>
+  <link rel="manifest" href="manifest.webmanifest?v=0.10.5" />
+  <link rel="icon" href="icon.svg?v=0.10.5" type="image/svg+xml" />
+  <link rel="stylesheet" href="styles.css?v=0.10.5" />
 </head>
 <body>
   <div class="app-shell">
@@ -33,6 +33,7 @@
               </select>
             </label>
             <button id="backgroundBtn" type="button">Conversation background…</button>
+            <button id="conversationPresetsBtn" type="button">Conversation presets…</button>
             <button id="findBtn" type="button">Find &amp; Replace</button>
           </div>
         </div>
@@ -376,11 +377,31 @@
       <div id="backgroundGradientTools" class="background-gradient-tools">
         <button type="button" id="flipGradientBtn">Flip gradient</button>
       </div>
-      <div id="backgroundPreview" class="background-preview" aria-label="Background preview"><span>Preview</span></div>
+      <label class="background-contrast-option">
+        <input id="highContrastLabelsInput" type="checkbox" />
+        <span><strong>High contrast speaker labels</strong><small>Adds a dark backing and light text so speaker names stay readable over custom backgrounds.</small></span>
+      </label>
+      <div id="backgroundPreview" class="background-preview" aria-label="Background preview"><span id="backgroundPreviewLabel" class="background-preview-label">Speaker label</span></div>
       <div class="dialog-actions background-actions">
         <button type="button" id="resetBackgroundBtn">Style default</button>
         <button type="button" id="saveBackgroundBtn" class="primary-action">Save</button>
       </div>
+    </div>
+  </dialog>
+
+  <dialog id="conversationPresetsDialog">
+    <div class="dialog-card conversation-presets-dialog-card">
+      <div class="dialog-head">
+        <h2>Conversation presets</h2>
+        <button type="button" id="closeConversationPresetsDialogBtn" class="icon-btn" aria-label="Close">×</button>
+      </div>
+      <p class="dialog-copy">Save reusable conversation setups across projects. Presets include Conversation Style, participants, bubble colors and sides, conversation background, and High Contrast Labels. Scene headers and messages are never included.</p>
+      <div class="conversation-preset-save-row">
+        <input id="conversationPresetNameInput" type="text" maxlength="80" placeholder="e.g. Collodi CHIRP" aria-label="Preset name" />
+        <button type="button" id="saveConversationPresetBtn" class="primary-action">Save current</button>
+      </div>
+      <div id="conversationPresetStatus" class="conversation-preset-status" aria-live="polite"></div>
+      <div id="conversationPresetList" class="conversation-preset-list"></div>
     </div>
   </dialog>
 
@@ -509,7 +530,7 @@
       if (key.startsWith('threadwriter.')) localStorage.removeItem(key);
     }
   </script>
-  <script src="app.js?v=0.10.4"></script>
+  <script src="app.js?v=0.10.5"></script>
 
 <script>
 window.addEventListener('load', () => {
