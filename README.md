@@ -1,4 +1,12 @@
-# ThreadWriter v0.12
+# ThreadWriter v0.12.1
+
+## v0.12.1 — Avatar layout polish
+
+- Removes centered Above avatars. Above avatars now stay flush with the speaker's message edge so portrait placement remains stable as bubble widths change.
+- Fixes uploaded image avatars briefly/permanently showing their fallback initials over the image in browsers where author CSS could override the `hidden` attribute.
+- With **Alongside + bubble tails**, an avatar now anchors to the final message in its burst and bottom-aligns with that message, making the tail read as coming from the avatar. Without tails, Alongside avatars still introduce the first message in the burst.
+- Avatar sizes are now **Small / Medium / Large**. The previous 50px Large is relabelled Medium for backward-compatible appearance; the new 72px Large is available only for Above placement. Alongside presentation automatically caps Large at Medium.
+- Runtime, asset URLs, and offline cache are bumped to **v0.12.1**.
 
 ## v0.12 — Avatars and bubble tails
 

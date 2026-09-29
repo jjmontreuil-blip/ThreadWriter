@@ -200,6 +200,7 @@ button { cursor: pointer; }
 .avatar-slot { flex: 0 0 auto; display: flex; align-items: flex-start; justify-content: center; }
 .avatar-slot-small { width: 34px; }
 .avatar-slot-large { width: 50px; }
+.avatar-slot-xlarge { width: 72px; }
 .message-row.avatar-alongside-burst.speaker-start .avatar-slot { margin-top: 20px; }
 .message-row.avatar-alongside-burst.speaker-start.timestamped .avatar-slot { margin-top: 36px; }
 .participant-avatar {
@@ -219,17 +220,21 @@ button { cursor: pointer; }
 }
 .participant-avatar.avatar-small { width: 34px; height: 34px; font-size: 13px; }
 .participant-avatar.avatar-large { width: 50px; height: 50px; font-size: 17px; }
+.participant-avatar.avatar-xlarge { width: 72px; height: 72px; font-size: 23px; }
 .participant-avatar.avatar-circle { border-radius: 50%; }
 .participant-avatar.avatar-square { border-radius: 8px; }
 .participant-avatar.avatar-emoji { font-family: system-ui, -apple-system, "Segoe UI Emoji", "Apple Color Emoji", sans-serif; font-weight: 400; font-size: 22px; }
 .participant-avatar.avatar-emoji.avatar-large { font-size: 31px; }
+.participant-avatar.avatar-emoji.avatar-xlarge { font-size: 44px; }
 .participant-avatar.avatar-no-background { background: transparent; border-color: transparent; box-shadow: none; }
 .participant-avatar img { width: 100%; height: 100%; display: block; object-fit: cover; }
+.participant-avatar img[hidden],
+.participant-avatar-fallback[hidden] { display: none !important; }
 .participant-avatar-fallback { display: grid; place-items: center; width: 100%; height: 100%; }
 .avatar-above { margin-bottom: 6px; }
-.message-row.left .avatar-above-side { margin-left: 10px; margin-right: auto; }
-.message-row.right .avatar-above-side { margin-left: auto; margin-right: 10px; }
-.avatar-above-center { margin-left: auto; margin-right: auto; }
+.message-row.left .avatar-above-side { margin-left: 0; margin-right: auto; }
+.message-row.right .avatar-above-side { margin-left: auto; margin-right: 0; }
+.message-row.avatar-tail-anchor .avatar-slot { align-self: flex-end; margin-top: 0 !important; }
 .speaker-label {
   font-size: 12px;
   color: var(--muted);

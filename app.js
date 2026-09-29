@@ -1,5 +1,5 @@
 (() => {
-  const APP_VERSION = '0.12';
+  const APP_VERSION = '0.12.1';
   const LEGACY_STORAGE_KEY = 'threadwriter.project.v1';
   const LIBRARY_KEY = 'threadwriter.library.v1';
   const DOCUMENT_PREFIX = 'threadwriter.document.v1.';
@@ -900,8 +900,10 @@
     return value === 'above' ? 'above' : 'alongside';
   }
 
-  function normalizeAvatarAlignment(value) {
-    return value === 'center' ? 'center' : 'side';
+  function normalizeAvatarAlignment() {
+    // v0.12.1 retires centered Above avatars. Preserve the field for file/preset
+    // compatibility, but normalize every older value to the speaker side.
+    return 'side';
   }
 
   function normalizeAvatarShape(value) {
@@ -909,7 +911,17 @@
   }
 
   function normalizeAvatarSize(value) {
+    // `large` was the 50px v0.12 size; it is now labelled Medium so older files
+    // keep their existing appearance. `xlarge` is the new Above-only Large size.
+    if (value === 'xlarge') return 'xlarge';
     return value === 'large' ? 'large' : 'small';
+  }
+
+  function effectiveAvatarSize(size = state.avatarSize, placement = state.avatarPlacement) {
+    const normalized = normalizeAvatarSize(size);
+    return normalizeAvatarPlacement(placement) === 'alongside' && normalized === 'xlarge'
+      ? 'large'
+      : normalized;
   }
 
   function normalizeAvatarType(value) {
@@ -1636,11 +1648,16 @@
         activeBurst = { speakerId: item.speakerId, avatar: eligible };
       }
       const avatarBurst = Boolean(activeBurst?.avatar && activeBurst.speakerId === item.speakerId);
+      const tailAnchoredAlongside = alongside && state.bubbleTails === true;
       result[index] = {
         burstStart,
         burstEnd,
-        showAvatar: burstStart && avatarBurst,
-        avatarGutter: avatarBurst && alongside
+        // Above avatars always introduce the burst. Alongside avatars normally do
+        // the same, but with tails active they move to the final message so the
+        // tail visually points back toward the avatar.
+        showAvatar: avatarBurst && (tailAnchoredAlongside ? burstEnd : burstStart),
+        avatarGutter: avatarBurst && alongside,
+        avatarTailAnchor: avatarBurst && tailAnchoredAlongside && burstEnd
       };
       if (burstEnd) activeBurst = null;
     });
@@ -1651,7 +1668,7 @@
     if (!participantHasAvatar(participant)) return null;
     const type = normalizeAvatarType(participant.avatarType);
     const avatar = document.createElement('div');
-    avatar.className = `participant-avatar avatar-${normalizeAvatarShape(state.avatarShape)} avatar-${normalizeAvatarSize(state.avatarSize)} avatar-${type}${extraClass ? ` ${extraClass}` : ''}`;
+    avatar.className = `participant-avatar avatar-${normalizeAvatarShape(state.avatarShape)} avatar-${effectiveAvatarSize()} avatar-${type}${extraClass ? ` ${extraClass}` : ''}`;
     avatar.style.setProperty('--avatar-color', participant.color || '#e5e5ea');
     avatar.style.setProperty('--avatar-text-color', automaticBubbleTextColor(participant.color || '#e5e5ea'));
     avatar.setAttribute('aria-label', `${participant.name} avatar`);
@@ -1679,8 +1696,10 @@
       getMediaObjectUrl(image.id).then(url => {
         if (!url || !img.isConnected) return;
         img.src = url;
-        img.hidden = false;
+        // Explicit hidden/display rules in CSS keep the loading initials and the
+        // resolved image mutually exclusive across browsers.
         fallback.hidden = true;
+        img.hidden = false;
       }).catch(() => {});
     }
     return avatar;
@@ -1914,11 +1933,12 @@
       const previous = state.messages[index - 1];
       const continuesSpeaker = isMessage(previous) && previous?.speakerId === item.speakerId;
       const showSpeakerLabel = state.conversationStyle !== 'chat' || !continuesSpeaker;
-      const burst = burstMeta[index] || { burstStart: !continuesSpeaker, burstEnd: true, showAvatar: false, avatarGutter: false };
+      const burst = burstMeta[index] || { burstStart: !continuesSpeaker, burstEnd: true, showAvatar: false, avatarGutter: false, avatarTailAnchor: false };
 
       const row = document.createElement('article');
       row.className = `message-row ${p.side}${continuesSpeaker ? ' continuation' : ' speaker-start'}${item.displayTimestamp ? ' timestamped' : ''}`;
       if (burst.avatarGutter) row.classList.add('avatar-alongside-burst');
+      if (burst.avatarTailAnchor) row.classList.add('avatar-tail-anchor');
       if (state.conversationStyle === 'chat' && state.bubbleTails === true && burst.burstEnd) row.classList.add('has-tail');
       if (textMatchIds.has(item.id)) row.classList.add('find-match');
       if (currentMatch?.messageId === item.id && currentMatch.field === 'text') row.classList.add('find-current');
@@ -1928,7 +1948,7 @@
       card.className = 'message-card';
 
       if (burst.showAvatar && normalizeAvatarPlacement(state.avatarPlacement) === 'above') {
-        const avatar = makeParticipantAvatarElement(p, `avatar-above avatar-above-${normalizeAvatarAlignment(state.avatarAlignment)}`);
+        const avatar = makeParticipantAvatarElement(p, 'avatar-above avatar-above-side');
         if (avatar) card.appendChild(avatar);
       }
 
@@ -2098,7 +2118,7 @@
       if (burst.avatarGutter) {
         const avatar = burst.showAvatar ? makeParticipantAvatarElement(p, 'avatar-alongside') : null;
         const avatarSlot = document.createElement('div');
-        avatarSlot.className = `avatar-slot avatar-slot-${normalizeAvatarSize(state.avatarSize)}`;
+        avatarSlot.className = `avatar-slot avatar-slot-${effectiveAvatarSize()}`;
         if (avatar) avatarSlot.appendChild(avatar);
         if (p.side === 'right') row.append(card, avatarSlot);
         else row.append(avatarSlot, card);
@@ -2663,23 +2683,33 @@
   function updateChatAppearanceDialog() {
     if (!els.chatAppearanceDialog) return;
     const placement = normalizeAvatarPlacement(els.avatarPlacement?.value);
-    if (els.avatarAlignmentField) els.avatarAlignmentField.hidden = placement !== 'above';
+    const sizeControl = els.avatarSize;
+    const xlargeOption = sizeControl?.querySelector('option[value="xlarge"]');
+    if (xlargeOption) xlargeOption.disabled = placement !== 'above';
+    if (placement === 'alongside' && normalizeAvatarSize(sizeControl?.value) === 'xlarge') {
+      sizeControl.value = 'large';
+    }
+
     const preview = els.chatAppearanceDialog.querySelector('.chat-appearance-preview');
     const avatar = preview?.querySelector('.chat-preview-avatar');
     const bubbles = preview?.querySelector('.chat-preview-bubbles');
+    const size = effectiveAvatarSize(sizeControl?.value, placement);
+    const pixels = size === 'xlarge' ? 72 : size === 'large' ? 50 : 34;
+    const fontPixels = size === 'xlarge' ? 21 : size === 'large' ? 15 : 11;
     if (avatar) {
       avatar.hidden = normalizeAvatarMode(els.avatarMode?.value) === 'off';
       avatar.style.borderRadius = normalizeAvatarShape(els.avatarShape?.value) === 'square' ? '8px' : '50%';
-      const large = normalizeAvatarSize(els.avatarSize?.value) === 'large';
-      avatar.style.width = `${large ? 50 : 34}px`;
-      avatar.style.height = `${large ? 50 : 34}px`;
-      avatar.style.fontSize = `${large ? 15 : 11}px`;
+      avatar.style.width = `${pixels}px`;
+      avatar.style.height = `${pixels}px`;
+      avatar.style.fontSize = `${fontPixels}px`;
+      avatar.style.alignSelf = placement === 'alongside' && els.bubbleTailsInput?.checked ? 'flex-end' : '';
     }
     if (preview) {
-      preview.style.alignItems = placement === 'above' ? 'flex-start' : 'flex-end';
+      const tailAnchored = placement === 'alongside' && els.bubbleTailsInput?.checked;
+      preview.style.alignItems = placement === 'above' || !tailAnchored ? 'flex-start' : 'flex-end';
       preview.style.flexDirection = placement === 'above' ? 'column' : 'row';
     }
-    if (bubbles) bubbles.style.alignSelf = placement === 'above' && normalizeAvatarAlignment(els.avatarAlignment?.value) === 'center' ? 'center' : '';
+    if (bubbles) bubbles.style.alignSelf = '';
     const tail = preview?.querySelector('.chat-preview-bubbles .with-tail');
     if (tail) tail.classList.toggle('tail-off', !els.bubbleTailsInput?.checked);
   }
@@ -2688,7 +2718,6 @@
     if (!els.chatAppearanceDialog) return;
     els.avatarMode.value = normalizeAvatarMode(state.avatarMode);
     els.avatarPlacement.value = normalizeAvatarPlacement(state.avatarPlacement);
-    els.avatarAlignment.value = normalizeAvatarAlignment(state.avatarAlignment);
     els.avatarShape.value = normalizeAvatarShape(state.avatarShape);
     els.avatarSize.value = normalizeAvatarSize(state.avatarSize);
     els.bubbleTailsInput.checked = state.bubbleTails === true;
@@ -2704,7 +2733,7 @@
     const next = {
       avatarMode: normalizeAvatarMode(els.avatarMode.value),
       avatarPlacement: normalizeAvatarPlacement(els.avatarPlacement.value),
-      avatarAlignment: normalizeAvatarAlignment(els.avatarAlignment.value),
+      avatarAlignment: 'side',
       avatarShape: normalizeAvatarShape(els.avatarShape.value),
       avatarSize: normalizeAvatarSize(els.avatarSize.value),
       bubbleTails: els.bubbleTailsInput.checked === true
@@ -2720,11 +2749,10 @@
   els.chatAppearanceBtn?.addEventListener('click', () => { closeTopMenus(); openChatAppearanceDialog(); });
   els.closeChatAppearanceDialogBtn?.addEventListener('click', closeChatAppearanceDialog);
   els.chatAppearanceDialog?.addEventListener('cancel', event => { event.preventDefault(); closeChatAppearanceDialog(); });
-  [els.avatarMode, els.avatarPlacement, els.avatarAlignment, els.avatarShape, els.avatarSize, els.bubbleTailsInput].forEach(control => control?.addEventListener('change', updateChatAppearanceDialog));
+  [els.avatarMode, els.avatarPlacement, els.avatarShape, els.avatarSize, els.bubbleTailsInput].forEach(control => control?.addEventListener('change', updateChatAppearanceDialog));
   els.resetChatAppearanceBtn?.addEventListener('click', () => {
     els.avatarMode.value = 'off';
     els.avatarPlacement.value = 'alongside';
-    els.avatarAlignment.value = 'side';
     els.avatarShape.value = 'circle';
     els.avatarSize.value = 'small';
     els.bubbleTailsInput.checked = false;
@@ -5364,14 +5392,15 @@
       if (!participant) return;
       const previous = state.messages[index - 1];
       const continues = isMessage(previous) && previous?.speakerId === item.speakerId;
-      const burst = burstMeta[index] || { burstEnd: true, showAvatar: false, avatarGutter: false };
+      const burst = burstMeta[index] || { burstEnd: true, showAvatar: false, avatarGutter: false, avatarTailAnchor: false };
 
       if (item.displayTimestamp && index > 0) y += 26;
       else if (index > 0) y += plainDraft ? 18 : (continues ? 8 : 18);
 
       const side = participant.side === 'right' ? 'right' : 'left';
       const showSpeaker = plainDraft || !continues;
-      const avatarSizePx = normalizeAvatarSize(state.avatarSize) === 'large' ? 50 : 34;
+      const exportAvatarSize = effectiveAvatarSize();
+      const avatarSizePx = exportAvatarSize === 'xlarge' ? 72 : exportAvatarSize === 'large' ? 50 : 34;
       const avatarOffset = !plainDraft && burst.avatarGutter ? avatarSizePx + 8 : 0;
       const contentLeft = left + avatarOffset;
       const contentRight = right + avatarOffset;
@@ -5391,10 +5420,7 @@
       }
 
       if (!plainDraft && burst.showAvatar && normalizeAvatarPlacement(state.avatarPlacement) === 'above') {
-        const flushX = side === 'right' ? chatMetrics.x + chatMetrics.bubbleWidth - avatarSizePx : chatMetrics.x;
-        const avatarX = normalizeAvatarAlignment(state.avatarAlignment) === 'center'
-          ? chatMetrics.x + (chatMetrics.bubbleWidth - avatarSizePx) / 2
-          : flushX;
+        const avatarX = side === 'right' ? chatMetrics.x + chatMetrics.bubbleWidth - avatarSizePx : chatMetrics.x;
         paintCanvasAvatar(ctx, participant, avatarX, y, avatarSizePx, draw, imageMap);
         y += avatarSizePx + 8;
       }
@@ -5464,7 +5490,8 @@
         if (draw) {
           if (burst.showAvatar && normalizeAvatarPlacement(state.avatarPlacement) === 'alongside') {
             const avatarX = side === 'right' ? W - right - avatarSizePx : left;
-            paintCanvasAvatar(ctx, participant, avatarX, y, avatarSizePx, true, imageMap);
+            const avatarY = burst.avatarTailAnchor ? y + bubbleHeight - avatarSizePx : y;
+            paintCanvasAvatar(ctx, participant, avatarX, avatarY, avatarSizePx, true, imageMap);
           }
           ctx.fillStyle = participant.color || '#e5e5ea';
           roundedRectPath(ctx, x, y, bubbleWidth, bubbleHeight, 23);
@@ -5917,7 +5944,7 @@
   function htmlParticipantAvatar(participant, mediaMap, extraClass = '') {
     if (!participantHasAvatar(participant)) return '';
     const type = normalizeAvatarType(participant.avatarType);
-    const classes = `avatar avatar-${normalizeAvatarShape(state.avatarShape)} avatar-${normalizeAvatarSize(state.avatarSize)} avatar-${type}${participant.avatarEmojiBackground === false && type === 'emoji' ? ' avatar-no-bg' : ''}${extraClass ? ` ${extraClass}` : ''}`;
+    const classes = `avatar avatar-${normalizeAvatarShape(state.avatarShape)} avatar-${effectiveAvatarSize()} avatar-${type}${participant.avatarEmojiBackground === false && type === 'emoji' ? ' avatar-no-bg' : ''}${extraClass ? ` ${extraClass}` : ''}`;
     const style = `--avatar:${htmlEscape(participant.color || '#e5e5ea')};--avatar-text:${htmlEscape(automaticBubbleTextColor(participant.color || '#e5e5ea'))}`;
     if (type === 'image') {
       const image = normalizeImageAttachment(participant.avatarImage);
@@ -5968,13 +5995,14 @@
       const tail = !plainDraft && state.bubbleTails === true && burst.burstEnd ? ' has-tail' : '';
       const alongside = burst.avatarGutter ? ' avatar-alongside-burst' : '';
       const aboveAvatar = burst.showAvatar && normalizeAvatarPlacement(state.avatarPlacement) === 'above'
-        ? htmlParticipantAvatar(p, mediaMap, `avatar-above avatar-above-${normalizeAvatarAlignment(state.avatarAlignment)}`)
+        ? htmlParticipantAvatar(p, mediaMap, 'avatar-above avatar-above-side')
         : '';
       const card = `<div class="message-card">${aboveAvatar}${speaker}${timestamp}${bubble}${htmlAttachment(item.imageAttachment, mediaMap, mediaAlign)}${htmlLinkPreview(item.linkPreview, mediaMap, mediaAlign)}${annotation}</div>`;
       if (burst.avatarGutter) {
         const slotAvatar = burst.showAvatar ? htmlParticipantAvatar(p, mediaMap, 'avatar-alongside') : '';
-        const slot = `<div class="avatar-slot avatar-slot-${normalizeAvatarSize(state.avatarSize)}">${slotAvatar}</div>`;
-        body.push(`<section class="message ${side}${continues && !plainDraft ? ' continuation' : ''}${alongside}${tail}">${side === 'right' ? `${card}${slot}` : `${slot}${card}`}</section>`);
+        const slot = `<div class="avatar-slot avatar-slot-${effectiveAvatarSize()}">${slotAvatar}</div>`;
+        const tailAnchor = burst.avatarTailAnchor ? ' avatar-tail-anchor' : '';
+        body.push(`<section class="message ${side}${continues && !plainDraft ? ' continuation' : ''}${alongside}${tail}${tailAnchor}">${side === 'right' ? `${card}${slot}` : `${slot}${card}`}</section>`);
       } else {
         body.push(`<section class="message ${side}${continues && !plainDraft ? ' continuation' : ''}${tail}">${card}</section>`);
       }
@@ -5989,7 +6017,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${title}</title>
 <style>
-*{box-sizing:border-box}body{margin:0;background:${backgroundCss};color:${documentText};font-family:ui-rounded,"SF Pro Rounded","Segoe UI",system-ui,-apple-system,sans-serif}.document{width:min(100%,${documentMaxWidth}px);margin:0 auto;padding:34px 18px 60px}h1{font-size:28px;margin:0 0 24px}.scene-header{text-align:center;font-weight:720;font-size:21px;line-height:1.3;margin:0 auto 30px;white-space:pre-wrap}.scene-header.serif{font-family:Georgia,"Times New Roman",serif}.scene-header.mono{font-family:ui-monospace,Consolas,monospace}.message{display:flex;margin:11px 0}.message.continuation{margin-top:-7px}.message.left{justify-content:flex-start}.message.right{justify-content:flex-end}.message-card{max-width:${plainDraft ? '100%' : '67%'}}.message.avatar-alongside-burst{align-items:flex-start;gap:8px}.avatar-slot{flex:0 0 auto;display:flex;justify-content:center}.avatar-slot-small{width:34px}.avatar-slot-large{width:50px}.message.avatar-alongside-burst:not(.continuation) .avatar-slot{margin-top:20px}.avatar{display:grid;place-items:center;overflow:hidden;flex:0 0 auto;background:var(--avatar,#e5e5ea);color:var(--avatar-text,#111116);font-weight:800;line-height:1;box-shadow:0 1px 2px rgba(0,0,0,.08)}.avatar-small{width:34px;height:34px;font-size:13px}.avatar-large{width:50px;height:50px;font-size:17px}.avatar-circle{border-radius:50%}.avatar-square{border-radius:8px}.avatar-emoji{font-size:22px;font-weight:400}.avatar-emoji.avatar-large{font-size:31px}.avatar-no-bg{background:transparent;box-shadow:none}.avatar img{width:100%;height:100%;object-fit:cover;display:block}.avatar-above{margin-bottom:6px}.left .avatar-above-side{margin-left:10px;margin-right:auto}.right .avatar-above-side{margin-left:auto;margin-right:10px}.avatar-above-center{margin-left:auto;margin-right:auto}.speaker{font-size:12px;color:${documentMuted};margin:0 10px 4px}.high-contrast-labels .speaker{display:block;width:max-content;padding:2px 7px;border-radius:999px;background:rgba(0,0,0,.78);color:#fff!important}.high-contrast-labels .right .speaker{margin-left:auto}.high-contrast-labels.transcript .right .speaker{margin-left:10px;margin-right:10px}.high-contrast-labels.theater .speaker,.high-contrast-labels.screen .speaker{margin-left:auto!important;margin-right:auto!important}.right .speaker,.right .timestamp,.right .annotation,.right figcaption{text-align:right}.timestamp{font-size:10.5px;color:${documentMuted};margin:0 10px 4px}.bubble{position:relative;z-index:0;background:${plainDraft ? 'transparent' : 'var(--bubble,#e5e5ea)'};padding:${plainDraft ? '0' : '10px 13px'};border-radius:${plainDraft ? '0' : '18px'};color:${plainDraft ? documentText : 'var(--bubble-text,#151518)'};line-height:1.42;white-space:pre-wrap;overflow-wrap:anywhere}.has-tail.left .bubble{border-bottom-left-radius:10px}.has-tail.right .bubble{border-bottom-right-radius:10px}.has-tail .bubble:after{content:"";position:absolute;bottom:1px;width:14px;height:14px;background:var(--bubble,#e5e5ea);z-index:-1}.has-tail.left .bubble:after{left:-5px;clip-path:polygon(100% 0,100% 100%,0 100%)}.has-tail.right .bubble:after{right:-5px;clip-path:polygon(0 0,100% 100%,0 100%)}.annotation{margin:7px 10px 0;color:${documentMuted};font-size:12px;font-style:italic;line-height:1.4}.narrative{width:min(78%,680px);margin:24px auto;color:${documentMuted};font:italic 14px/1.5 Georgia,"Times New Roman",serif}.narrative.system{font-family:ui-rounded,"Segoe UI",system-ui,sans-serif;font-style:normal;font-weight:560}.narrative-text{text-align:center}.attachment{margin:9px 0 0;max-width:610px}.attachment.center{margin-left:auto;margin-right:auto}.attachment.right{margin-left:auto}.attachment img{display:block;max-width:100%;max-height:70vh;border-radius:12px}.attachment figcaption{margin-top:6px;color:${documentMuted};font-size:12px;line-height:1.4}.attachment.right img{margin-left:auto}.attachment.center img{margin-left:auto;margin-right:auto}.link-preview{display:flex;gap:12px;margin-top:10px;max-width:620px;padding:12px;border:1px solid #d8d8df;border-radius:14px;background:#f7f7f9;color:#17171b;font-family:ui-rounded,"Segoe UI",system-ui,sans-serif;text-align:left}.link-preview.right{margin-left:auto}.link-preview.center{margin-left:auto;margin-right:auto}.preview-thumb{width:min(31%,150px);object-fit:cover;align-self:stretch;max-height:130px}.preview-copy{min-width:0}.preview-site,.preview-url{font-size:11px;color:#777780}.preview-title{font-size:16px;font-weight:750;line-height:1.28;margin:3px 0}.preview-description{font-size:13px;color:#555560;line-height:1.35;margin:3px 0}.missing-image{padding:20px;background:#e5e5ea;color:#686872;text-align:center;border-radius:12px}.transcript .message,.theater .message,.screen .message{justify-content:flex-start;margin:18px 0}.transcript .message-card,.theater .message-card,.screen .message-card{width:100%;max-width:100%}.transcript .right .speaker,.transcript .right .timestamp,.transcript .right .annotation,.transcript .right figcaption,.theater .right .annotation,.screen .right .annotation{text-align:left}.transcript .attachment.right,.transcript .link-preview.right,.theater .attachment.right,.theater .link-preview.right{margin-left:0;margin-right:auto}.theater .speaker,.screen .speaker{text-align:center!important;text-transform:uppercase;font-weight:800;letter-spacing:.07em}.theater .timestamp,.screen .timestamp{text-align:center!important}.theater .bubble{text-align:left}.theater .narrative{margin-left:8%;margin-right:auto}.theater .narrative-text{text-align:left}.screen .bubble{width:min(62%,520px);margin:0 auto;text-align:left}.screen .annotation{width:min(62%,520px);margin-left:auto;margin-right:auto;text-align:left!important}.screen .narrative{width:min(76%,650px)}.screen .narrative-text{text-align:left}@media(max-width:600px){.document{padding:24px 12px 42px}.message-card{max-width:${plainDraft ? '100%' : '78%'}.attachment,.link-preview{max-width:100%}.screen .bubble,.screen .annotation{width:min(76%,520px)}}@media print{@page{margin:.55in}body{background:#fff!important;color:#17171b}.document{width:100%;padding:0}.message-card,.narrative,.attachment,.link-preview{break-inside:avoid}.narrative{color:#000!important}.bubble{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+*{box-sizing:border-box}body{margin:0;background:${backgroundCss};color:${documentText};font-family:ui-rounded,"SF Pro Rounded","Segoe UI",system-ui,-apple-system,sans-serif}.document{width:min(100%,${documentMaxWidth}px);margin:0 auto;padding:34px 18px 60px}h1{font-size:28px;margin:0 0 24px}.scene-header{text-align:center;font-weight:720;font-size:21px;line-height:1.3;margin:0 auto 30px;white-space:pre-wrap}.scene-header.serif{font-family:Georgia,"Times New Roman",serif}.scene-header.mono{font-family:ui-monospace,Consolas,monospace}.message{display:flex;margin:11px 0}.message.continuation{margin-top:-7px}.message.left{justify-content:flex-start}.message.right{justify-content:flex-end}.message-card{max-width:${plainDraft ? '100%' : '67%'}}.message.avatar-alongside-burst{align-items:flex-start;gap:8px}.avatar-slot{flex:0 0 auto;display:flex;justify-content:center}.avatar-slot-small{width:34px}.avatar-slot-large{width:50px}.avatar-slot-xlarge{width:72px}.message.avatar-alongside-burst:not(.continuation) .avatar-slot{margin-top:20px}.message.avatar-tail-anchor .avatar-slot{align-self:flex-end;margin-top:0!important}.avatar{display:grid;place-items:center;overflow:hidden;flex:0 0 auto;background:var(--avatar,#e5e5ea);color:var(--avatar-text,#111116);font-weight:800;line-height:1;box-shadow:0 1px 2px rgba(0,0,0,.08)}.avatar-small{width:34px;height:34px;font-size:13px}.avatar-large{width:50px;height:50px;font-size:17px}.avatar-xlarge{width:72px;height:72px;font-size:23px}.avatar-circle{border-radius:50%}.avatar-square{border-radius:8px}.avatar-emoji{font-size:22px;font-weight:400}.avatar-emoji.avatar-large{font-size:31px}.avatar-emoji.avatar-xlarge{font-size:44px}.avatar-no-bg{background:transparent;box-shadow:none}.avatar img{width:100%;height:100%;object-fit:cover;display:block}.avatar-above{margin-bottom:6px}.left .avatar-above-side{margin-left:0;margin-right:auto}.right .avatar-above-side{margin-left:auto;margin-right:0}.speaker{font-size:12px;color:${documentMuted};margin:0 10px 4px}.high-contrast-labels .speaker{display:block;width:max-content;padding:2px 7px;border-radius:999px;background:rgba(0,0,0,.78);color:#fff!important}.high-contrast-labels .right .speaker{margin-left:auto}.high-contrast-labels.transcript .right .speaker{margin-left:10px;margin-right:10px}.high-contrast-labels.theater .speaker,.high-contrast-labels.screen .speaker{margin-left:auto!important;margin-right:auto!important}.right .speaker,.right .timestamp,.right .annotation,.right figcaption{text-align:right}.timestamp{font-size:10.5px;color:${documentMuted};margin:0 10px 4px}.bubble{position:relative;z-index:0;background:${plainDraft ? 'transparent' : 'var(--bubble,#e5e5ea)'};padding:${plainDraft ? '0' : '10px 13px'};border-radius:${plainDraft ? '0' : '18px'};color:${plainDraft ? documentText : 'var(--bubble-text,#151518)'};line-height:1.42;white-space:pre-wrap;overflow-wrap:anywhere}.has-tail.left .bubble{border-bottom-left-radius:10px}.has-tail.right .bubble{border-bottom-right-radius:10px}.has-tail .bubble:after{content:"";position:absolute;bottom:1px;width:14px;height:14px;background:var(--bubble,#e5e5ea);z-index:-1}.has-tail.left .bubble:after{left:-5px;clip-path:polygon(100% 0,100% 100%,0 100%)}.has-tail.right .bubble:after{right:-5px;clip-path:polygon(0 0,100% 100%,0 100%)}.annotation{margin:7px 10px 0;color:${documentMuted};font-size:12px;font-style:italic;line-height:1.4}.narrative{width:min(78%,680px);margin:24px auto;color:${documentMuted};font:italic 14px/1.5 Georgia,"Times New Roman",serif}.narrative.system{font-family:ui-rounded,"Segoe UI",system-ui,sans-serif;font-style:normal;font-weight:560}.narrative-text{text-align:center}.attachment{margin:9px 0 0;max-width:610px}.attachment.center{margin-left:auto;margin-right:auto}.attachment.right{margin-left:auto}.attachment img{display:block;max-width:100%;max-height:70vh;border-radius:12px}.attachment figcaption{margin-top:6px;color:${documentMuted};font-size:12px;line-height:1.4}.attachment.right img{margin-left:auto}.attachment.center img{margin-left:auto;margin-right:auto}.link-preview{display:flex;gap:12px;margin-top:10px;max-width:620px;padding:12px;border:1px solid #d8d8df;border-radius:14px;background:#f7f7f9;color:#17171b;font-family:ui-rounded,"Segoe UI",system-ui,sans-serif;text-align:left}.link-preview.right{margin-left:auto}.link-preview.center{margin-left:auto;margin-right:auto}.preview-thumb{width:min(31%,150px);object-fit:cover;align-self:stretch;max-height:130px}.preview-copy{min-width:0}.preview-site,.preview-url{font-size:11px;color:#777780}.preview-title{font-size:16px;font-weight:750;line-height:1.28;margin:3px 0}.preview-description{font-size:13px;color:#555560;line-height:1.35;margin:3px 0}.missing-image{padding:20px;background:#e5e5ea;color:#686872;text-align:center;border-radius:12px}.transcript .message,.theater .message,.screen .message{justify-content:flex-start;margin:18px 0}.transcript .message-card,.theater .message-card,.screen .message-card{width:100%;max-width:100%}.transcript .right .speaker,.transcript .right .timestamp,.transcript .right .annotation,.transcript .right figcaption,.theater .right .annotation,.screen .right .annotation{text-align:left}.transcript .attachment.right,.transcript .link-preview.right,.theater .attachment.right,.theater .link-preview.right{margin-left:0;margin-right:auto}.theater .speaker,.screen .speaker{text-align:center!important;text-transform:uppercase;font-weight:800;letter-spacing:.07em}.theater .timestamp,.screen .timestamp{text-align:center!important}.theater .bubble{text-align:left}.theater .narrative{margin-left:8%;margin-right:auto}.theater .narrative-text{text-align:left}.screen .bubble{width:min(62%,520px);margin:0 auto;text-align:left}.screen .annotation{width:min(62%,520px);margin-left:auto;margin-right:auto;text-align:left!important}.screen .narrative{width:min(76%,650px)}.screen .narrative-text{text-align:left}@media(max-width:600px){.document{padding:24px 12px 42px}.message-card{max-width:${plainDraft ? '100%' : '78%'}.attachment,.link-preview{max-width:100%}.screen .bubble,.screen .annotation{width:min(76%,520px)}}@media print{@page{margin:.55in}body{background:#fff!important;color:#17171b}.document{width:100%;padding:0}.message-card,.narrative,.attachment,.link-preview{break-inside:avoid}.narrative{color:#000!important}.bubble{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
 </style>
 </head>
 <body><main class="document ${style}${highContrastLabels ? ' high-contrast-labels' : ''}"><h1>${title}</h1>${sceneHeader}${body.join('')}</main></body>
@@ -6528,7 +6556,7 @@ ${imageRels}
   });
 
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-    navigator.serviceWorker.register('./sw.js?v=0.12').catch(() => {});
+    navigator.serviceWorker.register('./sw.js?v=0.12.1').catch(() => {});
   }
 
   if (els.runtimeVersion) els.runtimeVersion.textContent = `v${APP_VERSION}`;
