@@ -1,8 +1,18 @@
-# ThreadWriter v0.10.7
+# ThreadWriter v0.11
+
+## v0.11 — Migration / Import
+
+- Adds **File → Import…** for structured `.txt` and `.docx` conversations. **Open…** remains reserved for ThreadWriter’s own portable files.
+- Auto-detects repeated `NAME: dialogue` speaker labels and left/right DOCX paragraph alignment.
+- Provides an editable confirmation preview before creating a new conversation.
+- Unassigned content becomes Narrative blocks instead of being guessed into a speaker.
+- DOCX images and tables are detected and explicitly warned about, but are not imported in v0.11.
+- Import always creates a new conversation in Recent and never overwrites the current thread.
+
 
 A small local-first dialogue editor for writing, revising, moving, and publishing conversation-heavy material, with chat, transcript, theater-draft, and screen-draft presentation styles.
 
-## v0.10.7
+## v0.11
 
 - Fixes scene headers and other out-of-bubble text becoming too light on custom light backgrounds when ThreadWriter itself is using a dark UI theme.
 - Custom light backgrounds now explicitly use dark conversation text/muted labels, while custom dark backgrounds continue to use the existing light contrast treatment. HTML/raster exports already used background-aware contrast and remain unchanged.

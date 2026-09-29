@@ -1,5 +1,5 @@
 (() => {
-  const APP_VERSION = '0.10.7';
+  const APP_VERSION = '0.11';
   const LEGACY_STORAGE_KEY = 'threadwriter.project.v1';
   const LIBRARY_KEY = 'threadwriter.library.v1';
   const DOCUMENT_PREFIX = 'threadwriter.document.v1.';
@@ -47,6 +47,7 @@
   let imageDetailsItemId = null;
   let linkPreviewItemId = null;
   let linkPreviewImageTargetId = null;
+  let migrationImportSession = null;
   let mediaDbPromise = null;
   let mediaGcTimer = null;
   const mediaObjectUrls = new Map();
@@ -125,6 +126,24 @@
     newBtn: document.getElementById('newBtn'),
     importBtn: document.getElementById('importBtn'),
     fileInput: document.getElementById('fileInput'),
+    migrationImportBtn: document.getElementById('migrationImportBtn'),
+    migrationFileInput: document.getElementById('migrationFileInput'),
+    migrationImportDialog: document.getElementById('migrationImportDialog'),
+    closeMigrationImportDialogBtn: document.getElementById('closeMigrationImportDialogBtn'),
+    cancelMigrationImportBtn: document.getElementById('cancelMigrationImportBtn'),
+    migrationSourceSummary: document.getElementById('migrationSourceSummary'),
+    migrationImportMethod: document.getElementById('migrationImportMethod'),
+    migrationMethodNote: document.getElementById('migrationMethodNote'),
+    migrationSpeakerOptions: document.getElementById('migrationSpeakerOptions'),
+    migrationSpeakerMap: document.getElementById('migrationSpeakerMap'),
+    migrationAlignmentOptions: document.getElementById('migrationAlignmentOptions'),
+    migrationLeftName: document.getElementById('migrationLeftName'),
+    migrationRightName: document.getElementById('migrationRightName'),
+    migrationUnalignedMode: document.getElementById('migrationUnalignedMode'),
+    migrationWarnings: document.getElementById('migrationWarnings'),
+    migrationImportSummary: document.getElementById('migrationImportSummary'),
+    migrationPreview: document.getElementById('migrationPreview'),
+    commitMigrationImportBtn: document.getElementById('commitMigrationImportBtn'),
     imageInput: document.getElementById('imageInput'),
     linkPreviewImageInput: document.getElementById('linkPreviewImageInput'),
     imageDetailsDialog: document.getElementById('imageDetailsDialog'),
@@ -3528,6 +3547,493 @@
     createNewLocalThread();
   });
 
+
+  // ---- v0.11 structured TXT / DOCX migration ---------------------------------
+  const WORD_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+  const IMPORT_COLOR_PALETTE = ['#d9e6ff', '#c9f2d0', '#f6d6ff', '#ffe4b5', '#d6f1ff', '#f9d0d0', '#dcd6ff', '#d7f2ef'];
+
+  function importTitleFromFilename(name) {
+    return String(name || 'Imported Conversation').replace(/\.(?:txt|docx)$/i, '').trim() || 'Imported Conversation';
+  }
+
+  function importMessageId(index) {
+    return `imp-${Date.now()}-${index}-${Math.random().toString(16).slice(2)}`;
+  }
+
+  function speakerLabelMatch(text) {
+    const firstBreak = String(text || '').search(/[\r\n]/);
+    const first = firstBreak >= 0 ? String(text).slice(0, firstBreak) : String(text || '');
+    const rest = firstBreak >= 0 ? String(text).slice(firstBreak + 1) : '';
+    const match = first.match(/^\s*([\p{L}\p{N}][\p{L}\p{N} ._'’\-]{0,38}?)\s*:\s*(.*)$/u);
+    if (!match) return null;
+    const label = match[1].trim();
+    if (!label || /^https?$/i.test(label)) return null;
+    const body = [match[2], rest].filter(Boolean).join('\n').trimEnd();
+    return { label, body };
+  }
+
+  function canonicalSpeakerData(texts) {
+    const map = new Map();
+    let labelled = 0;
+    for (const text of texts) {
+      const found = speakerLabelMatch(text);
+      if (!found) continue;
+      labelled += 1;
+      const key = found.label.toLocaleLowerCase();
+      const existing = map.get(key);
+      if (existing) existing.count += 1;
+      else map.set(key, { key, label: found.label, count: 1 });
+    }
+    return { speakers: [...map.values()], labelled };
+  }
+
+  function textParagraphs(text) {
+    return String(text || '').replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n')
+      .split(/\n\s*\n+/).map(value => value.trim()).filter(Boolean);
+  }
+
+  function getUint16(view, offset) { return view.getUint16(offset, true); }
+  function getUint32(view, offset) { return view.getUint32(offset, true); }
+
+  function zipEntries(arrayBuffer) {
+    const bytes = new Uint8Array(arrayBuffer);
+    const view = new DataView(arrayBuffer);
+    let eocd = -1;
+    const min = Math.max(0, bytes.length - 65557);
+    for (let i = bytes.length - 22; i >= min; i -= 1) {
+      if (getUint32(view, i) === 0x06054b50) { eocd = i; break; }
+    }
+    if (eocd < 0) throw new Error('This DOCX does not contain a readable ZIP directory.');
+    const count = getUint16(view, eocd + 10);
+    let offset = getUint32(view, eocd + 16);
+    const decoder = new TextDecoder('utf-8');
+    const entries = new Map();
+    for (let index = 0; index < count; index += 1) {
+      if (getUint32(view, offset) !== 0x02014b50) throw new Error('The DOCX ZIP directory is malformed.');
+      const method = getUint16(view, offset + 10);
+      const compressedSize = getUint32(view, offset + 20);
+      const uncompressedSize = getUint32(view, offset + 24);
+      const nameLength = getUint16(view, offset + 28);
+      const extraLength = getUint16(view, offset + 30);
+      const commentLength = getUint16(view, offset + 32);
+      const localOffset = getUint32(view, offset + 42);
+      const name = decoder.decode(bytes.slice(offset + 46, offset + 46 + nameLength));
+      entries.set(name, { name, method, compressedSize, uncompressedSize, localOffset });
+      offset += 46 + nameLength + extraLength + commentLength;
+    }
+    return { bytes, view, entries };
+  }
+
+  async function inflateRaw(bytes) {
+    if (typeof DecompressionStream !== 'function') throw new Error('This browser cannot decompress DOCX files. Try a current Safari, Edge, Chrome, or Firefox build.');
+    try {
+      const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+      return new Uint8Array(await new Response(stream).arrayBuffer());
+    } catch (error) {
+      throw new Error(`This browser could not decompress the DOCX data (${error.message || 'deflate error'}).`);
+    }
+  }
+
+  async function readZipText(zip, path) {
+    const entry = zip.entries.get(path);
+    if (!entry) return null;
+    const { view, bytes } = zip;
+    const offset = entry.localOffset;
+    if (getUint32(view, offset) !== 0x04034b50) throw new Error(`The DOCX entry ${path} has an invalid local header.`);
+    const nameLength = getUint16(view, offset + 26);
+    const extraLength = getUint16(view, offset + 28);
+    const start = offset + 30 + nameLength + extraLength;
+    const compressed = bytes.slice(start, start + entry.compressedSize);
+    let output;
+    if (entry.method === 0) output = compressed;
+    else if (entry.method === 8) output = await inflateRaw(compressed);
+    else throw new Error(`The DOCX uses unsupported ZIP compression method ${entry.method}.`);
+    return new TextDecoder('utf-8').decode(output);
+  }
+
+  function xmlDocument(text, label) {
+    const doc = new DOMParser().parseFromString(text, 'application/xml');
+    if (doc.getElementsByTagName('parsererror').length) throw new Error(`Could not parse ${label || 'DOCX XML'}.`);
+    return doc;
+  }
+
+  function directChild(element, localName) {
+    return [...(element?.children || [])].find(child => child.localName === localName) || null;
+  }
+
+  function wordVal(element) {
+    return element?.getAttributeNS?.(WORD_NS, 'val') || element?.getAttribute?.('w:val') || element?.getAttribute?.('val') || '';
+  }
+
+  function normalizeDocxAlignment(value) {
+    const align = String(value || '').toLowerCase();
+    if (align === 'right' || align === 'end') return 'right';
+    if (align === 'left' || align === 'start') return 'left';
+    if (align === 'center') return 'center';
+    if (align === 'both' || align === 'distribute' || align === 'justify') return 'justify';
+    return 'default';
+  }
+
+  function parseParagraphStyles(stylesDoc) {
+    const raw = new Map();
+    if (!stylesDoc) return raw;
+    for (const style of [...stylesDoc.getElementsByTagNameNS(WORD_NS, 'style')]) {
+      if ((style.getAttributeNS(WORD_NS, 'type') || style.getAttribute('w:type')) !== 'paragraph') continue;
+      const id = style.getAttributeNS(WORD_NS, 'styleId') || style.getAttribute('w:styleId');
+      if (!id) continue;
+      const pPr = directChild(style, 'pPr');
+      const jc = directChild(pPr, 'jc');
+      const basedOn = directChild(style, 'basedOn');
+      raw.set(id, { align: normalizeDocxAlignment(wordVal(jc)), basedOn: wordVal(basedOn) || null });
+    }
+    const resolved = new Map();
+    const resolve = (id, trail = new Set()) => {
+      if (!id || trail.has(id)) return 'default';
+      if (resolved.has(id)) return resolved.get(id);
+      const item = raw.get(id);
+      if (!item) return 'default';
+      if (item.align && item.align !== 'default') { resolved.set(id, item.align); return item.align; }
+      trail.add(id);
+      const inherited = resolve(item.basedOn, trail);
+      resolved.set(id, inherited);
+      return inherited;
+    };
+    for (const id of raw.keys()) resolve(id);
+    return resolved;
+  }
+
+  function docxParagraphText(paragraph) {
+    let out = '';
+    const walk = node => {
+      if (node.nodeType === Node.ELEMENT_NODE) {
+        if (node.localName === 'del') return;
+        if (node.localName === 't') { out += node.textContent || ''; return; }
+        if (node.localName === 'tab') { out += '\t'; return; }
+        if (node.localName === 'br' || node.localName === 'cr') { out += '\n'; return; }
+      }
+      for (const child of node.childNodes || []) walk(child);
+    };
+    walk(paragraph);
+    return out.replace(/\u00a0/g, ' ').trim();
+  }
+
+  function docxParagraphAlignment(paragraph, styleAlignments) {
+    const pPr = directChild(paragraph, 'pPr');
+    const jc = directChild(pPr, 'jc');
+    const direct = normalizeDocxAlignment(wordVal(jc));
+    if (direct !== 'default') return direct;
+    const pStyle = directChild(pPr, 'pStyle');
+    const styleId = wordVal(pStyle);
+    return styleAlignments.get(styleId) || 'default';
+  }
+
+  async function parseDocxImport(file) {
+    const buffer = await file.arrayBuffer();
+    const zip = zipEntries(buffer);
+    const documentXml = await readZipText(zip, 'word/document.xml');
+    if (!documentXml) throw new Error('This file does not contain word/document.xml and does not appear to be a normal DOCX document.');
+    const stylesXml = await readZipText(zip, 'word/styles.xml');
+    const documentDoc = xmlDocument(documentXml, 'the DOCX document');
+    const stylesDoc = stylesXml ? xmlDocument(stylesXml, 'the DOCX styles') : null;
+    const styleAlignments = parseParagraphStyles(stylesDoc);
+    const body = documentDoc.getElementsByTagNameNS(WORD_NS, 'body')[0];
+    if (!body) throw new Error('The DOCX document body is missing.');
+    const paragraphs = [];
+    let tableCount = 0;
+    for (const child of [...body.children]) {
+      if (child.localName === 'tbl') { tableCount += 1; continue; }
+      if (child.localName !== 'p') continue;
+      const text = docxParagraphText(child);
+      if (!text) continue;
+      paragraphs.push({ text, align: docxParagraphAlignment(child, styleAlignments) });
+    }
+    const imageCount = documentDoc.getElementsByTagNameNS(WORD_NS, 'drawing').length + documentDoc.getElementsByTagNameNS(WORD_NS, 'pict').length;
+    const deletedCount = documentDoc.getElementsByTagNameNS(WORD_NS, 'del').length;
+    const insertedCount = documentDoc.getElementsByTagNameNS(WORD_NS, 'ins').length;
+    const warnings = [];
+    if (imageCount) warnings.push(`${imageCount} embedded image${imageCount === 1 ? '' : 's'} detected. Images are not imported in v0.11.`);
+    if (tableCount) warnings.push(`${tableCount} table${tableCount === 1 ? '' : 's'} detected. Table contents are skipped.`);
+    if (deletedCount || insertedCount) warnings.push('Tracked changes were detected. Inserted text is kept where readable; deleted text is ignored. Review the preview carefully.');
+    return { kind: 'docx', title: importTitleFromFilename(file.name), filename: file.name, paragraphs, warnings, imageCount, tableCount };
+  }
+
+  async function parseTxtImport(file) {
+    const text = (await file.text()).replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
+    return {
+      kind: 'txt', title: importTitleFromFilename(file.name), filename: file.name,
+      text, lines: text.split('\n'), paragraphs: textParagraphs(text).map(value => ({ text: value, align: 'default' })), warnings: []
+    };
+  }
+
+  async function parseMigrationFile(file) {
+    const name = String(file?.name || '');
+    if (/\.txt$/i.test(name) || file.type === 'text/plain') return parseTxtImport(file);
+    if (/\.docx$/i.test(name) || file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') return parseDocxImport(file);
+    throw new Error('Choose a .txt or .docx file.');
+  }
+
+  function importTextUnits(source) {
+    return source.kind === 'txt' ? source.lines.filter(line => line.trim()) : source.paragraphs.map(p => p.text).filter(Boolean);
+  }
+
+  function detectMigrationMethod(source) {
+    const speakerData = canonicalSpeakerData(importTextUnits(source));
+    const repeatedOne = speakerData.speakers.length === 1 && speakerData.speakers[0].count >= 2;
+    if (speakerData.labelled >= 2 && (speakerData.speakers.length >= 2 || repeatedOne)) return 'speaker';
+    if (source.kind === 'docx') {
+      const counts = source.paragraphs.reduce((out, p) => { out[p.align] = (out[p.align] || 0) + 1; return out; }, {});
+      if ((counts.right || 0) > 0 && ((counts.left || 0) > 0 || (counts.default || 0) > 0)) return 'alignment';
+    }
+    return 'plain';
+  }
+
+  function sourceSpeakerData(source) {
+    return canonicalSpeakerData(importTextUnits(source));
+  }
+
+  function makeImportedParticipant(name, index, side = null) {
+    return {
+      id: `p${index + 1}`,
+      name: String(name || '').trim() || `Participant ${index + 1}`,
+      side: side || (index % 2 ? 'right' : 'left'),
+      color: IMPORT_COLOR_PALETTE[index % IMPORT_COLOR_PALETTE.length],
+      textColorMode: 'auto', textColor: '#151518'
+    };
+  }
+
+  function pushNarrativeImport(items, text, { merge = true } = {}) {
+    const clean = String(text || '').trim();
+    if (!clean) return;
+    const previous = items[items.length - 1];
+    if (merge && previous?.kind === 'narrative') previous.text += `\n\n${clean}`;
+    else items.push({ kind: 'narrative', text: clean, narrativeStyle: 'narrative' });
+  }
+
+  function speakerOverrideMap() {
+    const map = new Map();
+    els.migrationSpeakerMap?.querySelectorAll('[data-import-speaker-key]').forEach(input => {
+      map.set(input.dataset.importSpeakerKey, input.value.trim());
+    });
+    return map;
+  }
+
+  function buildSpeakerMigration(source, overrides = new Map()) {
+    const speakerData = sourceSpeakerData(source);
+    const names = speakerData.speakers.map(item => overrides.get(item.key) || item.label);
+    const keyToIndex = new Map(speakerData.speakers.map((item, index) => [item.key, index]));
+    const participants = names.map((name, index) => makeImportedParticipant(name, index));
+    const items = [];
+    if (source.kind === 'txt') {
+      let current = null;
+      let blankSinceCurrent = false;
+      for (const rawLine of source.lines) {
+        const line = rawLine.replace(/\s+$/, '');
+        if (!line.trim()) { current = null; blankSinceCurrent = true; continue; }
+        const labelled = speakerLabelMatch(line);
+        if (labelled) {
+          const key = labelled.label.toLocaleLowerCase();
+          let index = keyToIndex.get(key);
+          if (index == null) {
+            index = participants.length;
+            keyToIndex.set(key, index);
+            participants.push(makeImportedParticipant(overrides.get(key) || labelled.label, index));
+          }
+          current = { kind: 'message', speakerId: participants[index].id, text: labelled.body || '' };
+          items.push(current);
+          blankSinceCurrent = false;
+        } else if (current && !blankSinceCurrent) {
+          current.text = current.text ? `${current.text}\n${line.trim()}` : line.trim();
+        } else {
+          pushNarrativeImport(items, line);
+          current = null;
+        }
+      }
+    } else {
+      for (const paragraph of source.paragraphs) {
+        const labelled = speakerLabelMatch(paragraph.text);
+        if (!labelled) { pushNarrativeImport(items, paragraph.text, { merge: false }); continue; }
+        const key = labelled.label.toLocaleLowerCase();
+        let index = keyToIndex.get(key);
+        if (index == null) {
+          index = participants.length;
+          keyToIndex.set(key, index);
+          participants.push(makeImportedParticipant(overrides.get(key) || labelled.label, index));
+        }
+        items.push({ kind: 'message', speakerId: participants[index].id, text: labelled.body || '' });
+      }
+    }
+    return { participants: participants.length ? participants : defaultState().participants, items, speakers: speakerData.speakers };
+  }
+
+  function buildAlignmentMigration(source) {
+    const leftName = els.migrationLeftName?.value.trim() || 'Left Speaker';
+    const rightName = els.migrationRightName?.value.trim() || 'Right Speaker';
+    const participants = [makeImportedParticipant(leftName, 0, 'left'), makeImportedParticipant(rightName, 1, 'right')];
+    const unaligned = els.migrationUnalignedMode?.value === 'left' ? 'left' : 'narrative';
+    const items = [];
+    for (const paragraph of source.paragraphs || []) {
+      if (paragraph.align === 'right') items.push({ kind: 'message', speakerId: participants[1].id, text: paragraph.text });
+      else if (paragraph.align === 'left') items.push({ kind: 'message', speakerId: participants[0].id, text: paragraph.text });
+      else if (paragraph.align === 'default' && unaligned === 'left') items.push({ kind: 'message', speakerId: participants[0].id, text: paragraph.text });
+      else pushNarrativeImport(items, paragraph.text, { merge: false });
+    }
+    return { participants, items };
+  }
+
+  function buildPlainMigration(source) {
+    const blocks = source.kind === 'txt' ? textParagraphs(source.text) : source.paragraphs.map(p => p.text);
+    return { participants: defaultState().participants, items: blocks.filter(Boolean).map(text => ({ kind: 'narrative', narrativeStyle: 'narrative', text })) };
+  }
+
+  function migrationWarningsFor(source, actualMethod, result) {
+    const warnings = [...(source.warnings || [])];
+    if (actualMethod === 'speaker') {
+      if (!sourceSpeakerData(source).speakers.length) warnings.push('No speaker labels were detected. Unassigned content will become Narrative blocks.');
+      const narratives = result.items.filter(item => item.kind === 'narrative').length;
+      if (narratives) warnings.push(`${narratives} unlabelled block${narratives === 1 ? '' : 's'} will become Narrative block${narratives === 1 ? '' : 's'}.`);
+    }
+    if (actualMethod === 'alignment') {
+      if (source.kind !== 'docx') warnings.push('Left/right alignment detection is only available for DOCX files. This TXT file has no paragraph-alignment metadata.');
+      const right = (source.paragraphs || []).filter(p => p.align === 'right').length;
+      const left = (source.paragraphs || []).filter(p => p.align === 'left').length;
+      if (!right) warnings.push('No right-aligned paragraphs were detected.');
+      if (!left && els.migrationUnalignedMode?.value !== 'left') warnings.push('No explicitly left-aligned paragraphs were detected. If the left speaker used Word’s default alignment, choose “Unaligned paragraphs → Left speaker.”');
+    }
+    return [...new Set(warnings)];
+  }
+
+  function renderMigrationSpeakerOptions(source) {
+    const speakerData = sourceSpeakerData(source);
+    const existing = speakerOverrideMap();
+    els.migrationSpeakerMap.innerHTML = '';
+    for (const speaker of speakerData.speakers) {
+      const row = document.createElement('label');
+      row.className = 'migration-speaker-row';
+      const sourceLabel = document.createElement('span');
+      sourceLabel.className = 'migration-speaker-source';
+      sourceLabel.textContent = `${speaker.label} (${speaker.count})`;
+      const input = document.createElement('input');
+      input.type = 'text'; input.maxLength = 40; input.dataset.importSpeakerKey = speaker.key;
+      input.value = existing.get(speaker.key) || speaker.label;
+      input.addEventListener('input', refreshMigrationPreview);
+      row.append(sourceLabel, input);
+      els.migrationSpeakerMap.appendChild(row);
+    }
+  }
+
+  function migrationResult() {
+    if (!migrationImportSession?.source) return null;
+    const source = migrationImportSession.source;
+    const requested = els.migrationImportMethod?.value || 'auto';
+    const actual = requested === 'auto' ? detectMigrationMethod(source) : requested;
+    let result;
+    if (actual === 'speaker') result = buildSpeakerMigration(source, speakerOverrideMap());
+    else if (actual === 'alignment' && source.kind === 'docx') result = buildAlignmentMigration(source);
+    else if (actual === 'alignment') result = buildPlainMigration(source);
+    else result = buildPlainMigration(source);
+    return { ...result, actual, requested, warnings: migrationWarningsFor(source, actual, result) };
+  }
+
+  function refreshMigrationPreview() {
+    const source = migrationImportSession?.source;
+    if (!source) return;
+    const requested = els.migrationImportMethod.value;
+    const actual = requested === 'auto' ? detectMigrationMethod(source) : requested;
+    if (actual === 'speaker' && !els.migrationSpeakerMap.children.length) renderMigrationSpeakerOptions(source);
+    els.migrationSpeakerOptions.hidden = actual !== 'speaker';
+    els.migrationAlignmentOptions.hidden = actual !== 'alignment' || source.kind !== 'docx';
+    els.migrationMethodNote.textContent = requested === 'auto'
+      ? `Auto detect chose ${actual === 'speaker' ? 'Speaker labels' : actual === 'alignment' ? 'Left / right DOCX alignment' : 'Plain blocks → Narrative'}. You can override it above.`
+      : `Using ${actual === 'speaker' ? 'speaker labels' : actual === 'alignment' ? 'left / right alignment' : 'plain blocks'} as requested.`;
+    const result = migrationResult();
+    const messages = result.items.filter(item => item.kind === 'message').length;
+    const narratives = result.items.filter(item => item.kind === 'narrative').length;
+    els.migrationImportSummary.textContent = `${result.participants.length} participant${result.participants.length === 1 ? '' : 's'} · ${messages} message${messages === 1 ? '' : 's'} · ${narratives} narrative block${narratives === 1 ? '' : 's'}`;
+    els.migrationWarnings.hidden = !result.warnings.length;
+    els.migrationWarnings.innerHTML = result.warnings.length ? `<strong>Review before importing</strong><ul>${result.warnings.map(warning => `<li>${htmlEscape(warning)}</li>`).join('')}</ul>` : '';
+    els.migrationPreview.innerHTML = '';
+    const participantNames = new Map(result.participants.map(p => [p.id, p.name]));
+    const limit = 14;
+    result.items.slice(0, limit).forEach(item => {
+      const row = document.createElement('div');
+      row.className = `migration-preview-item${item.kind === 'narrative' ? ' migration-preview-narrative' : ''}`;
+      const label = document.createElement('div'); label.className = 'migration-preview-speaker';
+      label.textContent = item.kind === 'narrative' ? 'Narrative' : (participantNames.get(item.speakerId) || 'Participant');
+      const body = document.createElement('div');
+      body.textContent = item.text || '(empty message)';
+      row.append(label, body); els.migrationPreview.appendChild(row);
+    });
+    if (result.items.length > limit) {
+      const more = document.createElement('div'); more.className = 'migration-preview-more'; more.textContent = `…and ${result.items.length - limit} more item${result.items.length - limit === 1 ? '' : 's'}`; els.migrationPreview.appendChild(more);
+    }
+    els.commitMigrationImportBtn.disabled = result.items.length === 0;
+  }
+
+  async function beginMigrationImport(file) {
+    const source = await parseMigrationFile(file);
+    migrationImportSession = { source };
+    els.migrationImportMethod.value = 'auto';
+    els.migrationLeftName.value = 'Left Speaker';
+    els.migrationRightName.value = 'Right Speaker';
+    const alignmentCounts = source.kind === 'docx' ? source.paragraphs.reduce((out, p) => { out[p.align] = (out[p.align] || 0) + 1; return out; }, {}) : {};
+    els.migrationUnalignedMode.value = source.kind === 'docx' && (alignmentCounts.right || 0) && !(alignmentCounts.left || 0) && (alignmentCounts.default || 0) ? 'left' : 'narrative';
+    els.migrationSpeakerMap.innerHTML = '';
+    const detail = source.kind === 'docx' ? `${source.paragraphs.length} readable paragraph${source.paragraphs.length === 1 ? '' : 's'}` : `${source.lines.length} text line${source.lines.length === 1 ? '' : 's'}`;
+    els.migrationSourceSummary.innerHTML = `<strong>${htmlEscape(source.filename)}</strong><br>${source.kind.toUpperCase()} · ${detail}`;
+    refreshMigrationPreview();
+    els.migrationImportDialog.showModal();
+  }
+
+  function closeMigrationImport() {
+    if (els.migrationImportDialog?.open) els.migrationImportDialog.close();
+    migrationImportSession = null;
+    els.migrationSpeakerMap.innerHTML = '';
+  }
+
+  function commitMigrationImport() {
+    const source = migrationImportSession?.source;
+    const result = migrationResult();
+    if (!source || !result || !result.items.length) return;
+    const fresh = defaultState();
+    fresh.title = source.title;
+    fresh.participants = result.participants.map((participant, index) => ({ ...participant, id: `p${index + 1}` }));
+    const speakerRemap = new Map(result.participants.map((participant, index) => [participant.id, `p${index + 1}`]));
+    fresh.activeParticipantId = fresh.participants[0]?.id || null;
+    fresh.messages = result.items.map((item, index) => item.kind === 'narrative'
+      ? { kind: 'narrative', id: importMessageId(index), text: item.text, narrativeStyle: item.narrativeStyle || 'narrative', createdAt: new Date().toISOString() }
+      : { kind: 'message', id: importMessageId(index), speakerId: speakerRemap.get(item.speakerId) || fresh.activeParticipantId, text: item.text, annotation: '', createdAt: new Date().toISOString() });
+    checkpointCurrent('Closed / switched thread');
+    state = normalizeState(fresh);
+    currentDocumentId = makeDocumentId();
+    pendingInsertId = null;
+    persistDocument(currentDocumentId, state);
+    els.composer.value = '';
+    autoSizeComposer();
+    closeMigrationImport();
+    render();
+    if (els.saveStatus) els.saveStatus.textContent = `Imported ${source.kind.toUpperCase()} to Recent`;
+  }
+
+  els.migrationImportBtn?.addEventListener('click', () => { closeTopMenus(); els.migrationFileInput.click(); });
+  els.migrationFileInput?.addEventListener('change', async () => {
+    const file = els.migrationFileInput.files?.[0];
+    try {
+      if (file) await beginMigrationImport(file);
+    } catch (error) {
+      alert(`Could not import this file: ${error.message}`);
+    } finally {
+      els.migrationFileInput.value = '';
+    }
+  });
+  els.closeMigrationImportDialogBtn?.addEventListener('click', closeMigrationImport);
+  els.cancelMigrationImportBtn?.addEventListener('click', closeMigrationImport);
+  els.migrationImportDialog?.addEventListener('cancel', event => { event.preventDefault(); closeMigrationImport(); });
+  els.migrationImportMethod?.addEventListener('change', () => { els.migrationSpeakerMap.innerHTML = ''; refreshMigrationPreview(); });
+  els.migrationLeftName?.addEventListener('input', refreshMigrationPreview);
+  els.migrationRightName?.addEventListener('input', refreshMigrationPreview);
+  els.migrationUnalignedMode?.addEventListener('change', refreshMigrationPreview);
+  els.commitMigrationImportBtn?.addEventListener('click', commitMigrationImport);
+
   els.importBtn.addEventListener('click', () => { closeTopMenus(); els.fileInput.click(); });
   els.fileInput.addEventListener('change', async () => {
     const file = els.fileInput.files?.[0];
@@ -5069,7 +5575,7 @@ ${imageRels}
   });
 
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-    navigator.serviceWorker.register('./sw.js?v=0.10.7').catch(() => {});
+    navigator.serviceWorker.register('./sw.js?v=0.11').catch(() => {});
   }
 
   if (els.runtimeVersion) els.runtimeVersion.textContent = `v${APP_VERSION}`;

@@ -4,10 +4,10 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#f4f4f7" />
-  <title>ThreadWriter v0.10.7</title>
-  <link rel="manifest" href="manifest.webmanifest?v=0.10.7" />
-  <link rel="icon" href="icon.svg?v=0.10.7" type="image/svg+xml" />
-  <link rel="stylesheet" href="styles.css?v=0.10.7" />
+  <title>ThreadWriter v0.11</title>
+  <link rel="manifest" href="manifest.webmanifest?v=0.11" />
+  <link rel="icon" href="icon.svg?v=0.11" type="image/svg+xml" />
+  <link rel="stylesheet" href="styles.css?v=0.11" />
 </head>
 <body>
   <div class="app-shell">
@@ -51,6 +51,7 @@
           <div id="fileMenu" class="top-menu" hidden>
             <button id="newBtn" type="button">New</button>
             <button id="importBtn" type="button">Open…</button>
+            <button id="migrationImportBtn" type="button">Import…</button>
             <button id="saveAsBtn" type="button">Save As…</button>
             <button id="historyBtn" type="button">Version History…</button>
             <button id="exportMenuBtn" type="button" class="submenu-toggle" aria-expanded="false">Export <span aria-hidden="true">›</span></button>
@@ -67,6 +68,7 @@
         <button id="projectsBtn" class="top-menu-button" type="button" title="Organize conversations into projects">Projects</button>
         <button id="recentBtn" class="top-menu-button" type="button" title="Open a recently saved local thread">Recent</button>
         <input id="fileInput" type="file" accept="application/json,.threadwriter,.json" hidden />
+        <input id="migrationFileInput" type="file" accept="text/plain,.txt,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx" hidden />
         <input id="imageInput" type="file" accept="image/*" hidden />
         <input id="linkPreviewImageInput" type="file" accept="image/*" hidden />
       </div>
@@ -91,6 +93,48 @@
       </div>
     </footer>
   </div>
+
+  <dialog id="migrationImportDialog">
+    <div class="dialog-card migration-import-dialog-card">
+      <div class="dialog-head">
+        <h2>Import conversation</h2>
+        <button type="button" id="closeMigrationImportDialogBtn" class="icon-btn" aria-label="Close">×</button>
+      </div>
+      <p class="dialog-copy">Bring structured TXT or DOCX dialogue into a new ThreadWriter conversation. ThreadWriter preserves the words first and asks before committing its interpretation.</p>
+      <div id="migrationSourceSummary" class="migration-source-summary"></div>
+      <div class="migration-import-grid">
+        <label>
+          <span>Interpret as</span>
+          <select id="migrationImportMethod">
+            <option value="auto">Auto detect</option>
+            <option value="speaker">Speaker labels (NAME: dialogue)</option>
+            <option value="alignment">Left / right DOCX alignment</option>
+            <option value="plain">Plain blocks → Narrative</option>
+          </select>
+        </label>
+      </div>
+      <div id="migrationMethodNote" class="migration-method-note"></div>
+      <div id="migrationSpeakerOptions" class="migration-options" hidden>
+        <div class="migration-section-head"><strong>Detected speakers</strong><span>Rename them before import if needed.</span></div>
+        <div id="migrationSpeakerMap" class="migration-speaker-map"></div>
+      </div>
+      <div id="migrationAlignmentOptions" class="migration-options" hidden>
+        <div class="migration-section-head"><strong>Left / right speakers</strong><span>ThreadWriter uses paragraph alignment, not page position.</span></div>
+        <div class="migration-name-grid">
+          <label><span>Left speaker</span><input id="migrationLeftName" type="text" maxlength="40" value="Left Speaker" /></label>
+          <label><span>Right speaker</span><input id="migrationRightName" type="text" maxlength="40" value="Right Speaker" /></label>
+          <label><span>Unaligned paragraphs</span><select id="migrationUnalignedMode"><option value="narrative">Narrative blocks</option><option value="left">Left speaker</option></select></label>
+        </div>
+      </div>
+      <div id="migrationWarnings" class="migration-warnings" hidden></div>
+      <div class="migration-preview-head"><strong>Preview</strong><span id="migrationImportSummary"></span></div>
+      <div id="migrationPreview" class="migration-preview" aria-live="polite"></div>
+      <div class="dialog-actions migration-actions">
+        <button type="button" id="cancelMigrationImportBtn">Cancel</button>
+        <button type="button" id="commitMigrationImportBtn" class="primary-action">Import as new conversation</button>
+      </div>
+    </div>
+  </dialog>
 
   <dialog id="participantsDialog">
     <form method="dialog" class="dialog-card" id="participantsForm">
@@ -560,6 +604,6 @@
     </div>
   </template>
 
-  <script src="app.js?v=0.10.7"></script>
+  <script src="app.js?v=0.11"></script>
 </body>
 </html>
