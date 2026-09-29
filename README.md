@@ -1,4 +1,10 @@
-# ThreadWriter v0.12.1
+# ThreadWriter v0.12.2
+
+## v0.12.2 — Mobile menu viewport fix
+
+- Fixes the **Text** and **File** pop-up menus slipping off the left or right edge on narrow/mobile layouts when the toolbar wraps.
+- Mobile top menus now anchor to the full sticky header instead of an individual toolbar button, keep safe-area-aware side gutters, and scroll internally if vertical space is tight.
+- Runtime, asset URLs, and offline cache are bumped to **v0.12.2**.
 
 ## v0.12.1 — Avatar layout polish
 
