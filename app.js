@@ -1,5 +1,5 @@
 (() => {
-  const APP_VERSION = '0.11.1';
+  const APP_VERSION = '0.11.2';
   const LEGACY_STORAGE_KEY = 'threadwriter.project.v1';
   const LIBRARY_KEY = 'threadwriter.library.v1';
   const DOCUMENT_PREFIX = 'threadwriter.document.v1.';
@@ -8,6 +8,7 @@
   const HISTORY_PREFIX = 'threadwriter.history.v1.';
   const HISTORY_MAX = 6;
   const HISTORY_INTERVAL_MS = 5 * 60 * 1000;
+  const UNDO_MAX = 100;
   const MEDIA_DB_NAME = 'threadwriter.media.v1';
   const MEDIA_STORE = 'images';
   const MAX_IMAGE_DIMENSION = 2400;
@@ -52,6 +53,9 @@
   let mediaGcTimer = null;
   const mediaObjectUrls = new Map();
   const findState = { query: '', replacement: '', caseSensitive: false, matches: [], current: 0 };
+  const undoStack = [];
+  const redoStack = [];
+  let titleEditStartState = null;
 
   const els = {
     title: document.getElementById('docTitle'),
@@ -61,6 +65,8 @@
     thread: document.getElementById('thread'),
     conversationCanvas: document.getElementById('conversationCanvas'),
     speakerStrip: document.getElementById('speakerStrip'),
+    undoBtn: document.getElementById('undoBtn'),
+    redoBtn: document.getElementById('redoBtn'),
     composer: document.getElementById('composer'),
     wordCount: document.getElementById('wordCount'),
     send: document.getElementById('sendBtn'),
@@ -611,6 +617,7 @@
     if (els.saveStatus) els.saveStatus.textContent = 'Preparing image…';
     try {
       const record = await normalizeAndStoreImage(file);
+      pushUndoSnapshot(item.imageAttachment ? 'image replacement' : 'image attachment');
       item.imageAttachment = imageAttachmentFromRecord(record, item.imageAttachment);
       scheduleSave();
       renderThread();
@@ -626,6 +633,7 @@
   function removeImageFromItem(itemId) {
     const item = state.messages.find(entry => entry.id === itemId);
     if (!item?.imageAttachment) return;
+    pushUndoSnapshot('image removal');
     delete item.imageAttachment;
     scheduleSave();
     renderThread();
@@ -653,8 +661,11 @@
     const item = state.messages.find(entry => entry.id === imageDetailsItemId);
     const attachment = normalizeImageAttachment(item?.imageAttachment);
     if (!item || !attachment) { closeImageDetailsDialog(); return; }
-    attachment.caption = String(els.imageCaptionInput?.value || '').trim();
-    attachment.altText = String(els.imageAltInput?.value || '').trim();
+    const nextCaption = String(els.imageCaptionInput?.value || '').trim();
+    const nextAltText = String(els.imageAltInput?.value || '').trim();
+    if (attachment.caption !== nextCaption || attachment.altText !== nextAltText) pushUndoSnapshot('image details edit');
+    attachment.caption = nextCaption;
+    attachment.altText = nextAltText;
     item.imageAttachment = attachment;
     scheduleSave();
     renderThread();
@@ -706,8 +717,10 @@
       displayUrl: String(els.linkPreviewUrlInput?.value || '').trim()
     };
     if (existing?.thumbnail) preview.thumbnail = existing.thumbnail;
-    if (!preview.site && !preview.title && !preview.description && !preview.displayUrl && !preview.thumbnail) delete item.linkPreview;
-    else item.linkPreview = preview;
+    const nextPreview = (!preview.site && !preview.title && !preview.description && !preview.displayUrl && !preview.thumbnail) ? null : preview;
+    if (stateSignature(existing) !== stateSignature(nextPreview)) pushUndoSnapshot('link preview edit');
+    if (!nextPreview) delete item.linkPreview;
+    else item.linkPreview = nextPreview;
     scheduleSave();
     renderThread();
     closeLinkPreviewDialog();
@@ -716,6 +729,7 @@
   function removeLinkPreview() {
     const item = state.messages.find(entry => entry.id === linkPreviewItemId);
     if (!item?.linkPreview) { closeLinkPreviewDialog(); return; }
+    pushUndoSnapshot('link preview removal');
     delete item.linkPreview;
     scheduleSave();
     renderThread();
@@ -737,6 +751,7 @@
     try {
       const record = await normalizeAndStoreImage(file);
       const preview = normalizeLinkPreview(item.linkPreview) || { site: '', title: '', description: '', displayUrl: '' };
+      pushUndoSnapshot(preview.thumbnail ? 'preview thumbnail replacement' : 'preview thumbnail attachment');
       preview.thumbnail = imageAttachmentFromRecord(record, preview.thumbnail);
       item.linkPreview = preview;
       if (els.linkPreviewThumbnailStatus) els.linkPreviewThumbnailStatus.textContent = preview.thumbnail.name || 'Thumbnail';
@@ -757,6 +772,7 @@
     const item = state.messages.find(entry => entry.id === linkPreviewItemId);
     const preview = normalizeLinkPreview(item?.linkPreview);
     if (!item || !preview?.thumbnail) return;
+    pushUndoSnapshot('preview thumbnail removal');
     delete preview.thumbnail;
     item.linkPreview = preview;
     if (els.linkPreviewThumbnailStatus) els.linkPreviewThumbnailStatus.textContent = 'No thumbnail';
@@ -789,6 +805,8 @@
     try {
       const referenced = new Set();
       mergeImageIds(referenced, state);
+      undoStack.forEach(entry => mergeImageIds(referenced, entry.state));
+      redoStack.forEach(entry => mergeImageIds(referenced, entry.state));
       for (const id of Object.keys(library.documents || {})) {
         const doc = id === currentDocumentId ? state : readStoredDocument(id);
         if (doc) mergeImageIds(referenced, doc);
@@ -1139,6 +1157,98 @@
     try { return JSON.stringify(project); } catch { return ''; }
   }
 
+  function updateUndoControls() {
+    if (els.undoBtn) {
+      const entry = undoStack[undoStack.length - 1];
+      els.undoBtn.disabled = !entry;
+      els.undoBtn.title = entry ? `Undo ${entry.label} (Ctrl/Cmd+Z)` : 'Nothing to undo';
+    }
+    if (els.redoBtn) {
+      const entry = redoStack[redoStack.length - 1];
+      els.redoBtn.disabled = !entry;
+      els.redoBtn.title = entry ? `Redo ${entry.label} (Ctrl/Cmd+Shift+Z)` : 'Nothing to redo';
+    }
+  }
+
+  function makeUndoEntry(snapshot, label = 'edit') {
+    const normalized = normalizeState(cloneState(snapshot));
+    return { state: normalized, label, signature: stateSignature(normalized) };
+  }
+
+  function pushUndoState(snapshot, label = 'edit') {
+    if (!snapshot) return;
+    const entry = makeUndoEntry(snapshot, label);
+    const latest = undoStack[undoStack.length - 1];
+    if (!latest || latest.signature !== entry.signature) {
+      undoStack.push(entry);
+      if (undoStack.length > UNDO_MAX) undoStack.shift();
+    }
+    redoStack.length = 0;
+    updateUndoControls();
+  }
+
+  function pushUndoSnapshot(label = 'edit') {
+    pushUndoState(state, label);
+  }
+
+  function resetUndoHistory() {
+    undoStack.length = 0;
+    redoStack.length = 0;
+    titleEditStartState = null;
+    updateUndoControls();
+  }
+
+  function popDifferentUndoEntry(stack, currentSignature) {
+    while (stack.length) {
+      const entry = stack.pop();
+      if (entry.signature !== currentSignature) return entry;
+    }
+    return null;
+  }
+
+  function restoreEditHistory(sourceStack, destinationStack, verb) {
+    if (!currentDocumentId) return;
+    const currentSignature = stateSignature(state);
+    const entry = popDifferentUndoEntry(sourceStack, currentSignature);
+    if (!entry) {
+      updateUndoControls();
+      return;
+    }
+
+    const current = makeUndoEntry(state, entry.label);
+    destinationStack.push(current);
+    if (destinationStack.length > UNDO_MAX) destinationStack.shift();
+
+    clearTimeout(saveTimer);
+    saveTimer = null;
+    closeMessageMenus();
+    closeTopMenus();
+    const scrollY = window.scrollY;
+    state = normalizeState(cloneState(entry.state));
+    pendingInsertId = null;
+    persistDocument(currentDocumentId, state, { skipHistory: true });
+    render();
+    scheduleMediaGarbageCollection();
+    updateUndoControls();
+    if (els.saveStatus) els.saveStatus.textContent = `${verb} ${entry.label}`;
+    requestAnimationFrame(() => window.scrollTo({ top: scrollY, behavior: 'auto' }));
+  }
+
+  function undoEdit() {
+    restoreEditHistory(undoStack, redoStack, 'Undid');
+  }
+
+  function redoEdit() {
+    restoreEditHistory(redoStack, undoStack, 'Redid');
+  }
+
+  function elementUsesNativeUndo(target) {
+    if (!(target instanceof Element)) return false;
+    if (target === els.composer && !els.composer.value) return false;
+    if (target.closest('[contenteditable="true"]')) return true;
+    return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement;
+  }
+
   function createSnapshot(documentId, snapshotState, reason = 'Automatic snapshot', { force = false } = {}) {
     if (!documentId || !snapshotState) return null;
     const history = loadHistory(documentId);
@@ -1375,6 +1485,7 @@
     renderThread();
     updateWordCount();
     renderProjectContext();
+    updateUndoControls();
   }
 
   function renderSpeakers() {
@@ -1472,6 +1583,7 @@
 
   function renderThread() {
     updateWordCount();
+    updateUndoControls();
     els.thread.innerHTML = '';
     ['transcript', 'theater', 'screen'].forEach(style => els.thread.classList.toggle(`style-${style}`, state.conversationStyle === style));
 
@@ -1676,7 +1788,7 @@
         } else {
           controls.push(makeToolButton('Edit', () => { closeMessageMenus(); startEditMessage(item.id, bubble); }));
         }
-        controls.push(makeToolButton('Change speaker', () => { closeMessageMenus(); cycleMessageSpeaker(item.id); }));
+        controls.push(makeSubmenuButton('Change speaker', () => showSpeakerPicker()));
         controls.push(makeSubmenuButton('Move', () => showMove()));
         controls.push(makeSubmenuButton('Insert', () => showInsert()));
         if (!hasAnnotation || !hasTimestamp || !hasImage || !hasLinkPreview) controls.push(makeSubmenuButton('Add', () => showAdd()));
@@ -1694,6 +1806,29 @@
         }
         if (hasLinkPreview) controls.push(makeToolButton('Link preview…', () => { closeMessageMenus(); openLinkPreviewDialog(item.id); }));
         setMessageMenuPage(menu, controls, showRoot, 'Edit');
+      };
+      const showSpeakerPicker = () => {
+        const controls = state.participants.map(participant => {
+          const button = makeToolButton(participant.name, () => {
+            closeMessageMenus();
+            setMessageSpeaker(item.id, participant.id);
+          });
+          button.classList.add('speaker-choice');
+          button.replaceChildren();
+          const swatch = document.createElement('span');
+          swatch.className = 'speaker-choice-swatch';
+          swatch.style.background = participant.color;
+          const name = document.createElement('span');
+          name.className = 'speaker-choice-name';
+          name.textContent = participant.name;
+          const current = document.createElement('span');
+          current.className = 'speaker-choice-current';
+          current.textContent = participant.id === item.speakerId ? '✓' : '';
+          if (participant.id === item.speakerId) button.setAttribute('aria-current', 'true');
+          button.append(swatch, name, current);
+          return button;
+        });
+        setMessageMenuPage(menu, controls, showRoot, 'Speaker');
       };
       const showMove = () => {
         const moveUp = makeToolButton('Up', () => { closeMessageMenus(); moveMessage(item.id, -1); });
@@ -1855,6 +1990,7 @@
       createdAt: new Date().toISOString()
     };
     const insertIndex = referenceIndex + offset;
+    pushUndoSnapshot('message insertion');
     state.messages.splice(insertIndex, 0, newMessage);
     pendingInsertId = newMessage.id;
     renderThread();
@@ -1874,6 +2010,7 @@
     const target = index + direction;
     if (target < 0 || target >= state.messages.length) return;
 
+    pushUndoSnapshot('message move');
     const [message] = state.messages.splice(index, 1);
     state.messages.splice(target, 0, message);
     scheduleSave();
@@ -1966,12 +2103,33 @@
   window.visualViewport?.addEventListener('resize', closeMessageMenus);
   window.visualViewport?.addEventListener('scroll', closeMessageMenus);
 
+  els.undoBtn?.addEventListener('click', undoEdit);
+  els.redoBtn?.addEventListener('click', redoEdit);
+  document.addEventListener('keydown', event => {
+    if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
+    if (elementUsesNativeUndo(event.target)) return;
+    const key = event.key.toLocaleLowerCase();
+    if (key === 'z') {
+      event.preventDefault();
+      if (event.shiftKey) redoEdit();
+      else undoEdit();
+      return;
+    }
+    if (key === 'y' && !event.shiftKey) {
+      event.preventDefault();
+      redoEdit();
+    }
+  });
+
   function startEditMessage(id, bubble, { removeIfBlank = false } = {}) {
     const msg = state.messages.find(m => m.id === id);
     if (!msg || !isMessage(msg)) return;
     const editing = bubble.contentEditable === 'true';
     if (editing) {
-      msg.text = bubble.textContent.trimEnd();
+      const nextText = bubble.textContent.trimEnd();
+      const isPendingInsert = pendingInsertId === id;
+      if (!isPendingInsert && nextText !== msg.text) pushUndoSnapshot('message edit');
+      msg.text = nextText;
       bubble.contentEditable = 'false';
       if (removeIfBlank && !msg.text.trim()) {
         state.messages = state.messages.filter(message => message.id !== id);
@@ -1981,6 +2139,7 @@
         scheduleSave();
       }
       renderThread();
+      updateUndoControls();
       return;
     }
     bubble.contentEditable = 'true';
@@ -1989,7 +2148,10 @@
     let cancelled = false;
     const finish = () => {
       if (cancelled) return;
-      msg.text = bubble.textContent.trimEnd();
+      const nextText = bubble.textContent.trimEnd();
+      const isPendingInsert = pendingInsertId === id;
+      if (!isPendingInsert && nextText !== msg.text) pushUndoSnapshot('message edit');
+      msg.text = nextText;
       bubble.contentEditable = 'false';
       if (removeIfBlank && !msg.text.trim()) {
         state.messages = state.messages.filter(message => message.id !== id);
@@ -1998,6 +2160,7 @@
       }
       if (pendingInsertId === id) pendingInsertId = null;
       renderThread();
+      updateUndoControls();
     };
     bubble.addEventListener('blur', finish, { once: true });
     bubble.addEventListener('keydown', e => {
@@ -2007,6 +2170,7 @@
         state.messages = state.messages.filter(message => message.id !== id);
         if (pendingInsertId === id) pendingInsertId = null;
         renderThread();
+        updateUndoControls();
         els.composer.focus();
         return;
       }
@@ -2026,17 +2190,20 @@
     sel.addRange(range);
   }
 
-  function cycleMessageSpeaker(id) {
-    if (state.participants.length < 2) return;
+  function setMessageSpeaker(id, speakerId) {
     const msg = state.messages.find(m => m.id === id);
-    if (!msg || !isMessage(msg)) return;
-    const idx = state.participants.findIndex(p => p.id === msg.speakerId);
-    msg.speakerId = state.participants[(idx + 1 + state.participants.length) % state.participants.length].id;
+    const participant = state.participants.find(p => p.id === speakerId);
+    if (!msg || !isMessage(msg) || !participant || msg.speakerId === speakerId) return;
+    pushUndoSnapshot('speaker change');
+    msg.speakerId = speakerId;
     scheduleSave();
     renderThread();
+    updateUndoControls();
   }
 
   function deleteMessage(id) {
+    if (!state.messages.some(m => m.id === id)) return;
+    pushUndoSnapshot('block deletion');
     state.messages = state.messages.filter(m => m.id !== id);
     if (pendingInsertId === id) pendingInsertId = null;
     scheduleSave();
@@ -2078,6 +2245,7 @@
   els.removeTimestampBtn.addEventListener('click', () => {
     const msg = state.messages.find(m => m.id === timestampMessageId);
     if (!msg) return closeTimestampDialog();
+    if (msg.displayTimestamp) pushUndoSnapshot('timestamp removal');
     delete msg.displayTimestamp;
     scheduleSave();
     renderThread();
@@ -2087,6 +2255,7 @@
     const msg = state.messages.find(m => m.id === timestampMessageId);
     if (!msg) return closeTimestampDialog();
     const value = els.timestampInput.value.trim();
+    if ((msg.displayTimestamp || '') !== value) pushUndoSnapshot('timestamp edit');
     if (value) msg.displayTimestamp = value;
     else delete msg.displayTimestamp;
     scheduleSave();
@@ -2122,6 +2291,7 @@
   els.removeAnnotationBtn.addEventListener('click', () => {
     const msg = state.messages.find(item => item.id === annotationMessageId);
     if (!msg || !isMessage(msg)) return closeAnnotationDialog();
+    if (msg.annotation) pushUndoSnapshot('annotation removal');
     msg.annotation = '';
     scheduleSave();
     renderThread();
@@ -2130,7 +2300,9 @@
   els.saveAnnotationBtn.addEventListener('click', () => {
     const msg = state.messages.find(item => item.id === annotationMessageId);
     if (!msg || !isMessage(msg)) return closeAnnotationDialog();
-    msg.annotation = els.annotationInput.value.trimEnd();
+    const nextAnnotation = els.annotationInput.value.trimEnd();
+    if ((msg.annotation || '') !== nextAnnotation) pushUndoSnapshot('annotation edit');
+    msg.annotation = nextAnnotation;
     scheduleSave();
     renderThread();
     closeAnnotationDialog();
@@ -2170,6 +2342,7 @@
     const text = els.narrativeInput.value.trimEnd();
     if (!text.trim()) {
       if (narrativeBlockId) {
+        pushUndoSnapshot('narrative removal');
         state.messages = state.messages.filter(item => item.id !== narrativeBlockId);
         scheduleSave();
         renderThread();
@@ -2180,10 +2353,13 @@
     if (narrativeBlockId) {
       const block = state.messages.find(item => item.id === narrativeBlockId && isNarrative(item));
       if (block) {
+        const nextStyle = els.narrativeStyle?.value === 'system' ? 'system' : 'narrative';
+        if (block.text !== text || block.narrativeStyle !== nextStyle) pushUndoSnapshot('narrative edit');
         block.text = text;
-        block.narrativeStyle = els.narrativeStyle?.value === 'system' ? 'system' : 'narrative';
+        block.narrativeStyle = nextStyle;
       }
     } else {
+      pushUndoSnapshot('narrative insertion');
       const block = {
         kind: 'narrative',
         id: crypto.randomUUID ? crypto.randomUUID() : `narrative-${Date.now()}-${Math.random()}`,
@@ -2216,6 +2392,7 @@
   });
   els.removeNarrativeBtn.addEventListener('click', () => {
     if (!narrativeBlockId) return closeNarrativeDialog();
+    pushUndoSnapshot('narrative removal');
     state.messages = state.messages.filter(item => item.id !== narrativeBlockId);
     scheduleSave();
     renderThread();
@@ -2244,13 +2421,17 @@
   els.headerBtn.addEventListener('click', () => { closeTopMenus(); openHeaderDialog(); });
   els.closeHeaderDialogBtn.addEventListener('click', closeHeaderDialog);
   els.saveHeaderBtn.addEventListener('click', () => {
-    state.sceneHeader = els.headerInput.value.trim();
-    state.headerFont = els.headerFont.value;
+    const nextHeader = els.headerInput.value.trim();
+    const nextFont = els.headerFont.value;
+    if (state.sceneHeader !== nextHeader || state.headerFont !== nextFont) pushUndoSnapshot('header edit');
+    state.sceneHeader = nextHeader;
+    state.headerFont = nextFont;
     scheduleSave();
     renderThread();
     closeHeaderDialog();
   });
   els.removeHeaderBtn.addEventListener('click', () => {
+    if (state.sceneHeader) pushUndoSnapshot('header removal');
     state.sceneHeader = '';
     state.headerFont = els.headerFont.value;
     scheduleSave();
@@ -2259,14 +2440,18 @@
   });
 
   els.conversationStyle.addEventListener('change', () => {
-    state.conversationStyle = normalizeConversationStyle(els.conversationStyle.value);
+    const nextStyle = normalizeConversationStyle(els.conversationStyle.value);
+    if (state.conversationStyle !== nextStyle) pushUndoSnapshot('conversation style change');
+    state.conversationStyle = nextStyle;
     scheduleSave();
     renderThread();
     closeTopMenus();
   });
 
   els.conversationWidth?.addEventListener('change', () => {
-    state.conversationWidth = normalizeConversationWidth(els.conversationWidth.value);
+    const nextWidth = normalizeConversationWidth(els.conversationWidth.value);
+    if (state.conversationWidth !== nextWidth) pushUndoSnapshot('conversation width change');
+    state.conversationWidth = nextWidth;
     scheduleSave();
     applyConversationPresentation();
     closeTopMenus();
@@ -2403,8 +2588,11 @@
     updateBackgroundDialogPreview();
   });
   els.saveBackgroundBtn?.addEventListener('click', () => {
-    state.conversationBackground = backgroundDraftFromControls();
-    state.highContrastLabels = els.highContrastLabelsInput?.checked === true;
+    const nextBackground = backgroundDraftFromControls();
+    const nextHighContrast = els.highContrastLabelsInput?.checked === true;
+    if (stateSignature(state.conversationBackground) !== stateSignature(nextBackground) || state.highContrastLabels !== nextHighContrast) pushUndoSnapshot('background change');
+    state.conversationBackground = nextBackground;
+    state.highContrastLabels = nextHighContrast;
     scheduleSave();
     applyConversationPresentation();
     closeBackgroundDialog();
@@ -2519,6 +2707,7 @@
     const preset = normalizeConversationPreset(presetValue);
     if (!preset) return;
     createSnapshot(currentDocumentId, state, 'Before applying conversation preset', { force: true });
+    pushUndoSnapshot('conversation preset');
     state.conversationStyle = preset.conversationStyle;
     state.conversationWidth = normalizeConversationWidth(preset.conversationWidth);
     state.conversationBackground = cloneState(preset.conversationBackground);
@@ -2672,6 +2861,7 @@
     const currentValue = findFieldValue(item, match.field);
     if (!currentValue && match.start !== 0) return;
     const nextValue = currentValue.slice(0, match.start) + els.replaceInput.value + currentValue.slice(match.start + match.length);
+    if (nextValue !== currentValue) pushUndoSnapshot('find/replace');
     if (!setFindFieldValue(item, match.field, nextValue)) return;
     scheduleSave();
     findState.matches = computeFindMatches();
@@ -2686,6 +2876,7 @@
     const escaped = findState.query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const flags = findState.caseSensitive ? 'g' : 'gi';
     const regex = new RegExp(escaped, flags);
+    pushUndoSnapshot('replace all');
     let count = 0;
     const replaceField = (item, field) => {
       const value = findFieldValue(item, field);
@@ -2768,6 +2959,7 @@
   function addMessage() {
     const text = els.composer.value.trimEnd();
     if (!text.trim() || !state.activeParticipantId) return;
+    pushUndoSnapshot('message addition');
     state.messages.push({
       kind: 'message',
       id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random(),
@@ -2815,9 +3007,18 @@
   });
   els.send.addEventListener('click', addMessage);
 
+  els.title.addEventListener('focus', () => {
+    titleEditStartState = cloneState(state);
+  });
   els.title.addEventListener('input', () => {
     state.title = els.title.value;
     scheduleSave();
+  });
+  els.title.addEventListener('blur', () => {
+    if (titleEditStartState && stateSignature(titleEditStartState) !== stateSignature(state)) {
+      pushUndoState(titleEditStartState, 'title edit');
+    }
+    titleEditStartState = null;
   });
 
   els.participantsBtn.addEventListener('click', () => { closeTopMenus(); openParticipantsDialog(); });
@@ -2872,6 +3073,8 @@
       textColor: normalizeHex(row.querySelector('.participant-text-color')?.value, '#ff2d55')
     }));
     const validIds = new Set(newParticipants.map(p => p.id));
+    const speakerRemapNeeded = state.messages.some(m => isMessage(m) && !validIds.has(m.speakerId));
+    if (stateSignature(state.participants) !== stateSignature(newParticipants) || speakerRemapNeeded) pushUndoSnapshot('participant edit');
     const fallbackId = newParticipants[0].id;
     state.messages.forEach(m => { if (isMessage(m) && !validIds.has(m.speakerId)) m.speakerId = fallbackId; });
     state.participants = newParticipants;
@@ -2932,6 +3135,7 @@
     if (!snapshot?.state) return;
     if (!confirm(`Restore the version from ${formatRecentTime(snapshot.createdAt)}? ThreadWriter will save your current version to history first.`)) return;
     createSnapshot(currentDocumentId, state, 'Before restore', { force: true });
+    pushUndoSnapshot('version restore');
     state = normalizeState(cloneState(snapshot.state));
     pendingInsertId = null;
     persistDocument(currentDocumentId, state, { skipHistory: true });
@@ -2972,6 +3176,7 @@
     }
     state = loaded;
     currentDocumentId = id;
+    resetUndoHistory();
     library.currentId = id;
     updateDocumentMeta(id, state, { touchUpdated: false });
     try { saveLibraryIndex(); } catch {}
@@ -2999,6 +3204,7 @@
     const id = makeDocumentId();
     currentDocumentId = id;
     state = fresh;
+    resetUndoHistory();
     pendingInsertId = null;
     persistDocument(id, fresh);
     addDocumentToProject(id, projectId, { confirmMove: false });
@@ -3265,6 +3471,7 @@
     checkpointCurrent('Closed / switched thread');
     state = defaultState();
     currentDocumentId = makeDocumentId();
+    resetUndoHistory();
     pendingInsertId = null;
     persistDocument(currentDocumentId, state);
     render();
@@ -4114,6 +4321,7 @@
     checkpointCurrent('Closed / switched thread');
     state = normalizeState(fresh);
     currentDocumentId = makeDocumentId();
+    resetUndoHistory();
     pendingInsertId = null;
     persistDocument(currentDocumentId, state);
     els.composer.value = '';
@@ -4158,6 +4366,7 @@
       checkpointCurrent('Closed / switched thread');
       state = imported;
       currentDocumentId = makeDocumentId();
+      resetUndoHistory();
       pendingInsertId = null;
       persistDocument(currentDocumentId, state);
       els.composer.value = '';
@@ -5684,7 +5893,7 @@ ${imageRels}
   });
 
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-    navigator.serviceWorker.register('./sw.js?v=0.11.1').catch(() => {});
+    navigator.serviceWorker.register('./sw.js?v=0.11.2').catch(() => {});
   }
 
   if (els.runtimeVersion) els.runtimeVersion.textContent = `v${APP_VERSION}`;

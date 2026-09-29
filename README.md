@@ -1,4 +1,13 @@
-# ThreadWriter v0.11.1
+# ThreadWriter v0.11.2
+
+## v0.11.2 — Undo / redo and speaker picker
+
+- Adds document-level **Undo / Redo** with visible toolbar buttons plus `Ctrl/Cmd+Z`, `Ctrl/Cmd+Shift+Z`, and `Ctrl+Y`. ThreadWriter keeps up to 100 in-session edit states per conversation; the stack resets when you switch/open/create a different conversation.
+- Structural and authored edits are covered, including message/narrative insertion, deletion, movement and text edits; speaker reassignment; participant edits; timestamps/annotations; headers; Find & Replace; conversation presentation changes; presets; and image/link-preview attachment edits.
+- Undo/redo is intentionally **session-local**. It complements, rather than replaces, browser-local Version History. Native text-field undo remains native while you are actively typing in an input, textarea, or editable message.
+- **Change speaker** now opens a generated participant list instead of cycling through speakers one click at a time. The current speaker is checked and each choice carries that participant's bubble-color swatch.
+- Undo/redo snapshots retain image references while they are on either stack so media cleanup cannot invalidate an in-session image undo.
+- Runtime, asset URLs, and offline cache are bumped to **v0.11.2**.
 
 ## v0.11.1 — Import layout and dramatic scripts
 
@@ -56,12 +65,12 @@ A small local-first dialogue editor for writing, revising, moving, and publishin
 - Local autosave in the browser, with each conversation stored separately
 - **Recent** conversation picker for reopening locally saved threads, including multiple threads with the same title
 - Local **Projects** for grouping, reordering, counting, and searching multiple scenes/conversations
-- Lightweight per-thread **Version History** with automatic local snapshots, manual checkpoints, and one-click restore
+- In-session **Undo / Redo** for ordinary editing, plus lightweight per-thread **Version History** with automatic local snapshots, manual checkpoints, and one-click restore
 - Portable full-project backup / restore files (`.threadwriter-project`) that include every scene plus available local snapshot history
 - **Save As…** creates a portable `.threadwriter` file you control, while autosave continues maintaining the browser-local Recent copy
 - Editable native `.threadwriter` JSON project export/import
 - Consecutive messages from the same participant are visually grouped
-- Compact hierarchical per-message overflow menu for editing, speaker reassignment, moving, inserting messages/narrative blocks, annotations/timestamps, and delete
+- Compact hierarchical per-message overflow menu for editing, a generated speaker picker, moving, inserting messages/narrative blocks, annotations/timestamps, and delete
 - Viewport-safe message menus on desktop and mobile that float above the fixed composer and stay clamped inside the visible screen
 - Optional editable timestamps, including free-form story labels such as “two hours later”
 - Timestamped messages create a visual time-break before the new message beat
