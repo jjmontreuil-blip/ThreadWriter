@@ -1,5 +1,5 @@
 (() => {
-  const APP_VERSION = '0.10.3';
+  const APP_VERSION = '0.10.4';
   const LEGACY_STORAGE_KEY = 'threadwriter.project.v1';
   const LIBRARY_KEY = 'threadwriter.library.v1';
   const DOCUMENT_PREFIX = 'threadwriter.document.v1.';
@@ -2136,7 +2136,7 @@
   const BACKGROUND_PRESETS = {
     spectrum: { mode: 'gradient', colors: ['#ff3b30', '#ffcc00', '#34c759', '#007aff'], direction: 'horizontal' },
     steel: { mode: 'gradient', colors: ['#eef1f4', '#9aa3ad', '#dce1e6'], direction: 'vertical' },
-    terminal: { mode: 'gradient', colors: ['#020704', '#0a2415', '#35ff88'], direction: 'vertical' },
+    terminal: { mode: 'gradient', colors: ['#000000', '#03140b', '#0a2415', '#123a24'], direction: 'vertical' },
     ocean: { mode: 'gradient', colors: ['#071b3d', '#1769aa', '#55d8e6'], direction: 'diag-right' },
     sunset: { mode: 'gradient', colors: ['#ff8a34', '#ff4f85', '#6c3bd1'], direction: 'diag-right' },
     twilight: { mode: 'gradient', colors: ['#101a4f', '#432b78', '#8c5ee8'], direction: 'vertical' },
@@ -4766,7 +4766,7 @@ ${imageRels}
   });
 
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-    navigator.serviceWorker.register('./sw.js?v=0.10.3').catch(() => {});
+    navigator.serviceWorker.register('./sw.js?v=0.10.4').catch(() => {});
   }
 
   if (els.runtimeVersion) els.runtimeVersion.textContent = `v${APP_VERSION}`;

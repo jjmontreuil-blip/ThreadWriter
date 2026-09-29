@@ -1,4 +1,4 @@
-# ThreadWriter v0.10.3
+# ThreadWriter v0.10.4
 
 A small local-first dialogue editor for writing, revising, moving, and publishing conversation-heavy material, with chat, transcript, theater-draft, and screen-draft presentation styles.
 
@@ -65,7 +65,7 @@ Then open `http://localhost:8000/` in your browser. Service-worker/offline insta
 GitHub Pages is also a good fit: place these files at the publishing root and add the resulting site to an iPhone/iPad Home Screen if desired.
 
 
-## New in v0.10.3
+## New in v0.10.4
 
 - Added eight editable **Conversation Background presets**: Spectrum, Steel, Terminal, Ocean, Sunset, Twilight, Paper, and Midnight. Presets are generic visual recipes rather than replicas of specific apps.
 - Gradient color stops can now be reordered with simple left/right controls; unavailable moves disable automatically at the ends of the active stop list.

@@ -1258,7 +1258,7 @@ dialog::backdrop { background: rgba(0,0,0,.45); backdrop-filter: blur(3px); }
 .preset-swatch { display: block; height: 31px; border-radius: 7px; border: 1px solid rgba(127,127,127,.24); }
 .preset-spectrum { background: linear-gradient(to right, #ff3b30, #ffcc00, #34c759, #007aff); }
 .preset-steel { background: linear-gradient(to bottom, #eef1f4, #9aa3ad, #dce1e6); }
-.preset-terminal { background: linear-gradient(to bottom, #020704, #0a2415, #35ff88); }
+.preset-terminal { background: linear-gradient(to bottom, #000000, #03140b, #0a2415, #123a24); }
 .preset-ocean { background: linear-gradient(to bottom right, #071b3d, #1769aa, #55d8e6); }
 .preset-sunset { background: linear-gradient(to bottom right, #ff8a34, #ff4f85, #6c3bd1); }
 .preset-twilight { background: linear-gradient(to bottom, #101a4f, #432b78, #8c5ee8); }
