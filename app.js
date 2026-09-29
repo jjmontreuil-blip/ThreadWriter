@@ -1,5 +1,5 @@
 (() => {
-  const APP_VERSION = '0.10.2';
+  const APP_VERSION = '0.10.3';
   const LEGACY_STORAGE_KEY = 'threadwriter.project.v1';
   const LIBRARY_KEY = 'threadwriter.library.v1';
   const DOCUMENT_PREFIX = 'threadwriter.document.v1.';
@@ -81,6 +81,9 @@
     backgroundDirectionField: document.getElementById('backgroundDirectionField'),
     backgroundDirection: document.getElementById('backgroundDirection'),
     backgroundColors: document.getElementById('backgroundColors'),
+    backgroundGradientTools: document.getElementById('backgroundGradientTools'),
+    backgroundPresetGrid: document.getElementById('backgroundPresetGrid'),
+    flipGradientBtn: document.getElementById('flipGradientBtn'),
     backgroundColor1: document.getElementById('backgroundColor1'),
     backgroundColor2: document.getElementById('backgroundColor2'),
     backgroundColor3: document.getElementById('backgroundColor3'),
@@ -2130,6 +2133,56 @@
     closeTopMenus();
   });
 
+  const BACKGROUND_PRESETS = {
+    spectrum: { mode: 'gradient', colors: ['#ff3b30', '#ffcc00', '#34c759', '#007aff'], direction: 'horizontal' },
+    steel: { mode: 'gradient', colors: ['#eef1f4', '#9aa3ad', '#dce1e6'], direction: 'vertical' },
+    terminal: { mode: 'gradient', colors: ['#020704', '#0a2415', '#35ff88'], direction: 'vertical' },
+    ocean: { mode: 'gradient', colors: ['#071b3d', '#1769aa', '#55d8e6'], direction: 'diag-right' },
+    sunset: { mode: 'gradient', colors: ['#ff8a34', '#ff4f85', '#6c3bd1'], direction: 'diag-right' },
+    twilight: { mode: 'gradient', colors: ['#101a4f', '#432b78', '#8c5ee8'], direction: 'vertical' },
+    paper: { mode: 'solid', solid: '#f5f0e6', colors: ['#f5f0e6', '#eee6d8'], direction: 'vertical' },
+    midnight: { mode: 'gradient', colors: ['#0d0f14', '#252a38'], direction: 'vertical' }
+  };
+
+  function backgroundColorInputs() {
+    return [els.backgroundColor1, els.backgroundColor2, els.backgroundColor3, els.backgroundColor4];
+  }
+
+  function applyBackgroundPreset(name) {
+    const preset = BACKGROUND_PRESETS[name];
+    if (!preset || !els.backgroundMode) return;
+    els.backgroundMode.value = preset.mode;
+    if (preset.mode === 'solid') {
+      els.backgroundSolidColor.value = normalizeHex(preset.solid, '#f4f4f7');
+    } else {
+      const colors = preset.colors.slice(0, 4);
+      els.backgroundColorCount.value = String(Math.max(2, colors.length));
+      els.backgroundDirection.value = preset.direction || 'vertical';
+      const inputs = backgroundColorInputs();
+      const fallback = ['#f4f4f7', '#d9e6ff', '#c9f2d0', '#f6d6ff'];
+      inputs.forEach((input, index) => { if (input) input.value = colors[index] || fallback[index]; });
+    }
+    updateBackgroundDialogPreview();
+  }
+
+  function swapBackgroundStops(indexA, indexB) {
+    const count = Math.min(4, Math.max(2, Number(els.backgroundColorCount?.value) || 2));
+    if (indexA < 0 || indexB < 0 || indexA >= count || indexB >= count || indexA === indexB) return;
+    const inputs = backgroundColorInputs();
+    const temp = inputs[indexA].value;
+    inputs[indexA].value = inputs[indexB].value;
+    inputs[indexB].value = temp;
+    updateBackgroundDialogPreview();
+  }
+
+  function flipBackgroundStops() {
+    const count = Math.min(4, Math.max(2, Number(els.backgroundColorCount?.value) || 2));
+    const inputs = backgroundColorInputs();
+    const values = inputs.slice(0, count).map(input => input.value).reverse();
+    values.forEach((value, index) => { inputs[index].value = value; });
+    updateBackgroundDialogPreview();
+  }
+
   function backgroundDraftFromControls() {
     const count = Math.min(4, Math.max(2, Number(els.backgroundColorCount?.value) || 2));
     const colors = [els.backgroundColor1, els.backgroundColor2, els.backgroundColor3, els.backgroundColor4]
@@ -2150,10 +2203,17 @@
     if (els.backgroundColorCountField) els.backgroundColorCountField.hidden = mode !== 'gradient';
     if (els.backgroundDirectionField) els.backgroundDirectionField.hidden = mode !== 'gradient';
     if (els.backgroundColors) els.backgroundColors.hidden = mode !== 'gradient';
+    if (els.backgroundGradientTools) els.backgroundGradientTools.hidden = mode !== 'gradient';
     const count = Math.min(4, Math.max(2, Number(els.backgroundColorCount?.value) || 2));
-    [els.backgroundColor1, els.backgroundColor2, els.backgroundColor3, els.backgroundColor4].forEach((input, index) => {
-      const label = input?.closest('label');
-      if (label) label.hidden = mode !== 'gradient' || index >= count;
+    backgroundColorInputs().forEach((input, index) => {
+      const stop = input?.closest('.background-color-stop');
+      if (stop) {
+        stop.hidden = mode !== 'gradient' || index >= count;
+        const left = stop.querySelector('[data-stop-move="left"]');
+        const right = stop.querySelector('[data-stop-move="right"]');
+        if (left) left.disabled = index === 0;
+        if (right) right.disabled = index >= count - 1;
+      }
     });
     if (els.backgroundPreview) {
       const draft = backgroundDraftFromControls();
@@ -2168,7 +2228,7 @@
     els.backgroundSolidColor.value = background.solid;
     els.backgroundColorCount.value = String(Math.min(4, Math.max(2, background.colors.length)));
     els.backgroundDirection.value = background.direction;
-    const inputs = [els.backgroundColor1, els.backgroundColor2, els.backgroundColor3, els.backgroundColor4];
+    const inputs = backgroundColorInputs();
     const defaults = ['#f4f4f7', '#d9e6ff', '#c9f2d0', '#f6d6ff'];
     inputs.forEach((input, index) => { if (input) input.value = background.colors[index] || defaults[index]; });
     updateBackgroundDialogPreview();
@@ -2183,6 +2243,20 @@
   els.closeBackgroundDialogBtn?.addEventListener('click', closeBackgroundDialog);
   els.backgroundDialog?.addEventListener('cancel', event => { event.preventDefault(); closeBackgroundDialog(); });
   [els.backgroundMode, els.backgroundSolidColor, els.backgroundColorCount, els.backgroundDirection, els.backgroundColor1, els.backgroundColor2, els.backgroundColor3, els.backgroundColor4].forEach(control => control?.addEventListener('input', updateBackgroundDialogPreview));
+  els.backgroundPresetGrid?.addEventListener('click', event => {
+    const button = event.target.closest('[data-background-preset]');
+    if (!button) return;
+    applyBackgroundPreset(button.dataset.backgroundPreset);
+  });
+  els.backgroundColors?.addEventListener('click', event => {
+    const button = event.target.closest('[data-stop-move]');
+    if (!button) return;
+    const stop = button.closest('.background-color-stop');
+    const index = Number(stop?.dataset.backgroundStop);
+    if (!Number.isInteger(index)) return;
+    swapBackgroundStops(index, button.dataset.stopMove === 'left' ? index - 1 : index + 1);
+  });
+  els.flipGradientBtn?.addEventListener('click', flipBackgroundStops);
   els.resetBackgroundBtn?.addEventListener('click', () => {
     els.backgroundMode.value = 'default';
     updateBackgroundDialogPreview();
@@ -4692,7 +4766,7 @@ ${imageRels}
   });
 
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-    navigator.serviceWorker.register('./sw.js?v=0.10.2').catch(() => {});
+    navigator.serviceWorker.register('./sw.js?v=0.10.3').catch(() => {});
   }
 
   if (els.runtimeVersion) els.runtimeVersion.textContent = `v${APP_VERSION}`;

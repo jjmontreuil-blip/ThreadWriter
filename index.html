@@ -4,10 +4,10 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#f4f4f7" />
-  <title>ThreadWriter v0.10.2</title>
-  <link rel="manifest" href="manifest.webmanifest?v=0.10.2" />
-  <link rel="icon" href="icon.svg?v=0.10.2" type="image/svg+xml" />
-  <link rel="stylesheet" href="styles.css?v=0.10.2" />
+  <title>ThreadWriter v0.10.3</title>
+  <link rel="manifest" href="manifest.webmanifest?v=0.10.3" />
+  <link rel="icon" href="icon.svg?v=0.10.3" type="image/svg+xml" />
+  <link rel="stylesheet" href="styles.css?v=0.10.3" />
 </head>
 <body>
   <div class="app-shell">
@@ -351,11 +351,30 @@
           </select>
         </label>
       </div>
+      <div class="background-presets" aria-labelledby="backgroundPresetsLabel">
+        <div class="background-section-head">
+          <span id="backgroundPresetsLabel">Quick presets</span>
+          <span class="background-section-note">Starting points, fully editable</span>
+        </div>
+        <div id="backgroundPresetGrid" class="background-preset-grid">
+          <button type="button" class="background-preset" data-background-preset="spectrum"><span class="preset-swatch preset-spectrum"></span><span>Spectrum</span></button>
+          <button type="button" class="background-preset" data-background-preset="steel"><span class="preset-swatch preset-steel"></span><span>Steel</span></button>
+          <button type="button" class="background-preset" data-background-preset="terminal"><span class="preset-swatch preset-terminal"></span><span>Terminal</span></button>
+          <button type="button" class="background-preset" data-background-preset="ocean"><span class="preset-swatch preset-ocean"></span><span>Ocean</span></button>
+          <button type="button" class="background-preset" data-background-preset="sunset"><span class="preset-swatch preset-sunset"></span><span>Sunset</span></button>
+          <button type="button" class="background-preset" data-background-preset="twilight"><span class="preset-swatch preset-twilight"></span><span>Twilight</span></button>
+          <button type="button" class="background-preset" data-background-preset="paper"><span class="preset-swatch preset-paper"></span><span>Paper</span></button>
+          <button type="button" class="background-preset" data-background-preset="midnight"><span class="preset-swatch preset-midnight"></span><span>Midnight</span></button>
+        </div>
+      </div>
       <div id="backgroundColors" class="background-colors" aria-label="Gradient colors">
-        <label><span>1</span><input id="backgroundColor1" type="color" value="#f4f4f7" /></label>
-        <label><span>2</span><input id="backgroundColor2" type="color" value="#d9e6ff" /></label>
-        <label><span>3</span><input id="backgroundColor3" type="color" value="#c9f2d0" /></label>
-        <label><span>4</span><input id="backgroundColor4" type="color" value="#f6d6ff" /></label>
+        <div class="background-color-stop" data-background-stop="0"><span class="stop-number">1</span><input id="backgroundColor1" type="color" value="#f4f4f7" aria-label="Gradient color 1" /><div class="stop-move"><button type="button" class="stop-move-btn" data-stop-move="left" aria-label="Move color 1 earlier">←</button><button type="button" class="stop-move-btn" data-stop-move="right" aria-label="Move color 1 later">→</button></div></div>
+        <div class="background-color-stop" data-background-stop="1"><span class="stop-number">2</span><input id="backgroundColor2" type="color" value="#d9e6ff" aria-label="Gradient color 2" /><div class="stop-move"><button type="button" class="stop-move-btn" data-stop-move="left" aria-label="Move color 2 earlier">←</button><button type="button" class="stop-move-btn" data-stop-move="right" aria-label="Move color 2 later">→</button></div></div>
+        <div class="background-color-stop" data-background-stop="2"><span class="stop-number">3</span><input id="backgroundColor3" type="color" value="#c9f2d0" aria-label="Gradient color 3" /><div class="stop-move"><button type="button" class="stop-move-btn" data-stop-move="left" aria-label="Move color 3 earlier">←</button><button type="button" class="stop-move-btn" data-stop-move="right" aria-label="Move color 3 later">→</button></div></div>
+        <div class="background-color-stop" data-background-stop="3"><span class="stop-number">4</span><input id="backgroundColor4" type="color" value="#f6d6ff" aria-label="Gradient color 4" /><div class="stop-move"><button type="button" class="stop-move-btn" data-stop-move="left" aria-label="Move color 4 earlier">←</button><button type="button" class="stop-move-btn" data-stop-move="right" aria-label="Move color 4 later">→</button></div></div>
+      </div>
+      <div id="backgroundGradientTools" class="background-gradient-tools">
+        <button type="button" id="flipGradientBtn">Flip gradient</button>
       </div>
       <div id="backgroundPreview" class="background-preview" aria-label="Background preview"><span>Preview</span></div>
       <div class="dialog-actions background-actions">
@@ -485,6 +504,6 @@
     </div>
   </template>
 
-  <script src="app.js?v=0.10.2"></script>
+  <script src="app.js?v=0.10.3"></script>
 </body>
 </html>

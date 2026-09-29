@@ -1,4 +1,4 @@
-# ThreadWriter v0.10.2
+# ThreadWriter v0.10.3
 
 A small local-first dialogue editor for writing, revising, moving, and publishing conversation-heavy material, with chat, transcript, theater-draft, and screen-draft presentation styles.
 
@@ -37,6 +37,7 @@ A small local-first dialogue editor for writing, revising, moving, and publishin
 - Optional centered scene header for chapter names, dates/times, group names, scene labels, interstitials, etc.
 - Four simple header-font families: Rounded, Sans, Serif, and Mono
 - Conversation Styles: **Mobile Chat**, **Transcript**, **Theater Draft**, and **Screen Draft**
+- Conversation backgrounds can use solid colors, editable 2–4 color gradients, quick presets, stop reordering, and one-click gradient reversal
 - Unified PNG/JPEG/TIFF image export for screen, high-resolution, print, or custom-width conversation graphics, with optional grayscale and smart splitting
 - Two `.docx` export modes with no external libraries: Portable transcript and Rich layout
 - Plain `.txt` transcript export
@@ -62,6 +63,15 @@ python -m http.server 8000
 Then open `http://localhost:8000/` in your browser. Service-worker/offline installation features require HTTP/HTTPS rather than `file://`.
 
 GitHub Pages is also a good fit: place these files at the publishing root and add the resulting site to an iPhone/iPad Home Screen if desired.
+
+
+## New in v0.10.3
+
+- Added eight editable **Conversation Background presets**: Spectrum, Steel, Terminal, Ocean, Sunset, Twilight, Paper, and Midnight. Presets are generic visual recipes rather than replicas of specific apps.
+- Gradient color stops can now be reordered with simple left/right controls; unavailable moves disable automatically at the ends of the active stop list.
+- Added **Flip gradient**, which reverses the active 2–4 color stop order without changing the gradient direction.
+- Presets only populate the existing background controls, so their colors, count, and direction can be customized immediately after selection.
+- Background preset and stop-order controls are responsive on phone layouts and require no change to the saved document format.
 
 
 ## New in v0.10.2
