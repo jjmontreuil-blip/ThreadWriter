@@ -3304,6 +3304,18 @@
     return Math.max(1, lines.length) * 25;
   }
 
+
+  function drawImageCover(ctx, source, dx, dy, dWidth, dHeight) {
+    const sw = Number(source?.naturalWidth || source?.videoWidth || source?.width) || 1;
+    const sh = Number(source?.naturalHeight || source?.videoHeight || source?.height) || 1;
+    const scale = Math.max(dWidth / sw, dHeight / sh);
+    const sWidth = dWidth / scale;
+    const sHeight = dHeight / scale;
+    const sx = Math.max(0, (sw - sWidth) / 2);
+    const sy = Math.max(0, (sh - sHeight) / 2);
+    ctx.drawImage(source, sx, sy, sWidth, sHeight, dx, dy, dWidth, dHeight);
+  }
+
   function paintPngLinkPreview(ctx, previewValue, x, y, width, draw = false, imageMap = new Map()) {
     const preview = normalizeLinkPreview(previewValue);
     if (!preview) return 0;
@@ -3336,7 +3348,7 @@
       let tx = x + pad;
       if (preview.thumbnail) {
         const source = imageMap.get(preview.thumbnail.id);
-        if (source) ctx.drawImage(source, tx, y + pad, thumbW, thumbH);
+        if (source) drawImageCover(ctx, source, tx, y + pad, thumbW, thumbH);
         else { ctx.fillStyle = '#e5e5ea'; ctx.fillRect(tx, y + pad, thumbW, thumbH); }
         tx += thumbW + gap;
       }
