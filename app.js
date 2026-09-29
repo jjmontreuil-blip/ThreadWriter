@@ -1,5 +1,5 @@
 (() => {
-  const APP_VERSION = '0.10.1';
+  const APP_VERSION = '0.10.2';
   const LEGACY_STORAGE_KEY = 'threadwriter.project.v1';
   const LIBRARY_KEY = 'threadwriter.library.v1';
   const DOCUMENT_PREFIX = 'threadwriter.document.v1.';
@@ -17,6 +17,7 @@
     sceneHeader: '',
     headerFont: 'rounded',
     conversationStyle: 'chat',
+    conversationBackground: { mode: 'default', solid: '#f4f4f7', colors: ['#f4f4f7', '#d9e6ff'], direction: 'vertical' },
     activeParticipantId: 'p1',
     participants: [
       { id: 'p1', name: 'Participant 1', side: 'left', color: '#d9e6ff' },
@@ -53,6 +54,7 @@
     runtimeVersion: document.getElementById('runtimeVersion'),
     projectContext: document.getElementById('projectContext'),
     thread: document.getElementById('thread'),
+    conversationCanvas: document.getElementById('conversationCanvas'),
     speakerStrip: document.getElementById('speakerStrip'),
     composer: document.getElementById('composer'),
     wordCount: document.getElementById('wordCount'),
@@ -68,6 +70,24 @@
     narrativeBtn: document.getElementById('narrativeBtn'),
     quickNarrativeBtn: document.getElementById('quickNarrativeBtn'),
     conversationStyle: document.getElementById('conversationStyle'),
+    backgroundBtn: document.getElementById('backgroundBtn'),
+    backgroundDialog: document.getElementById('backgroundDialog'),
+    closeBackgroundDialogBtn: document.getElementById('closeBackgroundDialogBtn'),
+    backgroundMode: document.getElementById('backgroundMode'),
+    backgroundSolidField: document.getElementById('backgroundSolidField'),
+    backgroundSolidColor: document.getElementById('backgroundSolidColor'),
+    backgroundColorCountField: document.getElementById('backgroundColorCountField'),
+    backgroundColorCount: document.getElementById('backgroundColorCount'),
+    backgroundDirectionField: document.getElementById('backgroundDirectionField'),
+    backgroundDirection: document.getElementById('backgroundDirection'),
+    backgroundColors: document.getElementById('backgroundColors'),
+    backgroundColor1: document.getElementById('backgroundColor1'),
+    backgroundColor2: document.getElementById('backgroundColor2'),
+    backgroundColor3: document.getElementById('backgroundColor3'),
+    backgroundColor4: document.getElementById('backgroundColor4'),
+    backgroundPreview: document.getElementById('backgroundPreview'),
+    resetBackgroundBtn: document.getElementById('resetBackgroundBtn'),
+    saveBackgroundBtn: document.getElementById('saveBackgroundBtn'),
     findBtn: document.getElementById('findBtn'),
     saveAsBtn: document.getElementById('saveAsBtn'),
     historyBtn: document.getElementById('historyBtn'),
@@ -302,6 +322,65 @@
     if (thumbnail) preview.thumbnail = thumbnail;
     if (!preview.site && !preview.title && !preview.description && !preview.displayUrl && !preview.thumbnail) return null;
     return preview;
+  }
+
+
+  function normalizeConversationStyle(value) {
+    return ['chat', 'transcript', 'theater', 'screen'].includes(value) ? value : 'chat';
+  }
+
+  function normalizeHex(value, fallback = '#f4f4f7') {
+    const raw = String(value || '').trim();
+    if (!/^#?[0-9a-fA-F]{6}$/.test(raw)) return fallback;
+    return (raw.startsWith('#') ? raw : `#${raw}`).toLowerCase();
+  }
+
+  function normalizeConversationBackground(value) {
+    const fallback = defaultState().conversationBackground;
+    if (!value || typeof value !== 'object') return { ...fallback, colors: [...fallback.colors] };
+    const mode = ['default', 'solid', 'gradient'].includes(value.mode) ? value.mode : 'default';
+    const direction = ['vertical', 'horizontal', 'diag-right', 'diag-left'].includes(value.direction) ? value.direction : 'vertical';
+    const rawColors = Array.isArray(value.colors) ? value.colors : fallback.colors;
+    const colors = rawColors.slice(0, 4).map((color, index) => normalizeHex(color, fallback.colors[index] || fallback.colors[0]));
+    while (colors.length < 2) colors.push(fallback.colors[colors.length] || fallback.colors[0]);
+    return {
+      mode,
+      solid: normalizeHex(value.solid, fallback.solid),
+      colors,
+      direction
+    };
+  }
+
+  function backgroundDirectionCss(direction) {
+    return ({ vertical: 'to bottom', horizontal: 'to right', 'diag-right': 'to bottom right', 'diag-left': 'to bottom left' })[direction] || 'to bottom';
+  }
+
+  function backgroundDirectionPoints(direction, width, height) {
+    if (direction === 'horizontal') return [0, 0, width, 0];
+    if (direction === 'diag-right') return [0, 0, width, height];
+    if (direction === 'diag-left') return [width, 0, 0, height];
+    return [0, 0, 0, height];
+  }
+
+  function conversationBackgroundCss(backgroundValue = state.conversationBackground) {
+    const background = normalizeConversationBackground(backgroundValue);
+    if (background.mode === 'solid') return background.solid;
+    if (background.mode === 'gradient') return `linear-gradient(${backgroundDirectionCss(background.direction)}, ${background.colors.join(', ')})`;
+    return '';
+  }
+
+  function hexLuminance(hex) {
+    const value = normalizeHex(hex, '#f4f4f7').slice(1);
+    const channels = [0, 2, 4].map(index => parseInt(value.slice(index, index + 2), 16) / 255).map(channel => channel <= 0.03928 ? channel / 12.92 : Math.pow((channel + 0.055) / 1.055, 2.4));
+    return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
+  }
+
+  function customBackgroundIsDark(backgroundValue = state.conversationBackground) {
+    const background = normalizeConversationBackground(backgroundValue);
+    if (background.mode === 'default') return false;
+    const colors = background.mode === 'solid' ? [background.solid] : background.colors;
+    const average = colors.reduce((sum, color) => sum + hexLuminance(color), 0) / Math.max(1, colors.length);
+    return average < 0.28;
   }
 
   function imageIdsForState(project) {
@@ -842,7 +921,8 @@
       title: typeof project.title === 'string' ? project.title : base.title,
       sceneHeader: typeof project.sceneHeader === 'string' ? project.sceneHeader : '',
       headerFont: allowedFonts.has(project.headerFont) ? project.headerFont : 'rounded',
-      conversationStyle: project.conversationStyle === 'transcript' ? 'transcript' : 'chat',
+      conversationStyle: normalizeConversationStyle(project.conversationStyle),
+      conversationBackground: normalizeConversationBackground(project.conversationBackground),
       activeParticipantId: project.activeParticipantId || fallbackSpeakerId,
       participants,
       messages: project.messages.map((m, index) => {
@@ -1147,10 +1227,21 @@
     }
   }
 
+  function applyConversationPresentation() {
+    const background = normalizeConversationBackground(state.conversationBackground);
+    state.conversationBackground = background;
+    if (!els.conversationCanvas) return;
+    const css = conversationBackgroundCss(background);
+    els.conversationCanvas.style.background = css || '';
+    els.conversationCanvas.classList.toggle('custom-background', background.mode !== 'default');
+    els.conversationCanvas.classList.toggle('custom-background-dark', background.mode !== 'default' && customBackgroundIsDark(background));
+  }
+
   function render() {
     ensureActiveParticipant();
     els.title.value = state.title || 'Untitled Thread';
     els.conversationStyle.value = state.conversationStyle || 'chat';
+    applyConversationPresentation();
     renderSpeakers();
     renderThread();
     updateWordCount();
@@ -1253,7 +1344,7 @@
   function renderThread() {
     updateWordCount();
     els.thread.innerHTML = '';
-    els.thread.classList.toggle('style-transcript', state.conversationStyle === 'transcript');
+    ['transcript', 'theater', 'screen'].forEach(style => els.thread.classList.toggle(`style-${style}`, state.conversationStyle === style));
 
     if (state.sceneHeader) {
       const header = document.createElement('div');
@@ -1395,7 +1486,7 @@
 
       const previous = state.messages[index - 1];
       const continuesSpeaker = isMessage(previous) && previous?.speakerId === item.speakerId;
-      const showSpeakerLabel = state.conversationStyle === 'transcript' || !continuesSpeaker;
+      const showSpeakerLabel = state.conversationStyle !== 'chat' || !continuesSpeaker;
 
       const row = document.createElement('article');
       row.className = `message-row ${p.side}${continuesSpeaker ? ' continuation' : ' speaker-start'}${item.displayTimestamp ? ' timestamped' : ''}`;
@@ -2033,10 +2124,74 @@
   });
 
   els.conversationStyle.addEventListener('change', () => {
-    state.conversationStyle = els.conversationStyle.value === 'transcript' ? 'transcript' : 'chat';
+    state.conversationStyle = normalizeConversationStyle(els.conversationStyle.value);
     scheduleSave();
     renderThread();
     closeTopMenus();
+  });
+
+  function backgroundDraftFromControls() {
+    const count = Math.min(4, Math.max(2, Number(els.backgroundColorCount?.value) || 2));
+    const colors = [els.backgroundColor1, els.backgroundColor2, els.backgroundColor3, els.backgroundColor4]
+      .slice(0, count)
+      .map((input, index) => normalizeHex(input?.value, ['#f4f4f7', '#d9e6ff', '#c9f2d0', '#f6d6ff'][index]));
+    return normalizeConversationBackground({
+      mode: els.backgroundMode?.value || 'default',
+      solid: els.backgroundSolidColor?.value || '#f4f4f7',
+      colors,
+      direction: els.backgroundDirection?.value || 'vertical'
+    });
+  }
+
+  function updateBackgroundDialogPreview() {
+    if (!els.backgroundMode) return;
+    const mode = els.backgroundMode.value;
+    if (els.backgroundSolidField) els.backgroundSolidField.hidden = mode !== 'solid';
+    if (els.backgroundColorCountField) els.backgroundColorCountField.hidden = mode !== 'gradient';
+    if (els.backgroundDirectionField) els.backgroundDirectionField.hidden = mode !== 'gradient';
+    if (els.backgroundColors) els.backgroundColors.hidden = mode !== 'gradient';
+    const count = Math.min(4, Math.max(2, Number(els.backgroundColorCount?.value) || 2));
+    [els.backgroundColor1, els.backgroundColor2, els.backgroundColor3, els.backgroundColor4].forEach((input, index) => {
+      const label = input?.closest('label');
+      if (label) label.hidden = mode !== 'gradient' || index >= count;
+    });
+    if (els.backgroundPreview) {
+      const draft = backgroundDraftFromControls();
+      els.backgroundPreview.style.background = conversationBackgroundCss(draft) || 'var(--bg)';
+      els.backgroundPreview.classList.toggle('dark-preview', draft.mode !== 'default' && customBackgroundIsDark(draft));
+    }
+  }
+
+  function openBackgroundDialog() {
+    const background = normalizeConversationBackground(state.conversationBackground);
+    els.backgroundMode.value = background.mode;
+    els.backgroundSolidColor.value = background.solid;
+    els.backgroundColorCount.value = String(Math.min(4, Math.max(2, background.colors.length)));
+    els.backgroundDirection.value = background.direction;
+    const inputs = [els.backgroundColor1, els.backgroundColor2, els.backgroundColor3, els.backgroundColor4];
+    const defaults = ['#f4f4f7', '#d9e6ff', '#c9f2d0', '#f6d6ff'];
+    inputs.forEach((input, index) => { if (input) input.value = background.colors[index] || defaults[index]; });
+    updateBackgroundDialogPreview();
+    els.backgroundDialog.showModal();
+  }
+
+  function closeBackgroundDialog() {
+    if (els.backgroundDialog?.open) els.backgroundDialog.close();
+  }
+
+  els.backgroundBtn?.addEventListener('click', () => { closeTopMenus(); openBackgroundDialog(); });
+  els.closeBackgroundDialogBtn?.addEventListener('click', closeBackgroundDialog);
+  els.backgroundDialog?.addEventListener('cancel', event => { event.preventDefault(); closeBackgroundDialog(); });
+  [els.backgroundMode, els.backgroundSolidColor, els.backgroundColorCount, els.backgroundDirection, els.backgroundColor1, els.backgroundColor2, els.backgroundColor3, els.backgroundColor4].forEach(control => control?.addEventListener('input', updateBackgroundDialogPreview));
+  els.resetBackgroundBtn?.addEventListener('click', () => {
+    els.backgroundMode.value = 'default';
+    updateBackgroundDialogPreview();
+  });
+  els.saveBackgroundBtn?.addEventListener('click', () => {
+    state.conversationBackground = backgroundDraftFromControls();
+    scheduleSave();
+    applyConversationPresentation();
+    closeBackgroundDialog();
   });
 
   function findFieldValue(item, field) {
@@ -3296,7 +3451,8 @@
     ctx.font = '400 18px Arial, sans-serif';
     const lines = wrapCanvasText(ctx, text, Math.max(120, maxWidth));
     if (draw) {
-      ctx.fillStyle = '#5f5f68';
+      const background = normalizeConversationBackground(state.conversationBackground);
+      ctx.fillStyle = background.mode !== 'default' && customBackgroundIsDark(background) ? '#dedee6' : '#5f5f68';
       ctx.textAlign = align;
       lines.forEach((line, lineIndex) => ctx.fillText(line, x, y + lineIndex * 25));
       ctx.textAlign = 'left';
@@ -3371,6 +3527,15 @@
     const right = 72;
     const contentWidth = W - left - right;
     const maxBubbleWidth = contentWidth * 0.67;
+    const style = normalizeConversationStyle(state.conversationStyle);
+    const plainDraft = style !== 'chat';
+    const transcript = style === 'transcript';
+    const theater = style === 'theater';
+    const screen = style === 'screen';
+    const customBackground = normalizeConversationBackground(state.conversationBackground).mode !== 'default';
+    const darkBackground = customBackground && customBackgroundIsDark(state.conversationBackground);
+    const canvasText = darkBackground ? '#f7f7fa' : '#17171b';
+    const canvasMuted = darkBackground ? '#dedee6' : '#666670';
     let y = 64;
 
     ctx.textBaseline = 'top';
@@ -3379,7 +3544,7 @@
     ctx.font = '700 36px "Trebuchet MS", Arial, sans-serif';
     const titleLines = wrapCanvasText(ctx, state.title || 'Untitled Thread', contentWidth);
     if (draw) {
-      ctx.fillStyle = '#17171b';
+      ctx.fillStyle = canvasText;
       titleLines.forEach((line, index) => ctx.fillText(line, left, y + index * 44));
     }
     y += titleLines.length * 44 + 30;
@@ -3388,7 +3553,7 @@
       ctx.font = headerCanvasFont(29, 700);
       const headerLines = wrapCanvasText(ctx, state.sceneHeader, contentWidth - 120);
       if (draw) {
-        ctx.fillStyle = '#292930';
+        ctx.fillStyle = darkBackground ? '#f2f2f7' : '#292930';
         ctx.textAlign = 'center';
         headerLines.forEach((line, index) => ctx.fillText(line, W / 2, y + index * 38));
         ctx.textAlign = 'left';
@@ -3397,23 +3562,23 @@
     }
 
     state.messages.forEach((item, index) => {
-      const transcript = state.conversationStyle === 'transcript';
-
       if (isNarrative(item)) {
         if (index > 0) y += 26;
         ctx.font = 'italic 500 22px Georgia, "Times New Roman", serif';
-        const lines = wrapCanvasText(ctx, item.text, contentWidth * 0.78);
+        const narrativeWidth = theater ? contentWidth * 0.76 : (screen ? contentWidth * 0.72 : contentWidth * 0.78);
+        const lines = wrapCanvasText(ctx, item.text, narrativeWidth);
+        const narrativeX = theater ? left + contentWidth * 0.08 : (screen ? (W - narrativeWidth) / 2 : W / 2);
         if (draw) {
-          ctx.fillStyle = '#666670';
-          ctx.textAlign = 'center';
-          lines.forEach((line, lineIndex) => ctx.fillText(line, W / 2, y + lineIndex * 31));
+          ctx.fillStyle = canvasMuted;
+          ctx.textAlign = theater || screen ? 'left' : 'center';
+          lines.forEach((line, lineIndex) => ctx.fillText(line, narrativeX, y + lineIndex * 31));
           ctx.textAlign = 'left';
         }
         y += Math.max(1, lines.length) * 31 + 10;
         if (item.imageAttachment) {
           const box = fitImageBox(item.imageAttachment, contentWidth * 0.68, 680);
           y += 8;
-          const x = (W - box.width) / 2;
+          const x = theater ? left + contentWidth * 0.08 : (W - box.width) / 2;
           if (draw && box.width && box.height) {
             const source = imageMap.get(item.imageAttachment.id);
             if (source) {
@@ -3439,7 +3604,8 @@
         if (item.linkPreview) {
           y += 8;
           const previewWidth = Math.min(620, contentWidth * 0.72);
-          y += paintPngLinkPreview(ctx, item.linkPreview, (W - previewWidth) / 2, y, previewWidth, draw, imageMap);
+          const previewX = theater ? left + contentWidth * 0.08 : (W - previewWidth) / 2;
+          y += paintPngLinkPreview(ctx, item.linkPreview, previewX, y, previewWidth, draw, imageMap);
           y += 10;
         }
         y += 12;
@@ -3453,18 +3619,23 @@
       const continues = isMessage(previous) && previous?.speakerId === item.speakerId;
 
       if (item.displayTimestamp && index > 0) y += 26;
-      else if (index > 0) y += transcript ? 18 : (continues ? 8 : 18);
+      else if (index > 0) y += plainDraft ? 18 : (continues ? 8 : 18);
 
       const side = participant.side === 'right' ? 'right' : 'left';
-      const showSpeaker = transcript || !continues;
+      const showSpeaker = plainDraft || !continues;
 
       if (showSpeaker) {
-        ctx.font = transcript ? '800 16px Arial, sans-serif' : '600 17px Arial, sans-serif';
-        const name = transcript ? participant.name.toLocaleUpperCase() : participant.name;
+        ctx.font = plainDraft ? '800 16px Arial, sans-serif' : '600 17px Arial, sans-serif';
+        const name = plainDraft ? participant.name.toLocaleUpperCase() : participant.name;
         if (draw) {
-          ctx.fillStyle = '#6d6d78';
-          ctx.textAlign = transcript || side === 'left' ? 'left' : 'right';
-          ctx.fillText(name, transcript || side === 'left' ? left : W - right, y);
+          ctx.fillStyle = darkBackground ? '#dedee6' : '#6d6d78';
+          if (theater || screen) {
+            ctx.textAlign = 'center';
+            ctx.fillText(name, W / 2, y);
+          } else {
+            ctx.textAlign = transcript || side === 'left' ? 'left' : 'right';
+            ctx.fillText(name, transcript || side === 'left' ? left : W - right, y);
+          }
           ctx.textAlign = 'left';
         }
         y += 23;
@@ -3473,9 +3644,14 @@
       if (item.displayTimestamp) {
         ctx.font = '500 15px Arial, sans-serif';
         if (draw) {
-          ctx.fillStyle = '#777780';
-          ctx.textAlign = transcript || side === 'left' ? 'left' : 'right';
-          ctx.fillText(item.displayTimestamp, transcript || side === 'left' ? left : W - right, y);
+          ctx.fillStyle = darkBackground ? '#d6d6de' : '#777780';
+          if (theater || screen) {
+            ctx.textAlign = 'center';
+            ctx.fillText(item.displayTimestamp, W / 2, y);
+          } else {
+            ctx.textAlign = transcript || side === 'left' ? 'left' : 'right';
+            ctx.fillText(item.displayTimestamp, transcript || side === 'left' ? left : W - right, y);
+          }
           ctx.textAlign = 'left';
         }
         y += 22;
@@ -3484,12 +3660,16 @@
       ctx.font = '400 26px Arial, sans-serif';
       let annotationAnchorX = left;
       let annotationMaxWidth = contentWidth - 10;
-      if (transcript) {
-        const lines = wrapCanvasText(ctx, item.text, contentWidth - 10);
+      if (plainDraft) {
+        const textWidth = screen ? contentWidth * 0.62 : contentWidth - 10;
+        const textX = screen ? (W - textWidth) / 2 : left;
+        const lines = wrapCanvasText(ctx, item.text, textWidth);
         if (draw) {
-          ctx.fillStyle = '#17171b';
-          lines.forEach((line, lineIndex) => ctx.fillText(line, left, y + lineIndex * 35));
+          ctx.fillStyle = canvasText;
+          lines.forEach((line, lineIndex) => ctx.fillText(line, textX, y + lineIndex * 35));
         }
+        annotationAnchorX = textX;
+        annotationMaxWidth = textWidth;
         y += Math.max(1, lines.length) * 35;
       } else {
         const padX = 20;
@@ -3515,9 +3695,9 @@
 
       if (item.imageAttachment) {
         y += 10;
-        const imageMaxWidth = transcript ? Math.min(620, contentWidth) : Math.min(620, maxBubbleWidth);
+        const imageMaxWidth = plainDraft ? Math.min(620, screen ? contentWidth * 0.72 : contentWidth) : Math.min(620, maxBubbleWidth);
         const box = fitImageBox(item.imageAttachment, imageMaxWidth, 720);
-        const imageX = transcript || side === 'left' ? left : W - right - box.width;
+        const imageX = screen ? (W - box.width) / 2 : (plainDraft || side === 'left' ? left : W - right - box.width);
         if (draw && box.width && box.height) {
           const source = imageMap.get(item.imageAttachment.id);
           if (source) {
@@ -3537,7 +3717,7 @@
         y += box.height;
         if (item.imageAttachment.caption) {
           y += 8;
-          const captionAlign = transcript || side === 'left' ? 'left' : 'right';
+          const captionAlign = plainDraft || side === 'left' ? 'left' : 'right';
           const captionX = captionAlign === 'right' ? imageX + box.width : imageX;
           y += paintPngImageCaption(ctx, item.imageAttachment.caption, captionX, y, box.width, captionAlign, draw);
         }
@@ -3545,8 +3725,8 @@
 
       if (item.linkPreview) {
         y += 10;
-        const previewWidth = transcript ? Math.min(650, contentWidth) : Math.min(620, maxBubbleWidth);
-        const previewX = transcript || side === 'left' ? left : W - right - previewWidth;
+        const previewWidth = plainDraft ? Math.min(650, screen ? contentWidth * 0.72 : contentWidth) : Math.min(620, maxBubbleWidth);
+        const previewX = screen ? (W - previewWidth) / 2 : (plainDraft || side === 'left' ? left : W - right - previewWidth);
         y += paintPngLinkPreview(ctx, item.linkPreview, previewX, y, previewWidth, draw, imageMap);
         annotationMaxWidth = Math.max(annotationMaxWidth, previewWidth);
       }
@@ -3556,8 +3736,8 @@
         ctx.font = 'italic 500 18px Arial, sans-serif';
         const lines = wrapCanvasText(ctx, item.annotation, Math.max(120, annotationMaxWidth));
         if (draw) {
-          ctx.fillStyle = '#686872';
-          ctx.textAlign = transcript || side === 'left' ? 'left' : 'right';
+          ctx.fillStyle = darkBackground ? '#dedee6' : '#686872';
+          ctx.textAlign = plainDraft || side === 'left' ? 'left' : 'right';
           lines.forEach((line, lineIndex) => ctx.fillText(line, annotationAnchorX, y + lineIndex * 25));
           ctx.textAlign = 'left';
         }
@@ -3797,6 +3977,22 @@
     return parts;
   }
 
+  function paintRasterConversationBackground(ctx, width, height) {
+    const background = normalizeConversationBackground(state.conversationBackground);
+    if (background.mode === 'solid') {
+      ctx.fillStyle = background.solid;
+    } else if (background.mode === 'gradient') {
+      const [x0, y0, x1, y1] = backgroundDirectionPoints(background.direction, width, height);
+      const gradient = ctx.createLinearGradient(x0, y0, x1, y1);
+      const colors = background.colors.length >= 2 ? background.colors : ['#f4f4f7', '#d9e6ff'];
+      colors.forEach((color, index) => gradient.addColorStop(colors.length === 1 ? 0 : index / (colors.length - 1), color));
+      ctx.fillStyle = gradient;
+    } else {
+      ctx.fillStyle = normalizeConversationStyle(state.conversationStyle) === 'chat' ? '#f4f4f7' : '#ffffff';
+    }
+    ctx.fillRect(0, 0, width, height);
+  }
+
   async function renderThreadImagePart(segment, settings, imageMap) {
     const scale = settings.targetWidth / 1080;
     const logicalHeight = Math.max(1, segment.end - segment.start);
@@ -3804,8 +4000,7 @@
     canvas.width = settings.targetWidth;
     canvas.height = Math.max(1, Math.ceil(logicalHeight * scale));
     const ctx = canvas.getContext('2d');
-    ctx.fillStyle = state.conversationStyle === 'transcript' ? '#ffffff' : '#f4f4f7';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    paintRasterConversationBackground(ctx, canvas.width, canvas.height);
     ctx.save();
     ctx.scale(scale, scale);
     ctx.translate(0, -segment.start);
@@ -3925,7 +4120,14 @@
 
   async function buildHtmlExport() {
     const mediaMap = await mediaDataUrlsForState(state);
-    const transcript = state.conversationStyle === 'transcript';
+    const style = normalizeConversationStyle(state.conversationStyle);
+    const plainDraft = style !== 'chat';
+    const background = normalizeConversationBackground(state.conversationBackground);
+    const customBackground = background.mode !== 'default';
+    const darkBackground = customBackground && customBackgroundIsDark(background);
+    const backgroundCss = conversationBackgroundCss(background) || (style === 'chat' ? '#f4f4f7' : '#ffffff');
+    const documentText = darkBackground ? '#f7f7fa' : '#17171b';
+    const documentMuted = darkBackground ? '#dedee6' : '#6d6d78';
     const body = [];
     let previousSpeaker = null;
     for (const item of state.messages) {
@@ -3938,13 +4140,14 @@
       if (!p) continue;
       const continues = previousSpeaker === item.speakerId;
       const side = p.side === 'right' ? 'right' : 'left';
-      const showSpeaker = transcript || !continues;
-      const speaker = showSpeaker ? `<div class="speaker">${htmlEscape(transcript ? p.name.toLocaleUpperCase() : p.name)}</div>` : '';
+      const showSpeaker = plainDraft || !continues;
+      const speaker = showSpeaker ? `<div class="speaker">${htmlEscape(plainDraft ? p.name.toLocaleUpperCase() : p.name)}</div>` : '';
       const timestamp = item.displayTimestamp ? `<div class="timestamp">${htmlEscape(item.displayTimestamp)}</div>` : '';
-      const bubbleStyle = transcript ? '' : ` style="--bubble:${htmlEscape(p.color || '#e5e5ea')}"`;
+      const bubbleStyle = plainDraft ? '' : ` style="--bubble:${htmlEscape(p.color || '#e5e5ea')}"`;
       const bubble = `<div class="bubble"${bubbleStyle}>${htmlMultiline(item.text)}</div>`;
       const annotation = item.annotation ? `<div class="annotation">${htmlMultiline(item.annotation)}</div>` : '';
-      body.push(`<section class="message ${side}${continues && !transcript ? ' continuation' : ''}"><div class="message-card">${speaker}${timestamp}${bubble}${htmlAttachment(item.imageAttachment, mediaMap, side)}${htmlLinkPreview(item.linkPreview, mediaMap, side)}${annotation}</div></section>`);
+      const mediaAlign = style === 'screen' ? 'center' : (plainDraft ? 'left' : side);
+      body.push(`<section class="message ${side}${continues && !plainDraft ? ' continuation' : ''}"><div class="message-card">${speaker}${timestamp}${bubble}${htmlAttachment(item.imageAttachment, mediaMap, mediaAlign)}${htmlLinkPreview(item.linkPreview, mediaMap, mediaAlign)}${annotation}</div></section>`);
       previousSpeaker = item.speakerId;
     }
     const sceneHeader = state.sceneHeader ? `<div class="scene-header ${htmlEscape(state.headerFont || 'rounded')}">${htmlMultiline(state.sceneHeader)}</div>` : '';
@@ -3956,10 +4159,10 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${title}</title>
 <style>
-*{box-sizing:border-box}body{margin:0;background:${transcript ? '#fff' : '#f4f4f7'};color:#17171b;font-family:ui-rounded,"SF Pro Rounded","Segoe UI",system-ui,-apple-system,sans-serif}.document{width:min(100%,820px);margin:0 auto;padding:34px 18px 60px}h1{font-size:28px;margin:0 0 24px}.scene-header{text-align:center;font-weight:720;font-size:21px;line-height:1.3;margin:0 auto 30px;white-space:pre-wrap}.scene-header.serif{font-family:Georgia,"Times New Roman",serif}.scene-header.mono{font-family:ui-monospace,Consolas,monospace}.message{display:flex;margin:11px 0}.message.continuation{margin-top:-7px}.message.left{justify-content:flex-start}.message.right{justify-content:flex-end}.message-card{max-width:${transcript ? '100%' : '67%'}}.speaker{font-size:12px;color:#6d6d78;margin:0 10px 4px}.right .speaker,.right .timestamp,.right .annotation,.right figcaption{text-align:right}.timestamp{font-size:10.5px;color:#777780;margin:0 10px 4px}.bubble{background:${transcript ? 'transparent' : 'var(--bubble,#e5e5ea)'};padding:${transcript ? '0' : '10px 13px'};border-radius:${transcript ? '0' : '18px'};line-height:1.42;white-space:pre-wrap;overflow-wrap:anywhere}.annotation{margin:7px 10px 0;color:#686872;font-size:12px;font-style:italic;line-height:1.4}.narrative{width:min(78%,680px);margin:24px auto;text-align:center;color:#666670;font:italic 14px/1.5 Georgia,"Times New Roman",serif}.attachment{margin:9px 0 0;max-width:610px}.attachment.center{margin-left:auto;margin-right:auto}.attachment.right{margin-left:auto}.attachment img{display:block;max-width:100%;max-height:70vh;border-radius:12px}.attachment figcaption{margin-top:6px;color:#686872;font-size:12px;line-height:1.4}.attachment.right img{margin-left:auto}.attachment.center img{margin-left:auto;margin-right:auto}.link-preview{display:flex;gap:12px;margin-top:10px;max-width:620px;padding:12px;border:1px solid #d8d8df;border-radius:14px;background:#f7f7f9;font-family:ui-rounded,"Segoe UI",system-ui,sans-serif;text-align:left}.link-preview.right{margin-left:auto}.link-preview.center{margin-left:auto;margin-right:auto}.preview-thumb{width:min(31%,150px);object-fit:cover;align-self:stretch;max-height:130px}.preview-copy{min-width:0}.preview-site,.preview-url{font-size:11px;color:#777780}.preview-title{font-size:16px;font-weight:750;line-height:1.28;margin:3px 0}.preview-description{font-size:13px;color:#555560;line-height:1.35;margin:3px 0}.missing-image{padding:20px;background:#e5e5ea;color:#686872;text-align:center;border-radius:12px}.transcript .message{justify-content:flex-start}.transcript .message-card{width:100%;max-width:100%}.transcript .right .speaker,.transcript .right .timestamp,.transcript .right .annotation,.transcript .right figcaption{text-align:left}.transcript .attachment.right,.transcript .link-preview.right{margin-left:0;margin-right:auto}@media(max-width:600px){.document{padding:24px 12px 42px}.message-card{max-width:${transcript ? '100%' : '78%'}.attachment,.link-preview{max-width:100%}}@media print{@page{margin:.55in}body{background:#fff}.document{width:100%;padding:0}.message-card,.narrative,.attachment,.link-preview{break-inside:avoid}.bubble{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+*{box-sizing:border-box}body{margin:0;background:${backgroundCss};color:${documentText};font-family:ui-rounded,"SF Pro Rounded","Segoe UI",system-ui,-apple-system,sans-serif}.document{width:min(100%,820px);margin:0 auto;padding:34px 18px 60px}h1{font-size:28px;margin:0 0 24px}.scene-header{text-align:center;font-weight:720;font-size:21px;line-height:1.3;margin:0 auto 30px;white-space:pre-wrap}.scene-header.serif{font-family:Georgia,"Times New Roman",serif}.scene-header.mono{font-family:ui-monospace,Consolas,monospace}.message{display:flex;margin:11px 0}.message.continuation{margin-top:-7px}.message.left{justify-content:flex-start}.message.right{justify-content:flex-end}.message-card{max-width:${plainDraft ? '100%' : '67%'}}.speaker{font-size:12px;color:${documentMuted};margin:0 10px 4px}.right .speaker,.right .timestamp,.right .annotation,.right figcaption{text-align:right}.timestamp{font-size:10.5px;color:${documentMuted};margin:0 10px 4px}.bubble{background:${plainDraft ? 'transparent' : 'var(--bubble,#e5e5ea)'};padding:${plainDraft ? '0' : '10px 13px'};border-radius:${plainDraft ? '0' : '18px'};color:${plainDraft ? documentText : '#151518'};line-height:1.42;white-space:pre-wrap;overflow-wrap:anywhere}.annotation{margin:7px 10px 0;color:${documentMuted};font-size:12px;font-style:italic;line-height:1.4}.narrative{width:min(78%,680px);margin:24px auto;color:${documentMuted};font:italic 14px/1.5 Georgia,"Times New Roman",serif}.narrative-text{text-align:center}.attachment{margin:9px 0 0;max-width:610px}.attachment.center{margin-left:auto;margin-right:auto}.attachment.right{margin-left:auto}.attachment img{display:block;max-width:100%;max-height:70vh;border-radius:12px}.attachment figcaption{margin-top:6px;color:${documentMuted};font-size:12px;line-height:1.4}.attachment.right img{margin-left:auto}.attachment.center img{margin-left:auto;margin-right:auto}.link-preview{display:flex;gap:12px;margin-top:10px;max-width:620px;padding:12px;border:1px solid #d8d8df;border-radius:14px;background:#f7f7f9;color:#17171b;font-family:ui-rounded,"Segoe UI",system-ui,sans-serif;text-align:left}.link-preview.right{margin-left:auto}.link-preview.center{margin-left:auto;margin-right:auto}.preview-thumb{width:min(31%,150px);object-fit:cover;align-self:stretch;max-height:130px}.preview-copy{min-width:0}.preview-site,.preview-url{font-size:11px;color:#777780}.preview-title{font-size:16px;font-weight:750;line-height:1.28;margin:3px 0}.preview-description{font-size:13px;color:#555560;line-height:1.35;margin:3px 0}.missing-image{padding:20px;background:#e5e5ea;color:#686872;text-align:center;border-radius:12px}.transcript .message,.theater .message,.screen .message{justify-content:flex-start;margin:18px 0}.transcript .message-card,.theater .message-card,.screen .message-card{width:100%;max-width:100%}.transcript .right .speaker,.transcript .right .timestamp,.transcript .right .annotation,.transcript .right figcaption,.theater .right .annotation,.screen .right .annotation{text-align:left}.transcript .attachment.right,.transcript .link-preview.right,.theater .attachment.right,.theater .link-preview.right{margin-left:0;margin-right:auto}.theater .speaker,.screen .speaker{text-align:center!important;text-transform:uppercase;font-weight:800;letter-spacing:.07em}.theater .timestamp,.screen .timestamp{text-align:center!important}.theater .bubble{text-align:left}.theater .narrative{margin-left:8%;margin-right:auto}.theater .narrative-text{text-align:left}.screen .bubble{width:min(62%,520px);margin:0 auto;text-align:left}.screen .annotation{width:min(62%,520px);margin-left:auto;margin-right:auto;text-align:left!important}.screen .narrative{width:min(76%,650px)}.screen .narrative-text{text-align:left}@media(max-width:600px){.document{padding:24px 12px 42px}.message-card{max-width:${plainDraft ? '100%' : '78%'}.attachment,.link-preview{max-width:100%}.screen .bubble,.screen .annotation{width:min(76%,520px)}}@media print{@page{margin:.55in}body{background:#fff!important;color:#17171b}.document{width:100%;padding:0}.message-card,.narrative,.attachment,.link-preview{break-inside:avoid}.bubble{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
 </style>
 </head>
-<body><main class="document ${transcript ? 'transcript' : 'chat'}"><h1>${title}</h1>${sceneHeader}${body.join('')}</main></body>
+<body><main class="document ${style}"><h1>${title}</h1>${sceneHeader}${body.join('')}</main></body>
 </html>`;
   }
 
@@ -4043,6 +4246,9 @@ ${imageRels}
       const br = index ? '<w:r><w:br/></w:r>' : '';
       return `${br}<w:r><w:rPr><w:i/><w:color w:val="666670"/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr><w:t xml:space="preserve">${xmlEscape(line)}</w:t></w:r>`;
     }).join('');
+    const style = normalizeConversationStyle(state.conversationStyle);
+    if (style === 'theater') return `<w:p><w:pPr><w:jc w:val="left"/><w:ind w:left="720" w:right="1080"/><w:spacing w:before="160" w:after="200"/></w:pPr>${runs}</w:p>`;
+    if (style === 'screen') return `<w:p><w:pPr><w:jc w:val="left"/><w:ind w:left="1080" w:right="1080"/><w:spacing w:before="160" w:after="200"/></w:pPr>${runs}</w:p>`;
     return `<w:p><w:pPr><w:jc w:val="center"/><w:spacing w:before="160" w:after="200"/></w:pPr>${runs}</w:p>`;
   }
 
@@ -4226,6 +4432,21 @@ ${imageRels}
 <w:p><w:pPr><w:spacing w:before="0" w:after="${message.annotation ? 35 : 90}"/></w:pPr>${richTextRuns(message.text)}</w:p>${annotation}`;
   }
 
+  function richDraftMessage(message, participant, style = 'theater', includeAnnotation = true) {
+    const name = (participant?.name || 'Unknown').toLocaleUpperCase();
+    const cue = `<w:p><w:pPr><w:jc w:val="center"/><w:spacing w:before="190" w:after="45"/></w:pPr><w:r><w:rPr><w:b/><w:color w:val="6D6D78"/><w:sz w:val="18"/><w:szCs w:val="18"/></w:rPr><w:t>${xmlEscape(name)}</w:t></w:r></w:p>`;
+    const timestamp = message.displayTimestamp ? `<w:p><w:pPr><w:jc w:val="center"/><w:spacing w:before="0" w:after="45"/></w:pPr><w:r><w:rPr><w:color w:val="7A7A84"/><w:sz w:val="16"/><w:szCs w:val="16"/></w:rPr><w:t>${xmlEscape(message.displayTimestamp)}</w:t></w:r></w:p>` : '';
+    const dialoguePr = style === 'screen'
+      ? '<w:pPr><w:ind w:left="1800" w:right="1800"/><w:spacing w:before="0" w:after="90"/></w:pPr>'
+      : '<w:pPr><w:spacing w:before="0" w:after="90"/></w:pPr>';
+    const annotation = includeAnnotation && message.annotation
+      ? (style === 'screen'
+        ? `<w:p><w:pPr><w:ind w:left="1800" w:right="1800"/><w:spacing w:before="0" w:after="180"/></w:pPr><w:r><w:rPr><w:i/><w:color w:val="6D6D78"/><w:sz w:val="19"/><w:szCs w:val="19"/></w:rPr><w:t xml:space="preserve">${xmlEscape(message.annotation)}</w:t></w:r></w:p>`
+        : wordAnnotationParagraph(message.annotation, 'left'))
+      : '';
+    return `${cue}${timestamp}<w:p>${dialoguePr}${richTextRuns(message.text)}</w:p>${annotation}`;
+  }
+
   async function prepareDocxImages(project) {
     const images = new Map();
     const mediaFiles = {};
@@ -4333,17 +4554,20 @@ ${imageRels}
       const previous = state.messages[index - 1];
       const continuesSpeaker = isMessage(previous) && previous?.speakerId === item.speakerId;
       const includeAnnotation = !imageInfo;
-      blocks.push(state.conversationStyle === 'transcript'
+      const docStyle = normalizeConversationStyle(state.conversationStyle);
+      blocks.push(docStyle === 'transcript'
         ? richTranscriptMessage(item, p, includeAnnotation)
-        : richMessageTable(item, p, continuesSpeaker, includeAnnotation));
+        : (docStyle === 'theater' || docStyle === 'screen'
+          ? richDraftMessage(item, p, docStyle, includeAnnotation)
+          : richMessageTable(item, p, continuesSpeaker, includeAnnotation)));
       if (imageInfo) {
-        const align = state.conversationStyle === 'transcript' ? 'left' : (p?.side === 'right' ? 'right' : 'left');
-        blocks.push(wordImageParagraph(imageInfo, align, state.conversationStyle === 'transcript' ? 5.4 : 4.7, 6.3, item.imageAttachment?.altText || ''));
+        const align = docStyle === 'screen' ? 'center' : (docStyle === 'transcript' || docStyle === 'theater' ? 'left' : (p?.side === 'right' ? 'right' : 'left'));
+        blocks.push(wordImageParagraph(imageInfo, align, docStyle === 'chat' ? 4.7 : 5.4, 6.3, item.imageAttachment?.altText || ''));
         if (item.imageAttachment?.caption) blocks.push(wordImageCaptionParagraph(item.imageAttachment.caption, align));
         if (item.annotation) blocks.push(wordAnnotationParagraph(item.annotation, align));
       }
       if (preview) {
-        const previewAlign = state.conversationStyle === 'transcript' ? 'left' : (p?.side === 'right' ? 'right' : 'left');
+        const previewAlign = docStyle === 'screen' ? 'center' : (docStyle === 'transcript' || docStyle === 'theater' ? 'left' : (p?.side === 'right' ? 'right' : 'left'));
         blocks.push(wordLinkPreviewBlock(preview, previewImageInfo, previewAlign));
       }
     });
@@ -4468,7 +4692,7 @@ ${imageRels}
   });
 
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-    navigator.serviceWorker.register('./sw.js?v=0.10.1').catch(() => {});
+    navigator.serviceWorker.register('./sw.js?v=0.10.2').catch(() => {});
   }
 
   if (els.runtimeVersion) els.runtimeVersion.textContent = `v${APP_VERSION}`;

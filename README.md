@@ -1,6 +1,6 @@
-# ThreadWriter v0.10.1
+# ThreadWriter v0.10.2
 
-A small local-first dialogue editor that looks and behaves like a message thread, but can also switch into a plain transcript-style drafting view.
+A small local-first dialogue editor for writing, revising, moving, and publishing conversation-heavy material, with chat, transcript, theater-draft, and screen-draft presentation styles.
 
 ## Current features
 
@@ -36,7 +36,7 @@ A small local-first dialogue editor that looks and behaves like a message thread
 - Browser-readable image imports are normalized to PNG or JPEG and resized to a maximum 2400-pixel dimension for saner local storage
 - Optional centered scene header for chapter names, dates/times, group names, scene labels, interstitials, etc.
 - Four simple header-font families: Rounded, Sans, Serif, and Mono
-- Conversation Styles: **Mobile Chat** and **Transcript**
+- Conversation Styles: **Mobile Chat**, **Transcript**, **Theater Draft**, and **Screen Draft**
 - Unified PNG/JPEG/TIFF image export for screen, high-resolution, print, or custom-width conversation graphics, with optional grayscale and smart splitting
 - Two `.docx` export modes with no external libraries: Portable transcript and Rich layout
 - Plain `.txt` transcript export
@@ -62,6 +62,17 @@ python -m http.server 8000
 Then open `http://localhost:8000/` in your browser. Service-worker/offline installation features require HTTP/HTTPS rather than `file://`.
 
 GitHub Pages is also a good fit: place these files at the publishing root and add the resulting site to an iPhone/iPad Home Screen if desired.
+
+
+## New in v0.10.2
+
+- Added **Theater Draft**, with centered all-caps character cues, plain left-aligned dialogue, and indented stage/narrative blocks.
+- Added **Screen Draft**, with centered all-caps character cues, a narrower centered dialogue column, and centered action/narrative blocks for film/TV/comics-oriented drafting.
+- Added **Conversation background…** under Text. Choose the style default, a solid color, or a 2–4 color gradient running vertically, horizontally, or diagonally.
+- Custom backgrounds are stored with the conversation and preserved through Recent, Save As, Version History, and project backups. They appear in the editor, HTML export, and PNG/JPEG/TIFF exports. PDF/Print deliberately remains paper-white.
+- Custom dark backgrounds automatically switch surrounding labels/draft text to a light contrast treatment.
+- Rich DOCX and raster/HTML exports now understand Theater Draft and Screen Draft instead of flattening them back into Mobile Chat.
+- Includes the v0.10.1 faux-link-thumbnail aspect-ratio fix.
 
 
 ## New in v0.10.1

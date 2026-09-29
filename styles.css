@@ -1073,3 +1073,175 @@ dialog::backdrop { background: rgba(0,0,0,.45); backdrop-filter: blur(3px); }
 }
 @media print { body { padding: 0; } }
 .image-export-grid label[hidden] { display: none !important; }
+
+/* v0.10.2: drafting styles and conversation backgrounds */
+.conversation-canvas {
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg);
+  --conversation-text: var(--text);
+  --conversation-muted: var(--muted);
+}
+.conversation-canvas.custom-background-dark {
+  --conversation-text: #f7f7fa;
+  --conversation-muted: rgba(247,247,250,.78);
+}
+.conversation-canvas .scene-header { color: var(--conversation-text); }
+.conversation-canvas .empty-state,
+.conversation-canvas .speaker-label,
+.conversation-canvas .message-timestamp,
+.conversation-canvas .message-annotation,
+.conversation-canvas .narrative-text,
+.conversation-canvas .image-caption { color: var(--conversation-muted); }
+
+/* Theater Draft: centered character cues, dialogue set plainly at the left margin,
+   and stage/action text indented as a distinct manuscript beat. */
+.thread.style-theater .message-row,
+.thread.style-theater .message-row.left,
+.thread.style-theater .message-row.right,
+.thread.style-screen .message-row,
+.thread.style-screen .message-row.left,
+.thread.style-screen .message-row.right {
+  justify-content: flex-start;
+  margin: 18px 0;
+}
+.thread.style-theater .message-row.continuation,
+.thread.style-screen .message-row.continuation { margin-top: 12px; }
+.thread.style-theater .message-card,
+.thread.style-screen .message-card {
+  width: 100%;
+  max-width: 100%;
+  padding-right: 64px;
+  position: relative;
+}
+.thread.style-theater .speaker-label,
+.thread.style-screen .speaker-label {
+  margin: 0 0 5px;
+  text-align: center !important;
+  text-transform: uppercase;
+  font-size: 11px;
+  font-weight: 820;
+  letter-spacing: .075em;
+}
+.thread.style-theater .message-timestamp,
+.thread.style-screen .message-timestamp,
+.thread.style-theater .message-row.right .message-timestamp,
+.thread.style-screen .message-row.right .message-timestamp {
+  margin: 0 0 5px;
+  text-align: center;
+}
+.thread.style-theater .bubble,
+.thread.style-screen .bubble {
+  padding: 0;
+  border-radius: 0;
+  background: transparent !important;
+  color: var(--conversation-text);
+  box-shadow: none;
+}
+.thread.style-theater .bubble { text-align: left; }
+.thread.style-screen .bubble {
+  width: min(62%, 520px);
+  margin: 0 auto;
+  text-align: left;
+}
+.thread.style-theater .message-actions,
+.thread.style-screen .message-actions {
+  top: 14px;
+  transform: none;
+  right: 0 !important;
+  left: auto !important;
+  flex-direction: row !important;
+}
+.thread.style-theater .message-annotation,
+.thread.style-theater .message-row.right .message-annotation {
+  margin: 6px 0 0;
+  text-align: left;
+}
+.thread.style-screen .message-annotation,
+.thread.style-screen .message-row.right .message-annotation {
+  width: min(62%, 520px);
+  margin: 6px auto 0;
+  text-align: left;
+}
+.thread.style-theater .narrative-row { justify-content: flex-start; margin: 22px 0; }
+.thread.style-theater .narrative-card { width: min(78%, 680px); margin-left: 8%; }
+.thread.style-theater .narrative-text { text-align: left; padding-left: 0; }
+.thread.style-screen .narrative-row { margin: 24px 0; }
+.thread.style-screen .narrative-card { width: min(76%, 650px); }
+.thread.style-screen .narrative-text { text-align: left; }
+.thread.style-theater .image-attachment-message,
+.thread.style-theater .link-preview-message { margin-left: 0; margin-right: auto; }
+.thread.style-screen .image-attachment-message,
+.thread.style-screen .link-preview-message { margin-left: auto; margin-right: auto; }
+.thread.style-theater .message-row.right .image-caption,
+.thread.style-screen .message-row.right .image-caption { text-align: left; }
+.thread.style-screen .image-caption { text-align: center; }
+
+.background-dialog-card { width: min(92vw, 600px); }
+.background-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.background-grid label {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+.background-grid select,
+.background-grid input,
+.background-colors input {
+  min-width: 0;
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--field);
+  color: var(--text);
+  padding: 8px;
+}
+.background-grid input[type="color"],
+.background-colors input[type="color"] { height: 40px; padding: 4px; }
+.background-colors {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 11px;
+}
+.background-colors[hidden] { display: none; }
+.background-colors label { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 6px; color: var(--muted); font-size: 11px; }
+.background-preview {
+  min-height: 112px;
+  margin: 13px 0;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  color: #17171b;
+  font-weight: 780;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.15);
+}
+.background-preview.dark-preview { color: #fff; }
+.background-actions { margin-top: 4px; }
+.background-actions .primary-action { border-color: #4169e1; background: #4169e1; color: white; font-weight: 800; }
+
+@media (max-width: 700px) {
+  .thread.style-screen .bubble,
+  .thread.style-screen .message-annotation { width: min(76%, 520px); }
+  .thread.style-theater .narrative-card { width: min(86%, 680px); margin-left: 5%; }
+  .thread.style-screen .narrative-card { width: min(84%, 650px); }
+  .background-grid { grid-template-columns: 1fr; }
+  .background-colors { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media print {
+  .conversation-canvas { background: white !important; --conversation-text: black; --conversation-muted: #555; }
+  .thread.style-theater .message-card,
+  .thread.style-screen .message-card { max-width: 100%; padding-right: 0; }
+  .thread.style-theater .bubble,
+  .thread.style-screen .bubble { color: black; border: 0 !important; background: transparent !important; box-shadow: none !important; padding: 0 !important; }
+}
+.conversation-canvas .thread.style-transcript .bubble { color: var(--conversation-text); }
+.background-grid label[hidden] { display: none !important; }
+.background-colors label[hidden] { display: none !important; }

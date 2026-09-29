@@ -4,10 +4,10 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#f4f4f7" />
-  <title>ThreadWriter v0.10.1</title>
-  <link rel="manifest" href="manifest.webmanifest?v=0.10.1" />
-  <link rel="icon" href="icon.svg?v=0.10.1" type="image/svg+xml" />
-  <link rel="stylesheet" href="styles.css?v=0.10.1" />
+  <title>ThreadWriter v0.10.2</title>
+  <link rel="manifest" href="manifest.webmanifest?v=0.10.2" />
+  <link rel="icon" href="icon.svg?v=0.10.2" type="image/svg+xml" />
+  <link rel="stylesheet" href="styles.css?v=0.10.2" />
 </head>
 <body>
   <div class="app-shell">
@@ -28,8 +28,11 @@
               <select id="conversationStyle" aria-label="Conversation style">
                 <option value="chat">Mobile Chat</option>
                 <option value="transcript">Transcript</option>
+                <option value="theater">Theater Draft</option>
+                <option value="screen">Screen Draft</option>
               </select>
             </label>
+            <button id="backgroundBtn" type="button">Conversation background…</button>
             <button id="findBtn" type="button">Find &amp; Replace</button>
           </div>
         </div>
@@ -60,7 +63,9 @@
       </div>
     </header>
 
-    <main id="thread" class="thread" aria-live="polite"></main>
+    <div id="conversationCanvas" class="conversation-canvas">
+      <main id="thread" class="thread" aria-live="polite"></main>
+    </div>
 
     <footer class="composer-panel no-print">
       <div class="speaker-row">
@@ -308,6 +313,58 @@
     </div>
   </dialog>
 
+  <dialog id="backgroundDialog">
+    <div class="dialog-card background-dialog-card">
+      <div class="dialog-head">
+        <h2>Conversation background</h2>
+        <button type="button" id="closeBackgroundDialogBtn" class="icon-btn" aria-label="Close">×</button>
+      </div>
+      <p class="dialog-copy">Choose the canvas behind the conversation. Custom backgrounds are used in the editor, HTML, and image exports; PDF/Print remains paper-white.</p>
+      <div class="background-grid">
+        <label>
+          <span>Background</span>
+          <select id="backgroundMode">
+            <option value="default">Style default</option>
+            <option value="solid">Solid color</option>
+            <option value="gradient">Gradient</option>
+          </select>
+        </label>
+        <label id="backgroundSolidField">
+          <span>Color</span>
+          <input id="backgroundSolidColor" type="color" value="#f4f4f7" />
+        </label>
+        <label id="backgroundColorCountField">
+          <span>Gradient colors</span>
+          <select id="backgroundColorCount">
+            <option value="2">2 colors</option>
+            <option value="3">3 colors</option>
+            <option value="4">4 colors</option>
+          </select>
+        </label>
+        <label id="backgroundDirectionField">
+          <span>Direction</span>
+          <select id="backgroundDirection">
+            <option value="vertical">Vertical</option>
+            <option value="horizontal">Horizontal</option>
+            <option value="diag-right">Diagonal ↘</option>
+            <option value="diag-left">Diagonal ↙</option>
+          </select>
+        </label>
+      </div>
+      <div id="backgroundColors" class="background-colors" aria-label="Gradient colors">
+        <label><span>1</span><input id="backgroundColor1" type="color" value="#f4f4f7" /></label>
+        <label><span>2</span><input id="backgroundColor2" type="color" value="#d9e6ff" /></label>
+        <label><span>3</span><input id="backgroundColor3" type="color" value="#c9f2d0" /></label>
+        <label><span>4</span><input id="backgroundColor4" type="color" value="#f6d6ff" /></label>
+      </div>
+      <div id="backgroundPreview" class="background-preview" aria-label="Background preview"><span>Preview</span></div>
+      <div class="dialog-actions background-actions">
+        <button type="button" id="resetBackgroundBtn">Style default</button>
+        <button type="button" id="saveBackgroundBtn" class="primary-action">Save</button>
+      </div>
+    </div>
+  </dialog>
+
   <dialog id="findDialog">
     <div class="dialog-card">
       <div class="dialog-head">
@@ -428,6 +485,6 @@
     </div>
   </template>
 
-  <script src="app.js?v=0.10.1"></script>
+  <script src="app.js?v=0.10.2"></script>
 </body>
 </html>
