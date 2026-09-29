@@ -1,5 +1,5 @@
 (() => {
-  const APP_VERSION = '0.9.2';
+  const APP_VERSION = '0.10';
   const LEGACY_STORAGE_KEY = 'threadwriter.project.v1';
   const LIBRARY_KEY = 'threadwriter.library.v1';
   const DOCUMENT_PREFIX = 'threadwriter.document.v1.';
@@ -113,8 +113,23 @@
     portableDocxBtn: document.getElementById('portableDocxBtn'),
     richDocxBtn: document.getElementById('richDocxBtn'),
     exportTxtBtn: document.getElementById('exportTxtBtn'),
-    exportPngBtn: document.getElementById('exportPngBtn'),
+    exportHtmlBtn: document.getElementById('exportHtmlBtn'),
+    exportImageBtn: document.getElementById('exportImageBtn'),
     printBtn: document.getElementById('printBtn'),
+    imageExportDialog: document.getElementById('imageExportDialog'),
+    closeImageExportDialogBtn: document.getElementById('closeImageExportDialogBtn'),
+    imageExportFormat: document.getElementById('imageExportFormat'),
+    imageExportSizeMode: document.getElementById('imageExportSizeMode'),
+    imageExportPrintWidthField: document.getElementById('imageExportPrintWidthField'),
+    imageExportDpiField: document.getElementById('imageExportDpiField'),
+    imageExportCustomWidthField: document.getElementById('imageExportCustomWidthField'),
+    imageExportPrintWidth: document.getElementById('imageExportPrintWidth'),
+    imageExportDpi: document.getElementById('imageExportDpi'),
+    imageExportCustomWidth: document.getElementById('imageExportCustomWidth'),
+    imageExportColorMode: document.getElementById('imageExportColorMode'),
+    imageExportSplit: document.getElementById('imageExportSplit'),
+    imageExportSummary: document.getElementById('imageExportSummary'),
+    runImageExportBtn: document.getElementById('runImageExportBtn'),
     timestampDialog: document.getElementById('timestampDialog'),
     timestampInput: document.getElementById('timestampInput'),
     closeTimestampDialogBtn: document.getElementById('closeTimestampDialogBtn'),
@@ -3048,7 +3063,30 @@
     downloadBlob(new Blob([txt], { type: 'text/plain;charset=utf-8' }), `${safeName(state.title)}.txt`);
   });
 
-  els.exportPngBtn.addEventListener('click', () => { closeTopMenus(); exportPng(); });
+  els.exportHtmlBtn.addEventListener('click', async () => {
+    closeTopMenus();
+    try {
+      if (els.saveStatus) els.saveStatus.textContent = 'Preparing HTML…';
+      const html = await buildHtmlExport();
+      downloadBlob(new Blob([html], { type: 'text/html;charset=utf-8' }), `${safeName(state.title)}.html`);
+      if (els.saveStatus) els.saveStatus.textContent = 'HTML exported';
+    } catch (err) {
+      console.error(err);
+      alert('HTML export failed in this browser.');
+      if (els.saveStatus) els.saveStatus.textContent = 'HTML export failed';
+    }
+  });
+
+  els.exportImageBtn.addEventListener('click', () => { closeTopMenus(); openImageExportDialog(); });
+  els.closeImageExportDialogBtn.addEventListener('click', () => els.imageExportDialog.close());
+  els.imageExportSizeMode.addEventListener('change', updateImageExportDialog);
+  els.imageExportFormat.addEventListener('change', updateImageExportDialog);
+  els.imageExportPrintWidth.addEventListener('input', updateImageExportDialog);
+  els.imageExportDpi.addEventListener('change', updateImageExportDialog);
+  els.imageExportCustomWidth.addEventListener('input', updateImageExportDialog);
+  els.imageExportColorMode.addEventListener('change', updateImageExportDialog);
+  els.imageExportSplit.addEventListener('change', updateImageExportDialog);
+  els.runImageExportBtn.addEventListener('click', exportImageFromDialog);
 
   els.exportDocxBtn.addEventListener('click', () => { closeTopMenus(); els.docxDialog.showModal(); });
   els.closeDocxDialogBtn.addEventListener('click', () => els.docxDialog.close());
@@ -3067,7 +3105,20 @@
     }
   }
 
-  els.printBtn.addEventListener('click', () => { closeTopMenus(); window.print(); });
+  els.printBtn.addEventListener('click', () => {
+    closeTopMenus();
+    const oldTitle = document.title;
+    document.title = '';
+    let restored = false;
+    const restoreTitle = () => {
+      if (restored) return;
+      restored = true;
+      document.title = oldTitle;
+    };
+    window.addEventListener('afterprint', restoreTitle, { once: true });
+    window.print();
+    setTimeout(restoreTitle, 1500);
+  });
 
   function safeName(name) {
     return (name || 'thread').replace(/[\\/:*?"<>|]+/g, '-').trim() || 'thread';
@@ -3301,8 +3352,9 @@
     return height;
   }
 
-  function paintPngThread(ctx, draw = false, imageMap = new Map()) {
+  function paintPngThread(ctx, draw = false, imageMap = new Map(), options = {}) {
     const W = 1080;
+    const safeBreaks = Array.isArray(options.safeBreaks) ? options.safeBreaks : null;
     const left = 72;
     const right = 72;
     const contentWidth = W - left - right;
@@ -3379,6 +3431,7 @@
           y += 10;
         }
         y += 12;
+        if (safeBreaks) safeBreaks.push(y);
         return;
       }
 
@@ -3498,43 +3551,404 @@
         }
         y += Math.max(1, lines.length) * 25;
       }
+      if (safeBreaks) safeBreaks.push(y);
     });
 
     return y + 72;
   }
 
-  async function exportPng() {
+  function clampNumber(value, min, max, fallback) {
+    const n = Number(value);
+    return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback;
+  }
+
+  function imageExportSettings() {
+    const mode = els.imageExportSizeMode.value;
+    let targetWidth = 1080;
+    let dpi = 96;
+    if (mode === 'high') targetWidth = 2160;
+    if (mode === 'print') {
+      dpi = clampNumber(els.imageExportDpi.value, 72, 1200, 300);
+      const inches = clampNumber(els.imageExportPrintWidth.value, 1, 20, 5);
+      targetWidth = Math.round(inches * dpi);
+    }
+    if (mode === 'custom') targetWidth = Math.round(clampNumber(els.imageExportCustomWidth.value, 360, 4800, 1080));
+    targetWidth = Math.max(360, Math.min(4800, targetWidth));
+    return {
+      format: els.imageExportFormat.value,
+      sizeMode: mode,
+      targetWidth,
+      dpi,
+      grayscale: els.imageExportColorMode.value === 'grayscale',
+      split: !!els.imageExportSplit.checked
+    };
+  }
+
+  function updateImageExportDialog() {
+    const mode = els.imageExportSizeMode.value;
+    els.imageExportPrintWidthField.hidden = mode !== 'print';
+    els.imageExportDpiField.hidden = mode !== 'print';
+    els.imageExportCustomWidthField.hidden = mode !== 'custom';
+    const settings = imageExportSettings();
+    const formatName = settings.format === 'jpeg' ? 'JPEG' : settings.format.toUpperCase();
+    const colorName = settings.grayscale ? 'grayscale' : 'color';
+    const sizeNote = mode === 'print'
+      ? `${settings.targetWidth.toLocaleString()} px wide at ${settings.dpi} DPI`
+      : `${settings.targetWidth.toLocaleString()} px wide`;
+    els.imageExportSummary.textContent = `${formatName} · ${sizeNote} · ${colorName}${settings.split ? ' · long threads split at safe content boundaries' : ' · single image when browser limits allow'}.`;
+  }
+
+  function openImageExportDialog() {
+    updateImageExportDialog();
+    els.imageExportDialog.showModal();
+  }
+
+  function applyCanvasGrayscale(canvas) {
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const data = image.data;
+    for (let i = 0; i < data.length; i += 4) {
+      const gray = Math.round(data[i] * 0.2126 + data[i + 1] * 0.7152 + data[i + 2] * 0.0722);
+      data[i] = gray;
+      data[i + 1] = gray;
+      data[i + 2] = gray;
+    }
+    ctx.putImageData(image, 0, 0);
+  }
+
+  function writeTiffEntry(view, offset, tag, type, count, value) {
+    view.setUint16(offset, tag, true);
+    view.setUint16(offset + 2, type, true);
+    view.setUint32(offset + 4, count, true);
+    if (type === 3 && count === 1) {
+      view.setUint16(offset + 8, value, true);
+      view.setUint16(offset + 10, 0, true);
+    } else {
+      view.setUint32(offset + 8, value, true);
+    }
+  }
+
+  function canvasToTiffBlob(canvas, dpi = 96, grayscale = false) {
+    const width = canvas.width;
+    const height = canvas.height;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    const rgba = ctx.getImageData(0, 0, width, height).data;
+    const samples = grayscale ? 1 : 3;
+    const pixelBytes = width * height * samples;
+    const entryCount = grayscale ? 12 : 13;
+    const ifdOffset = 8;
+    const ifdSize = 2 + entryCount * 12 + 4;
+    let extraOffset = ifdOffset + ifdSize;
+    const bitsOffset = grayscale ? 0 : extraOffset;
+    if (!grayscale) extraOffset += 6;
+    if (extraOffset % 2) extraOffset += 1;
+    const xResOffset = extraOffset;
+    extraOffset += 8;
+    const yResOffset = extraOffset;
+    extraOffset += 8;
+    const pixelOffset = extraOffset;
+    const out = new Uint8Array(pixelOffset + pixelBytes);
+    const view = new DataView(out.buffer);
+
+    out[0] = 0x49; out[1] = 0x49;
+    view.setUint16(2, 42, true);
+    view.setUint32(4, ifdOffset, true);
+    view.setUint16(ifdOffset, entryCount, true);
+    let e = ifdOffset + 2;
+    const add = (tag, type, count, value) => { writeTiffEntry(view, e, tag, type, count, value); e += 12; };
+    add(256, 4, 1, width);
+    add(257, 4, 1, height);
+    add(258, 3, grayscale ? 1 : 3, grayscale ? 8 : bitsOffset);
+    add(259, 3, 1, 1);
+    add(262, 3, 1, grayscale ? 1 : 2);
+    add(273, 4, 1, pixelOffset);
+    add(277, 3, 1, samples);
+    add(278, 4, 1, height);
+    add(279, 4, 1, pixelBytes);
+    add(282, 5, 1, xResOffset);
+    add(283, 5, 1, yResOffset);
+    if (!grayscale) add(284, 3, 1, 1);
+    add(296, 3, 1, 2);
+    view.setUint32(e, 0, true);
+
+    if (!grayscale) {
+      view.setUint16(bitsOffset, 8, true);
+      view.setUint16(bitsOffset + 2, 8, true);
+      view.setUint16(bitsOffset + 4, 8, true);
+    }
+    const res = Math.max(1, Math.round(dpi || 96));
+    view.setUint32(xResOffset, res, true); view.setUint32(xResOffset + 4, 1, true);
+    view.setUint32(yResOffset, res, true); view.setUint32(yResOffset + 4, 1, true);
+
+    let pos = pixelOffset;
+    for (let i = 0; i < rgba.length; i += 4) {
+      if (grayscale) {
+        out[pos++] = rgba[i];
+      } else {
+        out[pos++] = rgba[i];
+        out[pos++] = rgba[i + 1];
+        out[pos++] = rgba[i + 2];
+      }
+    }
+    return new Blob([out], { type: 'image/tiff' });
+  }
+
+  function pngDpiChunk(dpi) {
+    const ppm = Math.max(1, Math.round(Number(dpi || 96) / 0.0254));
+    const data = new Uint8Array(9);
+    const dataView = new DataView(data.buffer);
+    dataView.setUint32(0, ppm, false);
+    dataView.setUint32(4, ppm, false);
+    data[8] = 1;
+    const type = new TextEncoder().encode('pHYs');
+    const crcInput = new Uint8Array(type.length + data.length);
+    crcInput.set(type, 0); crcInput.set(data, type.length);
+    const chunk = new Uint8Array(4 + 4 + data.length + 4);
+    const view = new DataView(chunk.buffer);
+    view.setUint32(0, data.length, false);
+    chunk.set(type, 4);
+    chunk.set(data, 8);
+    view.setUint32(8 + data.length, crc32(crcInput), false);
+    return chunk;
+  }
+
+  async function pngBlobWithDpi(blob, dpi) {
+    const src = new Uint8Array(await blob.arrayBuffer());
+    if (src.length < 33 || src[0] !== 137 || src[1] !== 80 || src[2] !== 78 || src[3] !== 71) return blob;
+    const parts = [src.slice(0, 8)];
+    let offset = 8;
+    let inserted = false;
+    while (offset + 12 <= src.length) {
+      const view = new DataView(src.buffer, src.byteOffset + offset, src.length - offset);
+      const len = view.getUint32(0, false);
+      const end = offset + 12 + len;
+      if (end > src.length) return blob;
+      const type = String.fromCharCode(...src.slice(offset + 4, offset + 8));
+      if (type !== 'pHYs') parts.push(src.slice(offset, end));
+      if (type === 'IHDR' && !inserted) { parts.push(pngDpiChunk(dpi)); inserted = true; }
+      offset = end;
+      if (type === 'IEND') break;
+    }
+    if (!inserted) return blob;
+    return new Blob(parts, { type: 'image/png' });
+  }
+
+  async function jpegBlobWithDpi(blob, dpi) {
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    const density = Math.max(1, Math.min(65535, Math.round(Number(dpi || 96))));
+    let offset = 2;
+    while (offset + 4 < bytes.length && bytes[offset] === 0xFF) {
+      const marker = bytes[offset + 1];
+      if (marker === 0xDA || marker === 0xD9) break;
+      const length = (bytes[offset + 2] << 8) | bytes[offset + 3];
+      if (marker === 0xE0 && length >= 16 && bytes[offset + 4] === 0x4A && bytes[offset + 5] === 0x46 && bytes[offset + 6] === 0x49 && bytes[offset + 7] === 0x46 && bytes[offset + 8] === 0x00) {
+        bytes[offset + 11] = 1;
+        bytes[offset + 12] = (density >> 8) & 0xFF;
+        bytes[offset + 13] = density & 0xFF;
+        bytes[offset + 14] = (density >> 8) & 0xFF;
+        bytes[offset + 15] = density & 0xFF;
+        return new Blob([bytes], { type: 'image/jpeg' });
+      }
+      if (length < 2) break;
+      offset += 2 + length;
+    }
+    return blob;
+  }
+
+  async function encodeImageCanvas(canvas, settings) {
+    if (settings.format === 'tiff') return canvasToTiffBlob(canvas, settings.dpi || 96, settings.grayscale);
+    if (settings.format === 'jpeg') {
+      let blob = await canvasToBlob(canvas, 'image/jpeg', 0.92);
+      if (settings.sizeMode === 'print') blob = await jpegBlobWithDpi(blob, settings.dpi);
+      return blob;
+    }
+    let blob = await canvasToBlob(canvas, 'image/png');
+    if (settings.sizeMode === 'print') blob = await pngBlobWithDpi(blob, settings.dpi);
+    return blob;
+  }
+
+  function buildImageSegments(totalHeight, safeBreaks, maxLogicalHeight) {
+    if (totalHeight <= maxLogicalHeight) return [{ start: 0, end: totalHeight }];
+    const candidates = [...new Set(safeBreaks.map(v => Math.round(v)).filter(v => v > 0 && v < totalHeight))].sort((a, b) => a - b);
+    candidates.push(totalHeight);
+    const parts = [];
+    let start = 0;
+    let guard = 0;
+    while (start < totalHeight && guard++ < 500) {
+      const target = start + maxLogicalHeight;
+      let end = candidates.filter(v => v > start && v <= target).pop();
+      if (!end) end = candidates.find(v => v > start) || totalHeight;
+      if (end <= start) end = Math.min(totalHeight, start + maxLogicalHeight);
+      parts.push({ start, end });
+      start = end;
+    }
+    return parts;
+  }
+
+  async function renderThreadImagePart(segment, settings, imageMap) {
+    const scale = settings.targetWidth / 1080;
+    const logicalHeight = Math.max(1, segment.end - segment.start);
+    const canvas = document.createElement('canvas');
+    canvas.width = settings.targetWidth;
+    canvas.height = Math.max(1, Math.ceil(logicalHeight * scale));
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = state.conversationStyle === 'transcript' ? '#ffffff' : '#f4f4f7';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.save();
+    ctx.scale(scale, scale);
+    ctx.translate(0, -segment.start);
+    paintPngThread(ctx, true, imageMap);
+    ctx.restore();
+    if (settings.grayscale) applyCanvasGrayscale(canvas);
+    return canvas;
+  }
+
+  async function exportImageFromDialog() {
+    const settings = imageExportSettings();
     let imageMap = new Map();
+    const oldLabel = els.runImageExportBtn.textContent;
+    els.runImageExportBtn.disabled = true;
+    els.runImageExportBtn.textContent = 'Exporting…';
     try {
-      if (els.saveStatus) els.saveStatus.textContent = 'Preparing PNG…';
+      if (els.saveStatus) els.saveStatus.textContent = 'Preparing image export…';
       imageMap = await loadCanvasImagesForState(state);
       const measure = document.createElement('canvas');
       measure.width = 1080;
       measure.height = 100;
       const measureCtx = measure.getContext('2d');
-      const height = Math.ceil(paintPngThread(measureCtx, false, imageMap));
-      const maxHeight = 15000;
-      if (height > maxHeight) {
-        alert('This thread is too tall for a reliable single PNG in some browsers. Use PDF for this one for now; split-image export is on the roadmap.');
-        return;
+      const safeBreaks = [];
+      const totalLogicalHeight = Math.ceil(paintPngThread(measureCtx, false, imageMap, { safeBreaks }));
+      const scale = settings.targetWidth / 1080;
+      const totalPhysicalHeight = Math.ceil(totalLogicalHeight * scale);
+      const SAFE_MAX_DIMENSION = 12000;
+      const SAFE_MAX_PIXELS = 16000000;
+      const safePartHeight = Math.max(640, Math.min(SAFE_MAX_DIMENSION, Math.floor(SAFE_MAX_PIXELS / settings.targetWidth)));
+      let segments;
+      if (settings.split) {
+        segments = buildImageSegments(totalLogicalHeight, safeBreaks, safePartHeight / scale);
+      } else {
+        if (totalPhysicalHeight > safePartHeight) {
+          throw new Error(`This export would exceed the browser-safe canvas budget at ${settings.targetWidth.toLocaleString()} px wide. Turn on automatic splitting or choose a smaller width.`);
+        }
+        segments = [{ start: 0, end: totalLogicalHeight }];
       }
 
-      const canvas = document.createElement('canvas');
-      canvas.width = 1080;
-      canvas.height = Math.max(280, height);
-      const ctx = canvas.getContext('2d');
-      ctx.fillStyle = state.conversationStyle === 'transcript' ? '#ffffff' : '#f4f4f7';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      paintPngThread(ctx, true, imageMap);
-      const blob = await canvasToBlob(canvas, 'image/png');
-      downloadBlob(blob, `${safeName(state.title)}.png`);
-      if (els.saveStatus) els.saveStatus.textContent = 'PNG exported';
+      const format = settings.format;
+      const extension = format === 'jpeg' ? 'jpg' : format === 'tiff' ? 'tif' : 'png';
+      const base = safeName(state.title);
+      const files = {};
+      let singleBlob = null;
+      for (let i = 0; i < segments.length; i += 1) {
+        if (els.saveStatus) els.saveStatus.textContent = `Rendering image ${i + 1} of ${segments.length}…`;
+        const canvas = await renderThreadImagePart(segments[i], settings, imageMap);
+        const blob = await encodeImageCanvas(canvas, settings);
+        if (segments.length === 1) {
+          singleBlob = blob;
+        } else {
+          const number = String(i + 1).padStart(2, '0');
+          files[`${base}-part-${number}.${extension}`] = new Uint8Array(await blob.arrayBuffer());
+        }
+        canvas.width = 1; canvas.height = 1;
+        await new Promise(resolve => setTimeout(resolve, 0));
+      }
+
+      if (segments.length === 1) {
+        downloadBlob(singleBlob, `${base}.${extension}`);
+      } else {
+        const zip = makeStoredZip(files);
+        downloadBlob(new Blob([zip], { type: 'application/zip' }), `${base}-${extension}-parts.zip`);
+      }
+      els.imageExportDialog.close();
+      if (els.saveStatus) els.saveStatus.textContent = segments.length === 1 ? `${extension.toUpperCase()} exported` : `${segments.length} image parts exported`;
     } catch (err) {
       console.error(err);
-      alert('PNG export failed in this browser. PDF export is still available.');
+      alert(err.message || 'Image export failed in this browser.');
+      if (els.saveStatus) els.saveStatus.textContent = 'Image export failed';
     } finally {
       closeCanvasImages(imageMap);
+      els.runImageExportBtn.disabled = false;
+      els.runImageExportBtn.textContent = oldLabel;
     }
+  }
+
+  function htmlEscape(value) {
+    return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  function htmlMultiline(value) {
+    return htmlEscape(value).replace(/\n/g, '<br>');
+  }
+
+  async function mediaDataUrlsForState(project) {
+    const map = new Map();
+    for (const id of imageIdsForState(project)) {
+      const record = await getMediaRecord(id);
+      if (record?.blob) map.set(id, await blobToDataUrl(record.blob));
+    }
+    return map;
+  }
+
+  function htmlAttachment(attachment, mediaMap, alignmentClass = '') {
+    const normalized = normalizeImageAttachment(attachment);
+    if (!normalized) return '';
+    const src = mediaMap.get(normalized.id) || '';
+    const alt = htmlEscape(normalized.altText || normalized.caption || normalized.name || 'Image attachment');
+    const image = src
+      ? `<img src="${src}" alt="${alt}">`
+      : `<div class="missing-image">[Image unavailable: ${htmlEscape(normalized.name)}]</div>`;
+    const caption = normalized.caption ? `<figcaption>${htmlMultiline(normalized.caption)}</figcaption>` : '';
+    return `<figure class="attachment ${alignmentClass}">${image}${caption}</figure>`;
+  }
+
+  function htmlLinkPreview(previewValue, mediaMap, alignmentClass = '') {
+    const preview = normalizeLinkPreview(previewValue);
+    if (!preview) return '';
+    let thumb = '';
+    if (preview.thumbnail) {
+      const src = mediaMap.get(preview.thumbnail.id) || '';
+      if (src) thumb = `<img class="preview-thumb" src="${src}" alt="${htmlEscape(preview.thumbnail.altText || '')}">`;
+    }
+    return `<div class="link-preview ${alignmentClass}">${thumb}<div class="preview-copy">${preview.site ? `<div class="preview-site">${htmlEscape(preview.site)}</div>` : ''}${preview.title ? `<div class="preview-title">${htmlMultiline(preview.title)}</div>` : ''}${preview.description ? `<div class="preview-description">${htmlMultiline(preview.description)}</div>` : ''}${preview.displayUrl ? `<div class="preview-url">${htmlEscape(preview.displayUrl)}</div>` : ''}</div></div>`;
+  }
+
+  async function buildHtmlExport() {
+    const mediaMap = await mediaDataUrlsForState(state);
+    const transcript = state.conversationStyle === 'transcript';
+    const body = [];
+    let previousSpeaker = null;
+    for (const item of state.messages) {
+      if (isNarrative(item)) {
+        body.push(`<section class="narrative"><div class="narrative-text">${htmlMultiline(item.text)}</div>${htmlAttachment(item.imageAttachment, mediaMap, 'center')}${htmlLinkPreview(item.linkPreview, mediaMap, 'center')}</section>`);
+        previousSpeaker = null;
+        continue;
+      }
+      const p = getParticipant(item.speakerId);
+      if (!p) continue;
+      const continues = previousSpeaker === item.speakerId;
+      const side = p.side === 'right' ? 'right' : 'left';
+      const showSpeaker = transcript || !continues;
+      const speaker = showSpeaker ? `<div class="speaker">${htmlEscape(transcript ? p.name.toLocaleUpperCase() : p.name)}</div>` : '';
+      const timestamp = item.displayTimestamp ? `<div class="timestamp">${htmlEscape(item.displayTimestamp)}</div>` : '';
+      const bubbleStyle = transcript ? '' : ` style="--bubble:${htmlEscape(p.color || '#e5e5ea')}"`;
+      const bubble = `<div class="bubble"${bubbleStyle}>${htmlMultiline(item.text)}</div>`;
+      const annotation = item.annotation ? `<div class="annotation">${htmlMultiline(item.annotation)}</div>` : '';
+      body.push(`<section class="message ${side}${continues && !transcript ? ' continuation' : ''}"><div class="message-card">${speaker}${timestamp}${bubble}${htmlAttachment(item.imageAttachment, mediaMap, side)}${htmlLinkPreview(item.linkPreview, mediaMap, side)}${annotation}</div></section>`);
+      previousSpeaker = item.speakerId;
+    }
+    const sceneHeader = state.sceneHeader ? `<div class="scene-header ${htmlEscape(state.headerFont || 'rounded')}">${htmlMultiline(state.sceneHeader)}</div>` : '';
+    const title = htmlEscape(state.title || 'Untitled Thread');
+    return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${title}</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:${transcript ? '#fff' : '#f4f4f7'};color:#17171b;font-family:ui-rounded,"SF Pro Rounded","Segoe UI",system-ui,-apple-system,sans-serif}.document{width:min(100%,820px);margin:0 auto;padding:34px 18px 60px}h1{font-size:28px;margin:0 0 24px}.scene-header{text-align:center;font-weight:720;font-size:21px;line-height:1.3;margin:0 auto 30px;white-space:pre-wrap}.scene-header.serif{font-family:Georgia,"Times New Roman",serif}.scene-header.mono{font-family:ui-monospace,Consolas,monospace}.message{display:flex;margin:11px 0}.message.continuation{margin-top:-7px}.message.left{justify-content:flex-start}.message.right{justify-content:flex-end}.message-card{max-width:${transcript ? '100%' : '67%'}}.speaker{font-size:12px;color:#6d6d78;margin:0 10px 4px}.right .speaker,.right .timestamp,.right .annotation,.right figcaption{text-align:right}.timestamp{font-size:10.5px;color:#777780;margin:0 10px 4px}.bubble{background:${transcript ? 'transparent' : 'var(--bubble,#e5e5ea)'};padding:${transcript ? '0' : '10px 13px'};border-radius:${transcript ? '0' : '18px'};line-height:1.42;white-space:pre-wrap;overflow-wrap:anywhere}.annotation{margin:7px 10px 0;color:#686872;font-size:12px;font-style:italic;line-height:1.4}.narrative{width:min(78%,680px);margin:24px auto;text-align:center;color:#666670;font:italic 14px/1.5 Georgia,"Times New Roman",serif}.attachment{margin:9px 0 0;max-width:610px}.attachment.center{margin-left:auto;margin-right:auto}.attachment.right{margin-left:auto}.attachment img{display:block;max-width:100%;max-height:70vh;border-radius:12px}.attachment figcaption{margin-top:6px;color:#686872;font-size:12px;line-height:1.4}.attachment.right img{margin-left:auto}.attachment.center img{margin-left:auto;margin-right:auto}.link-preview{display:flex;gap:12px;margin-top:10px;max-width:620px;padding:12px;border:1px solid #d8d8df;border-radius:14px;background:#f7f7f9;font-family:ui-rounded,"Segoe UI",system-ui,sans-serif;text-align:left}.link-preview.right{margin-left:auto}.link-preview.center{margin-left:auto;margin-right:auto}.preview-thumb{width:min(31%,150px);object-fit:cover;align-self:stretch;max-height:130px}.preview-copy{min-width:0}.preview-site,.preview-url{font-size:11px;color:#777780}.preview-title{font-size:16px;font-weight:750;line-height:1.28;margin:3px 0}.preview-description{font-size:13px;color:#555560;line-height:1.35;margin:3px 0}.missing-image{padding:20px;background:#e5e5ea;color:#686872;text-align:center;border-radius:12px}.transcript .message{justify-content:flex-start}.transcript .message-card{width:100%;max-width:100%}.transcript .right .speaker,.transcript .right .timestamp,.transcript .right .annotation,.transcript .right figcaption{text-align:left}.transcript .attachment.right,.transcript .link-preview.right{margin-left:0;margin-right:auto}@media(max-width:600px){.document{padding:24px 12px 42px}.message-card{max-width:${transcript ? '100%' : '78%'}.attachment,.link-preview{max-width:100%}}@media print{@page{margin:.55in}body{background:#fff}.document{width:100%;padding:0}.message-card,.narrative,.attachment,.link-preview{break-inside:avoid}.bubble{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+</style>
+</head>
+<body><main class="document ${transcript ? 'transcript' : 'chat'}"><h1>${title}</h1>${sceneHeader}${body.join('')}</main></body>
+</html>`;
   }
 
   function xmlEscape(s) {

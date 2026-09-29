@@ -4,10 +4,10 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#f4f4f7" />
-  <title>ThreadWriter v0.9.2</title>
-  <link rel="manifest" href="manifest.webmanifest?v=0.9.2" />
-  <link rel="icon" href="icon.svg?v=0.9.2" type="image/svg+xml" />
-  <link rel="stylesheet" href="styles.css?v=0.9.2" />
+  <title>ThreadWriter v0.10</title>
+  <link rel="manifest" href="manifest.webmanifest?v=0.10" />
+  <link rel="icon" href="icon.svg?v=0.10" type="image/svg+xml" />
+  <link rel="stylesheet" href="styles.css?v=0.10" />
 </head>
 <body>
   <div class="app-shell">
@@ -45,7 +45,8 @@
             <div id="exportMenu" class="export-submenu" hidden>
               <button id="exportDocxBtn" type="button">DOCX…</button>
               <button id="exportTxtBtn" type="button">TXT</button>
-              <button id="exportPngBtn" type="button">PNG</button>
+              <button id="exportHtmlBtn" type="button">HTML</button>
+              <button id="exportImageBtn" type="button">Image…</button>
               <button id="printBtn" type="button">PDF / Print</button>
             </div>
           </div>
@@ -111,6 +112,68 @@
     </div>
   </dialog>
 
+
+  <dialog id="imageExportDialog">
+    <div class="dialog-card image-export-dialog-card">
+      <div class="dialog-head">
+        <h2>Export image</h2>
+        <button type="button" id="closeImageExportDialogBtn" class="icon-btn" aria-label="Close">×</button>
+      </div>
+      <p class="dialog-copy">Create screen, high-resolution, or print-ready conversation graphics. Long exports can split at message and narrative boundaries instead of cutting through content.</p>
+      <div class="image-export-grid">
+        <label>
+          <span>Format</span>
+          <select id="imageExportFormat">
+            <option value="png">PNG</option>
+            <option value="jpeg">JPEG</option>
+            <option value="tiff">TIFF</option>
+          </select>
+        </label>
+        <label>
+          <span>Size</span>
+          <select id="imageExportSizeMode">
+            <option value="screen">Screen · 1080 px wide</option>
+            <option value="high">High resolution · 2160 px wide</option>
+            <option value="print">Print</option>
+            <option value="custom">Custom pixel width</option>
+          </select>
+        </label>
+        <label id="imageExportPrintWidthField" hidden>
+          <span>Print width (inches)</span>
+          <input id="imageExportPrintWidth" type="number" min="1" max="20" step="0.25" value="5" />
+        </label>
+        <label id="imageExportDpiField" hidden>
+          <span>Resolution</span>
+          <select id="imageExportDpi">
+            <option value="300">300 DPI</option>
+            <option value="600">600 DPI</option>
+          </select>
+        </label>
+        <label id="imageExportCustomWidthField" hidden>
+          <span>Width (pixels)</span>
+          <input id="imageExportCustomWidth" type="number" min="360" max="4800" step="1" value="1080" />
+        </label>
+        <label>
+          <span>Color</span>
+          <select id="imageExportColorMode">
+            <option value="color">Color</option>
+            <option value="grayscale">Grayscale</option>
+          </select>
+        </label>
+      </div>
+      <label class="image-export-split-option">
+        <input id="imageExportSplit" type="checkbox" checked />
+        <span><strong>Split long exports automatically</strong><small>Keeps messages and narrative blocks together when possible and stays under browser-safe image dimensions.</small></span>
+      </label>
+      <div id="imageExportSummary" class="image-export-summary"></div>
+      <div class="timestamp-actions">
+        <span></span>
+        <div class="timestamp-actions-right">
+          <button type="button" id="runImageExportBtn" class="primary-action">Export</button>
+        </div>
+      </div>
+    </div>
+  </dialog>
 
   <dialog id="timestampDialog">
     <div class="dialog-card">
@@ -365,6 +428,6 @@
     </div>
   </template>
 
-  <script src="app.js?v=0.9.2"></script>
+  <script src="app.js?v=0.10"></script>
 </body>
 </html>

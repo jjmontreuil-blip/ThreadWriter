@@ -1016,3 +1016,60 @@ dialog::backdrop { background: rgba(0,0,0,.45); backdrop-filter: blur(3px); }
   .link-preview-description, .link-preview-title { color: #222; }
   .link-preview-site, .link-preview-url { color: #666; }
 }
+
+/* v0.10 publishing / image export */
+.image-export-dialog-card { width: min(92vw, 620px); }
+.image-export-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+.image-export-grid label { display: grid; gap: 6px; }
+.image-export-grid label > span { color: var(--muted); font-size: 11px; font-weight: 700; }
+.image-export-grid select,
+.image-export-grid input {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--field);
+  color: var(--text);
+  padding: 9px 10px;
+}
+.image-export-split-option {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin-top: 15px;
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--field) 92%, transparent);
+}
+.image-export-split-option input { margin-top: 3px; }
+.image-export-split-option span { display: grid; gap: 3px; }
+.image-export-split-option strong { font-size: 12px; }
+.image-export-split-option small { color: var(--muted); line-height: 1.35; }
+.image-export-summary {
+  min-height: 20px;
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+@media (max-width: 560px) {
+  .image-export-grid { grid-template-columns: 1fr; }
+}
+
+/* Print pages get real margins; modern paged-media engines also honor the empty margin boxes below. */
+@page {
+  margin: .55in;
+  @top-left { content: ""; }
+  @top-center { content: ""; }
+  @top-right { content: ""; }
+  @bottom-left { content: ""; }
+  @bottom-center { content: ""; }
+  @bottom-right { content: ""; }
+}
+@media print { body { padding: 0; } }
+.image-export-grid label[hidden] { display: none !important; }

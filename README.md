@@ -1,4 +1,4 @@
-# ThreadWriter v0.9.2
+# ThreadWriter v0.10
 
 A small local-first dialogue editor that looks and behaves like a message thread, but can also switch into a plain transcript-style drafting view.
 
@@ -37,9 +37,10 @@ A small local-first dialogue editor that looks and behaves like a message thread
 - Optional centered scene header for chapter names, dates/times, group names, scene labels, interstitials, etc.
 - Four simple header-font families: Rounded, Sans, Serif, and Mono
 - Conversation Styles: **Mobile Chat** and **Transcript**
-- PNG image export for shareable rendered conversations
+- Unified PNG/JPEG/TIFF image export for screen, high-resolution, print, or custom-width conversation graphics, with optional grayscale and smart splitting
 - Two `.docx` export modes with no external libraries: Portable transcript and Rich layout
 - Plain `.txt` transcript export
+- Self-contained styled `.html` export with embedded image media
 - Clean Print / Save as PDF stylesheet, including box-free Transcript output and no app status/project/version metadata
 - Headers, timestamps, Transcript style, images, visible image captions, and faux link previews carry through the relevant visual exports; TXT and Portable DOCX preserve readable image/link metadata
 - Installable PWA behavior when served over HTTP/HTTPS
@@ -48,7 +49,7 @@ A small local-first dialogue editor that looks and behaves like a message thread
 
 ### Easiest desktop test
 
-Open `index.html` directly in a modern browser. Editing, autosave, PNG/DOCX/TXT export, and Print/PDF should work.
+Open `index.html` directly in a modern browser. Editing, autosave, HTML/image/DOCX/TXT export, and Print/PDF should work.
 
 ### For installable/offline PWA behavior
 
@@ -61,6 +62,17 @@ python -m http.server 8000
 Then open `http://localhost:8000/` in your browser. Service-worker/offline installation features require HTTP/HTTPS rather than `file://`.
 
 GitHub Pages is also a good fit: place these files at the publishing root and add the resulting site to an iPhone/iPad Home Screen if desired.
+
+
+## New in v0.10
+
+- **Self-contained HTML export** for a styled, selectable, responsive copy of the current thread. Attached images and faux-link thumbnails are embedded directly so the file can travel on its own.
+- **Unified image export dialog** replaces the old one-click PNG export. Choose PNG, JPEG, or baseline TIFF.
+- **Screen / High-resolution / Print / Custom sizing**: 1080 px screen output, 2160 px high-resolution output, physical print width with 300/600 DPI, or a custom pixel width. Print PNG/JPEG/TIFF files carry the chosen DPI metadata as well as the matching pixel dimensions.
+- **Color or grayscale** output for every raster format.
+- **Intelligent long-image splitting** keeps messages and narrative blocks together when possible and packages multi-part exports in a ZIP instead of asking the browser to allow a hailstorm of downloads.
+- **Print/PDF cleanup** uses dedicated print layout, real page margins, empty paged-media header/footer boxes where supported, and temporary title suppression while the print dialog opens. ThreadWriter UI stays out of the document.
+- Existing DOCX, TXT, Rich DOCX, project backup, image attachment, caption/alt-text, and faux-link-preview behavior is unchanged.
 
 
 ## New in v0.9.2
@@ -281,11 +293,13 @@ v0.6 introduces the first two presentation families:
 
 This is a presentation choice, not a separate document type. You can switch back and forth without changing the underlying text.
 
-### PNG export
+### Image export
 
-**PNG** creates a clean, shareable long image of the rendered thread, including the document title, optional scene header, timestamps, participant colors, and the selected Conversation Style.
+**Image…** opens the v0.10 raster-export panel. It can create PNG, JPEG, or TIFF copies of the rendered thread, including the document title, optional scene header, timestamps, participant colors, images/link previews, and the selected Conversation Style.
 
-For now, extremely long threads that would exceed a browser-safe single-image height should use PDF. Split-image export remains a possible future addition.
+Screen output is 1080 px wide; High Resolution is 2160 px; Print converts a physical width plus 300/600 DPI into pixels and writes that DPI metadata into the file; Custom accepts a pixel width. Any raster format can be exported in color or grayscale.
+
+Long threads can split automatically at message or narrative-block boundaries. Multi-part results are delivered as one ZIP so browsers do not have to approve a stack of separate downloads.
 
 ### PWA updates
 
@@ -316,12 +330,8 @@ v0.6 project files add fields for the scene header and Conversation Style, but o
 
 ### Output / sharing
 
-- HTML export
-- JPG / TIFF export
-- Screen / High-Resolution / Print / Custom image sizing
-- Color or grayscale image output
-- Split/subdivided image export for very long threads
-- Cleaner, more deliberate PDF output / pagination
+- Further PDF pagination refinements if real-world print testing exposes problems
+- Possible ODT / SVG export only if actual users request them
 
 ### Projects
 
@@ -337,8 +347,10 @@ v0.6 project files add fields for the scene header and Conversation Style, but o
 
 ### Presentation
 
-- Additional generic Conversation Styles such as Work Chat, AI / Terminal, and Retro IM
+- Core drafting styles: Theater Draft and Screen Draft
+- Conversation background control: solid color or 2–4-color gradients with selectable direction
 - Optional participant avatars
 - Optional word-balloon tails
+- Additional decorative Conversation Styles only if real-world demand justifies them
 
 The guiding rule remains: ThreadWriter should make fictional digital conversations easier to write, not become a full messaging platform with a novel trapped inside it.
