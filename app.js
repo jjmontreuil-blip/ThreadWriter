@@ -1,5 +1,5 @@
 (() => {
-  const APP_VERSION = '0.9.1';
+  const APP_VERSION = '0.9.2';
   const LEGACY_STORAGE_KEY = 'threadwriter.project.v1';
   const LIBRARY_KEY = 'threadwriter.library.v1';
   const DOCUMENT_PREFIX = 'threadwriter.document.v1.';
@@ -12,7 +12,7 @@
   const MAX_IMAGE_DIMENSION = 2400;
   const MAX_IMAGE_FILE_BYTES = 25 * 1024 * 1024;
   const defaultState = () => ({
-    version: 5,
+    version: 6,
     title: 'Untitled Thread',
     sceneHeader: '',
     headerFont: 'rounded',
@@ -40,6 +40,8 @@
   let pendingInsertId = null;
   let imageTargetItemId = null;
   let imageDetailsItemId = null;
+  let linkPreviewItemId = null;
+  let linkPreviewImageTargetId = null;
   let mediaDbPromise = null;
   let mediaGcTimer = null;
   const mediaObjectUrls = new Map();
@@ -87,12 +89,24 @@
     importBtn: document.getElementById('importBtn'),
     fileInput: document.getElementById('fileInput'),
     imageInput: document.getElementById('imageInput'),
+    linkPreviewImageInput: document.getElementById('linkPreviewImageInput'),
     imageDetailsDialog: document.getElementById('imageDetailsDialog'),
     imageDetailsName: document.getElementById('imageDetailsName'),
     imageCaptionInput: document.getElementById('imageCaptionInput'),
     imageAltInput: document.getElementById('imageAltInput'),
     closeImageDetailsDialogBtn: document.getElementById('closeImageDetailsDialogBtn'),
     saveImageDetailsBtn: document.getElementById('saveImageDetailsBtn'),
+    linkPreviewDialog: document.getElementById('linkPreviewDialog'),
+    linkPreviewSiteInput: document.getElementById('linkPreviewSiteInput'),
+    linkPreviewTitleInput: document.getElementById('linkPreviewTitleInput'),
+    linkPreviewDescriptionInput: document.getElementById('linkPreviewDescriptionInput'),
+    linkPreviewUrlInput: document.getElementById('linkPreviewUrlInput'),
+    linkPreviewThumbnailStatus: document.getElementById('linkPreviewThumbnailStatus'),
+    chooseLinkPreviewThumbnailBtn: document.getElementById('chooseLinkPreviewThumbnailBtn'),
+    removeLinkPreviewThumbnailBtn: document.getElementById('removeLinkPreviewThumbnailBtn'),
+    removeLinkPreviewBtn: document.getElementById('removeLinkPreviewBtn'),
+    closeLinkPreviewDialogBtn: document.getElementById('closeLinkPreviewDialogBtn'),
+    saveLinkPreviewBtn: document.getElementById('saveLinkPreviewBtn'),
     exportDocxBtn: document.getElementById('exportDocxBtn'),
     docxDialog: document.getElementById('docxDialog'),
     closeDocxDialogBtn: document.getElementById('closeDocxDialogBtn'),
@@ -261,11 +275,27 @@
     };
   }
 
+  function normalizeLinkPreview(value) {
+    if (!value || typeof value !== 'object') return null;
+    const preview = {
+      site: typeof value.site === 'string' ? value.site : '',
+      title: typeof value.title === 'string' ? value.title : '',
+      description: typeof value.description === 'string' ? value.description : '',
+      displayUrl: typeof value.displayUrl === 'string' ? value.displayUrl : ''
+    };
+    const thumbnail = normalizeImageAttachment(value.thumbnail);
+    if (thumbnail) preview.thumbnail = thumbnail;
+    if (!preview.site && !preview.title && !preview.description && !preview.displayUrl && !preview.thumbnail) return null;
+    return preview;
+  }
+
   function imageIdsForState(project) {
     const ids = new Set();
     for (const item of project?.messages || []) {
       const attachment = normalizeImageAttachment(item?.imageAttachment);
       if (attachment?.id) ids.add(attachment.id);
+      const preview = normalizeLinkPreview(item?.linkPreview);
+      if (preview?.thumbnail?.id) ids.add(preview.thumbnail.id);
     }
     return ids;
   }
@@ -513,6 +543,117 @@
     }
   }));
 
+  function openLinkPreviewDialog(itemId) {
+    const item = state.messages.find(entry => entry.id === itemId);
+    if (!item || !els.linkPreviewDialog) return;
+    linkPreviewItemId = itemId;
+    const preview = normalizeLinkPreview(item.linkPreview) || { site: '', title: '', description: '', displayUrl: '' };
+    els.linkPreviewSiteInput.value = preview.site || '';
+    els.linkPreviewTitleInput.value = preview.title || '';
+    els.linkPreviewDescriptionInput.value = preview.description || '';
+    els.linkPreviewUrlInput.value = preview.displayUrl || '';
+    if (els.linkPreviewThumbnailStatus) els.linkPreviewThumbnailStatus.textContent = preview.thumbnail?.name || 'No thumbnail';
+    if (els.removeLinkPreviewThumbnailBtn) els.removeLinkPreviewThumbnailBtn.hidden = !preview.thumbnail;
+    if (els.removeLinkPreviewBtn) els.removeLinkPreviewBtn.hidden = !item.linkPreview;
+    els.linkPreviewDialog.showModal();
+    requestAnimationFrame(() => els.linkPreviewTitleInput?.focus());
+  }
+
+  function closeLinkPreviewDialog() {
+    linkPreviewItemId = null;
+    if (els.linkPreviewDialog?.open) els.linkPreviewDialog.close();
+  }
+
+  function saveLinkPreview() {
+    const item = state.messages.find(entry => entry.id === linkPreviewItemId);
+    if (!item) { closeLinkPreviewDialog(); return; }
+    const existing = normalizeLinkPreview(item.linkPreview);
+    const preview = {
+      site: String(els.linkPreviewSiteInput?.value || '').trim(),
+      title: String(els.linkPreviewTitleInput?.value || '').trim(),
+      description: String(els.linkPreviewDescriptionInput?.value || '').trim(),
+      displayUrl: String(els.linkPreviewUrlInput?.value || '').trim()
+    };
+    if (existing?.thumbnail) preview.thumbnail = existing.thumbnail;
+    if (!preview.site && !preview.title && !preview.description && !preview.displayUrl && !preview.thumbnail) delete item.linkPreview;
+    else item.linkPreview = preview;
+    scheduleSave();
+    renderThread();
+    closeLinkPreviewDialog();
+  }
+
+  function removeLinkPreview() {
+    const item = state.messages.find(entry => entry.id === linkPreviewItemId);
+    if (!item?.linkPreview) { closeLinkPreviewDialog(); return; }
+    delete item.linkPreview;
+    scheduleSave();
+    renderThread();
+    closeLinkPreviewDialog();
+    scheduleMediaGarbageCollection();
+  }
+
+  function chooseLinkPreviewThumbnail() {
+    if (!linkPreviewItemId) return;
+    linkPreviewImageTargetId = linkPreviewItemId;
+    els.linkPreviewImageInput.value = '';
+    els.linkPreviewImageInput.click();
+  }
+
+  async function attachLinkPreviewThumbnail(itemId, file) {
+    const item = state.messages.find(entry => entry.id === itemId);
+    if (!item || !file) return;
+    if (els.saveStatus) els.saveStatus.textContent = 'Preparing preview thumbnail…';
+    try {
+      const record = await normalizeAndStoreImage(file);
+      const preview = normalizeLinkPreview(item.linkPreview) || { site: '', title: '', description: '', displayUrl: '' };
+      preview.thumbnail = imageAttachmentFromRecord(record, preview.thumbnail);
+      item.linkPreview = preview;
+      if (els.linkPreviewThumbnailStatus) els.linkPreviewThumbnailStatus.textContent = preview.thumbnail.name || 'Thumbnail';
+      if (els.removeLinkPreviewThumbnailBtn) els.removeLinkPreviewThumbnailBtn.hidden = false;
+      if (els.removeLinkPreviewBtn) els.removeLinkPreviewBtn.hidden = false;
+      scheduleSave();
+      renderThread();
+      if (els.saveStatus) els.saveStatus.textContent = 'Preview thumbnail attached';
+      scheduleMediaGarbageCollection();
+    } catch (error) {
+      console.error(error);
+      if (els.saveStatus) els.saveStatus.textContent = 'Thumbnail not attached';
+      alert(error.message || 'ThreadWriter could not attach that thumbnail.');
+    }
+  }
+
+  function removeLinkPreviewThumbnail() {
+    const item = state.messages.find(entry => entry.id === linkPreviewItemId);
+    const preview = normalizeLinkPreview(item?.linkPreview);
+    if (!item || !preview?.thumbnail) return;
+    delete preview.thumbnail;
+    item.linkPreview = preview;
+    if (els.linkPreviewThumbnailStatus) els.linkPreviewThumbnailStatus.textContent = 'No thumbnail';
+    if (els.removeLinkPreviewThumbnailBtn) els.removeLinkPreviewThumbnailBtn.hidden = true;
+    scheduleSave();
+    renderThread();
+    scheduleMediaGarbageCollection();
+  }
+
+  els.closeLinkPreviewDialogBtn?.addEventListener('click', closeLinkPreviewDialog);
+  els.saveLinkPreviewBtn?.addEventListener('click', saveLinkPreview);
+  els.removeLinkPreviewBtn?.addEventListener('click', removeLinkPreview);
+  els.chooseLinkPreviewThumbnailBtn?.addEventListener('click', chooseLinkPreviewThumbnail);
+  els.removeLinkPreviewThumbnailBtn?.addEventListener('click', removeLinkPreviewThumbnail);
+  els.linkPreviewDialog?.addEventListener('cancel', event => { event.preventDefault(); closeLinkPreviewDialog(); });
+  els.linkPreviewImageInput?.addEventListener('change', async () => {
+    const file = els.linkPreviewImageInput.files?.[0];
+    const targetId = linkPreviewImageTargetId;
+    linkPreviewImageTargetId = null;
+    if (file && targetId) await attachLinkPreviewThumbnail(targetId, file);
+  });
+  [els.linkPreviewSiteInput, els.linkPreviewTitleInput, els.linkPreviewDescriptionInput, els.linkPreviewUrlInput].forEach(input => input?.addEventListener('keydown', event => {
+    if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+      event.preventDefault();
+      saveLinkPreview();
+    }
+  }));
+
   async function garbageCollectMedia() {
     try {
       const referenced = new Set();
@@ -682,7 +823,7 @@
     const fallbackSpeakerId = participants[0]?.id || null;
     return {
       ...project,
-      version: 5,
+      version: 6,
       title: typeof project.title === 'string' ? project.title : base.title,
       sceneHeader: typeof project.sceneHeader === 'string' ? project.sceneHeader : '',
       headerFont: allowedFonts.has(project.headerFont) ? project.headerFont : 'rounded',
@@ -701,6 +842,9 @@
         const imageAttachment = normalizeImageAttachment(m?.imageAttachment);
         if (imageAttachment) item.imageAttachment = imageAttachment;
         else delete item.imageAttachment;
+        const linkPreview = normalizeLinkPreview(m?.linkPreview);
+        if (linkPreview) item.linkPreview = linkPreview;
+        else delete item.linkPreview;
         if (kind === 'narrative') {
           delete item.speakerId;
           delete item.annotation;
@@ -866,7 +1010,9 @@
 
   function wordCountForItem(item) {
     const caption = normalizeImageAttachment(item?.imageAttachment)?.caption || '';
-    return countWordsInText(item?.text || '') + countWordsInText(caption);
+    const preview = normalizeLinkPreview(item?.linkPreview);
+    return countWordsInText(item?.text || '') + countWordsInText(caption)
+      + countWordsInText(preview?.title || '') + countWordsInText(preview?.description || '');
   }
 
   function wordCountForState(project) {
@@ -1055,6 +1201,40 @@
     return frame;
   }
 
+  function makeLinkPreviewElement(item, kind = 'message', findFlags = {}) {
+    const preview = normalizeLinkPreview(item?.linkPreview);
+    if (!preview) return null;
+    const card = document.createElement('div');
+    card.className = `link-preview-card link-preview-${kind}`;
+    card.tabIndex = 0;
+    card.title = 'Edit faux link preview';
+    if (findFlags.match) card.classList.add('find-match');
+    if (findFlags.current) card.classList.add('find-current');
+    card.addEventListener('click', () => openLinkPreviewDialog(item.id));
+    card.addEventListener('keydown', event => {
+      if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openLinkPreviewDialog(item.id); }
+    });
+    if (preview.thumbnail) {
+      const thumbWrap = document.createElement('div');
+      thumbWrap.className = 'link-preview-thumbnail';
+      const img = document.createElement('img');
+      img.alt = ''; img.loading = 'eager';
+      const placeholder = document.createElement('div');
+      placeholder.className = 'link-preview-thumbnail-placeholder';
+      placeholder.textContent = 'Image';
+      thumbWrap.append(img, placeholder);
+      mountAttachmentImage(img, preview.thumbnail, placeholder);
+      card.appendChild(thumbWrap);
+    }
+    const body = document.createElement('div'); body.className = 'link-preview-body';
+    if (preview.site) { const el = document.createElement('div'); el.className = 'link-preview-site'; el.textContent = preview.site; body.appendChild(el); }
+    if (preview.title) { const el = document.createElement('div'); el.className = 'link-preview-title'; el.textContent = preview.title; body.appendChild(el); }
+    if (preview.description) { const el = document.createElement('div'); el.className = 'link-preview-description'; el.textContent = preview.description; body.appendChild(el); }
+    if (preview.displayUrl) { const el = document.createElement('div'); el.className = 'link-preview-url'; el.textContent = preview.displayUrl; body.appendChild(el); }
+    card.appendChild(body);
+    return card;
+  }
+
   function renderThread() {
     updateWordCount();
     els.thread.innerHTML = '';
@@ -1089,6 +1269,7 @@
     const annotationMatchIds = new Set(findState.matches.filter(match => match.field === 'annotation').map(match => match.messageId));
     const captionMatchIds = new Set(findState.matches.filter(match => match.field === 'imageCaption').map(match => match.messageId));
     const altTextMatchIds = new Set(findState.matches.filter(match => match.field === 'imageAltText').map(match => match.messageId));
+    const linkPreviewMatchIds = new Set(findState.matches.filter(match => match.field.startsWith('linkPreview')).map(match => match.messageId));
     const currentMatch = findState.matches[findState.current];
 
     state.messages.forEach((item, index) => {
@@ -1120,23 +1301,25 @@
         menu.hidden = true;
         menu.setAttribute('role', 'menu');
         const hasImage = Boolean(item.imageAttachment);
+        const hasLinkPreview = Boolean(item.linkPreview);
         const showRoot = () => {
           const controls = [];
-          if (hasImage) controls.push(makeSubmenuButton('Edit', () => showEdit()));
+          if (hasImage || hasLinkPreview) controls.push(makeSubmenuButton('Edit', () => showEdit()));
           else controls.push(makeToolButton('Edit', () => { closeMessageMenus(); openNarrativeDialog(item.id); }));
           controls.push(makeSubmenuButton('Insert', () => showInsert()));
           controls.push(makeSubmenuButton('Move', () => showMove()));
-          if (!hasImage) controls.push(makeSubmenuButton('Add', () => showAdd()));
+          if (!hasImage || !hasLinkPreview) controls.push(makeSubmenuButton('Add', () => showAdd()));
           controls.push(makeToolButton('Delete', () => { closeMessageMenus(); deleteMessage(item.id); }, true));
           setMessageMenuPage(menu, controls);
         };
         const showEdit = () => {
-          const controls = [
-            makeToolButton('Text', () => { closeMessageMenus(); openNarrativeDialog(item.id); }),
-            makeToolButton('Image details…', () => { closeMessageMenus(); openImageDetailsDialog(item.id); }),
-            makeToolButton('Replace image…', () => { closeMessageMenus(); startImagePicker(item.id); }),
-            makeToolButton('Remove image', () => { closeMessageMenus(); removeImageFromItem(item.id); }, true)
-          ];
+          const controls = [makeToolButton('Text', () => { closeMessageMenus(); openNarrativeDialog(item.id); })];
+          if (hasImage) {
+            controls.push(makeToolButton('Image details…', () => { closeMessageMenus(); openImageDetailsDialog(item.id); }));
+            controls.push(makeToolButton('Replace image…', () => { closeMessageMenus(); startImagePicker(item.id); }));
+            controls.push(makeToolButton('Remove image', () => { closeMessageMenus(); removeImageFromItem(item.id); }, true));
+          }
+          if (hasLinkPreview) controls.push(makeToolButton('Link preview…', () => { closeMessageMenus(); openLinkPreviewDialog(item.id); }));
           setMessageMenuPage(menu, controls, showRoot, 'Edit');
         };
         const showMove = () => {
@@ -1154,8 +1337,10 @@
           setMessageMenuPage(menu, [messageAbove, messageBelow, narrativeAbove, narrativeBelow], showRoot, 'Insert');
         };
         const showAdd = () => {
-          const image = makeToolButton('Image…', () => { closeMessageMenus(); startImagePicker(item.id); });
-          setMessageMenuPage(menu, [image], showRoot, 'Add');
+          const controls = [];
+          if (!hasImage) controls.push(makeToolButton('Image…', () => { closeMessageMenus(); startImagePicker(item.id); }));
+          if (!hasLinkPreview) controls.push(makeToolButton('Link preview…', () => { closeMessageMenus(); openLinkPreviewDialog(item.id); }));
+          setMessageMenuPage(menu, controls, showRoot, 'Add');
         };
         menu._threadwriterShowRoot = showRoot;
         showRoot();
@@ -1179,6 +1364,11 @@
           altCurrent: currentMatch?.messageId === item.id && currentMatch.field === 'imageAltText'
         });
         if (narrativeImage) card.appendChild(narrativeImage);
+        const narrativePreview = makeLinkPreviewElement(item, 'narrative', {
+          match: linkPreviewMatchIds.has(item.id),
+          current: currentMatch?.messageId === item.id && currentMatch.field.startsWith('linkPreview')
+        });
+        if (narrativePreview) card.appendChild(narrativePreview);
         card.appendChild(actions);
         row.appendChild(card);
         els.thread.appendChild(row);
@@ -1242,9 +1432,10 @@
       const hasAnnotation = Boolean(item.annotation);
       const hasTimestamp = Boolean(item.displayTimestamp);
       const hasImage = Boolean(item.imageAttachment);
+      const hasLinkPreview = Boolean(item.linkPreview);
       const showRoot = () => {
         const controls = [];
-        if (hasAnnotation || hasTimestamp || hasImage) {
+        if (hasAnnotation || hasTimestamp || hasImage || hasLinkPreview) {
           controls.push(makeSubmenuButton('Edit', () => showEdit()));
         } else {
           controls.push(makeToolButton('Edit', () => { closeMessageMenus(); startEditMessage(item.id, bubble); }));
@@ -1252,7 +1443,7 @@
         controls.push(makeToolButton('Change speaker', () => { closeMessageMenus(); cycleMessageSpeaker(item.id); }));
         controls.push(makeSubmenuButton('Move', () => showMove()));
         controls.push(makeSubmenuButton('Insert', () => showInsert()));
-        if (!hasAnnotation || !hasTimestamp || !hasImage) controls.push(makeSubmenuButton('Add', () => showAdd()));
+        if (!hasAnnotation || !hasTimestamp || !hasImage || !hasLinkPreview) controls.push(makeSubmenuButton('Add', () => showAdd()));
         controls.push(makeToolButton('Delete', () => { closeMessageMenus(); deleteMessage(item.id); }, true));
         setMessageMenuPage(menu, controls);
       };
@@ -1265,6 +1456,7 @@
           controls.push(makeToolButton('Replace image…', () => { closeMessageMenus(); startImagePicker(item.id); }));
           controls.push(makeToolButton('Remove image', () => { closeMessageMenus(); removeImageFromItem(item.id); }, true));
         }
+        if (hasLinkPreview) controls.push(makeToolButton('Link preview…', () => { closeMessageMenus(); openLinkPreviewDialog(item.id); }));
         setMessageMenuPage(menu, controls, showRoot, 'Edit');
       };
       const showMove = () => {
@@ -1286,6 +1478,7 @@
         if (!hasAnnotation) controls.push(makeToolButton('Annotation…', () => { closeMessageMenus(); openAnnotationDialog(item.id); }));
         if (!hasTimestamp) controls.push(makeToolButton('Timestamp…', () => { closeMessageMenus(); openTimestampDialog(item.id); }));
         if (!hasImage) controls.push(makeToolButton('Image…', () => { closeMessageMenus(); startImagePicker(item.id); }));
+        if (!hasLinkPreview) controls.push(makeToolButton('Link preview…', () => { closeMessageMenus(); openLinkPreviewDialog(item.id); }));
         setMessageMenuPage(menu, controls, showRoot, 'Add');
       };
       menu._threadwriterShowRoot = showRoot;
@@ -1313,6 +1506,11 @@
         altCurrent: currentMatch?.messageId === item.id && currentMatch.field === 'imageAltText'
       });
       if (messageImage) card.appendChild(messageImage);
+      const messagePreview = makeLinkPreviewElement(item, 'message', {
+        match: linkPreviewMatchIds.has(item.id),
+        current: currentMatch?.messageId === item.id && currentMatch.field.startsWith('linkPreview')
+      });
+      if (messagePreview) card.appendChild(messagePreview);
 
       if (item.annotation) {
         const note = document.createElement('div');
@@ -1829,10 +2027,24 @@
   function findFieldValue(item, field) {
     if (field === 'imageCaption') return normalizeImageAttachment(item?.imageAttachment)?.caption || '';
     if (field === 'imageAltText') return normalizeImageAttachment(item?.imageAttachment)?.altText || '';
+    if (field.startsWith('linkPreview')) {
+      const preview = normalizeLinkPreview(item?.linkPreview);
+      const key = field.replace('linkPreview', '').replace(/^./, c => c.toLowerCase());
+      return preview && typeof preview[key] === 'string' ? preview[key] : '';
+    }
     return typeof item?.[field] === 'string' ? item[field] : '';
   }
 
   function setFindFieldValue(item, field, value) {
+    if (field.startsWith('linkPreview')) {
+      const preview = normalizeLinkPreview(item?.linkPreview);
+      if (!preview) return false;
+      const key = field.replace('linkPreview', '').replace(/^./, c => c.toLowerCase());
+      if (!['site', 'title', 'description', 'displayUrl'].includes(key)) return false;
+      preview[key] = value;
+      item.linkPreview = preview;
+      return true;
+    }
     if (field === 'imageCaption' || field === 'imageAltText') {
       const attachment = normalizeImageAttachment(item?.imageAttachment);
       if (!attachment) return false;
@@ -1871,6 +2083,12 @@
       if (item.imageAttachment) {
         collect(item, 'imageCaption');
         collect(item, 'imageAltText');
+      }
+      if (item.linkPreview) {
+        collect(item, 'linkPreviewSite');
+        collect(item, 'linkPreviewTitle');
+        collect(item, 'linkPreviewDescription');
+        collect(item, 'linkPreviewDisplayUrl');
       }
     });
     return matches;
@@ -1955,6 +2173,12 @@
       if (item.imageAttachment) {
         replaceField(item, 'imageCaption');
         replaceField(item, 'imageAltText');
+      }
+      if (item.linkPreview) {
+        replaceField(item, 'linkPreviewSite');
+        replaceField(item, 'linkPreviewTitle');
+        replaceField(item, 'linkPreviewDescription');
+        replaceField(item, 'linkPreviewDisplayUrl');
       }
     });
     scheduleSave();
@@ -2297,6 +2521,11 @@
           addTextResult(documentId, title, 'Narrative', item.text);
           if (attachment?.caption) addTextResult(documentId, title, 'Narrative image caption', attachment.caption);
           if (attachment?.altText) addTextResult(documentId, title, 'Narrative image alt text', attachment.altText);
+          const preview = normalizeLinkPreview(item.linkPreview);
+          if (preview?.site) addTextResult(documentId, title, 'Narrative link source', preview.site);
+          if (preview?.title) addTextResult(documentId, title, 'Narrative link title', preview.title);
+          if (preview?.description) addTextResult(documentId, title, 'Narrative link description', preview.description);
+          if (preview?.displayUrl) addTextResult(documentId, title, 'Narrative link URL', preview.displayUrl);
         } else {
           const participant = documentState.participants.find(p => p.id === item.speakerId);
           const name = participant?.name || 'Message';
@@ -2304,6 +2533,11 @@
           if (item.annotation) addTextResult(documentId, title, `${name} annotation`, item.annotation);
           if (attachment?.caption) addTextResult(documentId, title, `${name} image caption`, attachment.caption);
           if (attachment?.altText) addTextResult(documentId, title, `${name} image alt text`, attachment.altText);
+          const preview = normalizeLinkPreview(item.linkPreview);
+          if (preview?.site) addTextResult(documentId, title, `${name} link source`, preview.site);
+          if (preview?.title) addTextResult(documentId, title, `${name} link title`, preview.title);
+          if (preview?.description) addTextResult(documentId, title, `${name} link description`, preview.description);
+          if (preview?.displayUrl) addTextResult(documentId, title, `${name} link URL`, preview.displayUrl);
         }
         if (results.length >= 60) return results;
       }
@@ -2839,6 +3073,24 @@
     return (name || 'thread').replace(/[\\/:*?"<>|]+/g, '-').trim() || 'thread';
   }
 
+  function transcriptLinkPreviewLines(item, indent = '') {
+    const preview = normalizeLinkPreview(item?.linkPreview);
+    if (!preview) return [];
+    const lines = [`${indent}[Link preview]`];
+    const addMultiline = (label, value) => {
+      if (!value) return;
+      const parts = String(value).split('\n');
+      lines.push(`${indent}${label}: ${parts[0] || ''}`);
+      parts.slice(1).forEach(part => lines.push(`${indent}  ${part}`));
+    };
+    addMultiline('Source', preview.site);
+    addMultiline('Title', preview.title);
+    addMultiline('Description', preview.description);
+    addMultiline('URL', preview.displayUrl);
+    if (preview.thumbnail) lines.push(`${indent}Thumbnail: ${preview.thumbnail.name || 'image'}`);
+    return lines;
+  }
+
   function transcriptImageMetadataLines(item, indent = '') {
     const attachment = normalizeImageAttachment(item?.imageAttachment);
     if (!attachment) return [];
@@ -2861,6 +3113,7 @@
       if (isNarrative(item)) {
         lines.push(item.text);
         lines.push(...transcriptImageMetadataLines(item));
+        lines.push(...transcriptLinkPreviewLines(item));
         lines.push('');
         return;
       }
@@ -2868,6 +3121,7 @@
       const stamp = item.displayTimestamp ? ` [${item.displayTimestamp}]` : '';
       lines.push(`${p?.name || 'Unknown'}${stamp}: ${item.text}`);
       lines.push(...transcriptImageMetadataLines(item, '    '));
+      lines.push(...transcriptLinkPreviewLines(item, '    '));
       if (item.annotation) {
         String(item.annotation).split('\n').forEach(line => lines.push(`    ${line}`));
       }
@@ -2999,6 +3253,54 @@
     return Math.max(1, lines.length) * 25;
   }
 
+  function paintPngLinkPreview(ctx, previewValue, x, y, width, draw = false, imageMap = new Map()) {
+    const preview = normalizeLinkPreview(previewValue);
+    if (!preview) return 0;
+    const pad = 16;
+    const thumbW = preview.thumbnail ? Math.min(150, width * 0.31) : 0;
+    const gap = preview.thumbnail ? 14 : 0;
+    const textW = Math.max(120, width - pad * 2 - thumbW - gap);
+    const segments = [];
+    let textH = 0;
+    const add = (text, font, lineH, color) => {
+      if (!text) return;
+      ctx.font = font;
+      const lines = wrapCanvasText(ctx, text, textW);
+      segments.push({ lines, font, lineH, color });
+      textH += lines.length * lineH + 5;
+    };
+    add(preview.site, '700 14px Arial, sans-serif', 19, '#777780');
+    add(preview.title, '700 20px Arial, sans-serif', 27, '#25252b');
+    add(preview.description, '400 16px Arial, sans-serif', 22, '#555560');
+    add(preview.displayUrl, '400 14px Arial, sans-serif', 19, '#777780');
+    const thumbH = preview.thumbnail ? Math.min(130, Math.max(88, textH)) : 0;
+    const height = Math.max(72, textH + pad * 2 - 5, thumbH + pad * 2);
+    if (draw) {
+      ctx.fillStyle = '#f7f7f9';
+      roundedRectPath(ctx, x, y, width, height, 16);
+      ctx.fill();
+      ctx.strokeStyle = '#d8d8df';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      let tx = x + pad;
+      if (preview.thumbnail) {
+        const source = imageMap.get(preview.thumbnail.id);
+        if (source) ctx.drawImage(source, tx, y + pad, thumbW, thumbH);
+        else { ctx.fillStyle = '#e5e5ea'; ctx.fillRect(tx, y + pad, thumbW, thumbH); }
+        tx += thumbW + gap;
+      }
+      let ty = y + pad;
+      ctx.textAlign = 'left';
+      for (const segment of segments) {
+        ctx.font = segment.font;
+        ctx.fillStyle = segment.color;
+        segment.lines.forEach((line, i) => ctx.fillText(line, tx, ty + i * segment.lineH));
+        ty += segment.lines.length * segment.lineH + 5;
+      }
+    }
+    return height;
+  }
+
   function paintPngThread(ctx, draw = false, imageMap = new Map()) {
     const W = 1080;
     const left = 72;
@@ -3069,6 +3371,12 @@
             y += paintPngImageCaption(ctx, item.imageAttachment.caption, W / 2, y, box.width, 'center', draw);
           }
           y += 12;
+        }
+        if (item.linkPreview) {
+          y += 8;
+          const previewWidth = Math.min(620, contentWidth * 0.72);
+          y += paintPngLinkPreview(ctx, item.linkPreview, (W - previewWidth) / 2, y, previewWidth, draw, imageMap);
+          y += 10;
         }
         y += 12;
         return;
@@ -3168,6 +3476,14 @@
           const captionX = captionAlign === 'right' ? imageX + box.width : imageX;
           y += paintPngImageCaption(ctx, item.imageAttachment.caption, captionX, y, box.width, captionAlign, draw);
         }
+      }
+
+      if (item.linkPreview) {
+        y += 10;
+        const previewWidth = transcript ? Math.min(650, contentWidth) : Math.min(620, maxBubbleWidth);
+        const previewX = transcript || side === 'left' ? left : W - right - previewWidth;
+        y += paintPngLinkPreview(ctx, item.linkPreview, previewX, y, previewWidth, draw, imageMap);
+        annotationMaxWidth = Math.max(annotationMaxWidth, previewWidth);
       }
 
       if (item.annotation) {
@@ -3312,6 +3628,25 @@ ${imageRels}
     return `<w:p><w:pPr><w:jc w:val="${side === 'right' ? 'right' : 'left'}"/><w:spacing w:before="0" w:after="180"/></w:pPr>${runs}</w:p>`;
   }
 
+  function wordPortableLinkPreview(previewValue, align = 'left', trailingAfter = 180) {
+    const preview = normalizeLinkPreview(previewValue);
+    if (!preview) return [];
+    const makePreviewParagraph = (text, { italic = false, bold = false, size = 18, color = '666670', after = 50 } = {}) => {
+      const runs = String(text).split('\n').map((line, index) => {
+        const br = index ? '<w:r><w:br/></w:r>' : '';
+        return `${br}<w:r><w:rPr>${italic ? '<w:i/>' : ''}${bold ? '<w:b/>' : ''}<w:color w:val="${color}"/><w:sz w:val="${size}"/><w:szCs w:val="${size}"/></w:rPr><w:t xml:space="preserve">${xmlEscape(line)}</w:t></w:r>`;
+      }).join('');
+      return `<w:p><w:pPr><w:jc w:val="${align}"/><w:spacing w:before="0" w:after="${after}"/></w:pPr>${runs}</w:p>`;
+    };
+    const paragraphs = [makePreviewParagraph('[Link preview]', { italic: true, size: 17, color: '777780', after: 35 })];
+    if (preview.site) paragraphs.push(makePreviewParagraph(`Source: ${preview.site}`, { size: 18, after: 25 }));
+    if (preview.title) paragraphs.push(makePreviewParagraph(preview.title, { bold: true, size: 21, color: '33333A', after: 25 }));
+    if (preview.description) paragraphs.push(makePreviewParagraph(preview.description, { size: 19, color: '555560', after: 25 }));
+    if (preview.displayUrl) paragraphs.push(makePreviewParagraph(preview.displayUrl, { size: 17, color: '777780', after: preview.thumbnail ? 25 : trailingAfter }));
+    if (preview.thumbnail) paragraphs.push(makePreviewParagraph(`[Thumbnail: ${preview.thumbnail.name || 'image'}]`, { italic: true, size: 17, color: '777780', after: trailingAfter }));
+    return paragraphs;
+  }
+
   function wordPortableImageMetadata(attachment, align = 'left', trailingAfter = 180) {
     const image = normalizeImageAttachment(attachment);
     if (!image) return [];
@@ -3336,14 +3671,16 @@ ${imageRels}
     for (const item of state.messages) {
       if (isNarrative(item)) {
         paragraphs.push(wordNarrativeParagraph(item.text));
-        paragraphs.push(...wordPortableImageMetadata(item.imageAttachment, 'center', 180));
+        paragraphs.push(...wordPortableImageMetadata(item.imageAttachment, 'center', item.linkPreview ? 60 : 180));
+        paragraphs.push(...wordPortableLinkPreview(item.linkPreview, 'center', 180));
         continue;
       }
       const p = getParticipant(item.speakerId);
       const timestampRun = item.displayTimestamp ? `<w:r><w:rPr><w:i/><w:color w:val="6D6D78"/><w:sz w:val="19"/><w:szCs w:val="19"/></w:rPr><w:t xml:space="preserve">  ${xmlEscape(item.displayTimestamp)}</w:t></w:r>` : '';
       paragraphs.push(`<w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:rPr><w:b/></w:rPr><w:t>${xmlEscape(p?.name || 'Unknown')}</w:t></w:r>${timestampRun}</w:p>`);
-      paragraphs.push(`<w:p><w:pPr><w:spacing w:after="${item.imageAttachment || item.annotation ? 60 : 180}"/></w:pPr>${textRuns(item.text)}</w:p>`);
-      paragraphs.push(...wordPortableImageMetadata(item.imageAttachment, 'left', item.annotation ? 60 : 180));
+      paragraphs.push(`<w:p><w:pPr><w:spacing w:after="${item.imageAttachment || item.linkPreview || item.annotation ? 60 : 180}"/></w:pPr>${textRuns(item.text)}</w:p>`);
+      paragraphs.push(...wordPortableImageMetadata(item.imageAttachment, 'left', (item.linkPreview || item.annotation) ? 60 : 180));
+      paragraphs.push(...wordPortableLinkPreview(item.linkPreview, 'left', item.annotation ? 60 : 180));
       if (item.annotation) paragraphs.push(wordAnnotationParagraph(item.annotation, 'left'));
     }
 
@@ -3536,6 +3873,18 @@ ${imageRels}
     return `<w:p><w:pPr><w:jc w:val="${align}"/><w:spacing w:before="0" w:after="120"/></w:pPr>${runs}</w:p>`;
   }
 
+  function wordLinkPreviewBlock(previewValue, imageInfo = null, align = 'left') {
+    const preview = normalizeLinkPreview(previewValue);
+    if (!preview) return '';
+    const parts = [];
+    if (preview.site) parts.push(`<w:p><w:pPr><w:jc w:val="${align}"/><w:spacing w:after="20"/></w:pPr><w:r><w:rPr><w:b/><w:smallCaps/><w:color w:val="777780"/><w:sz w:val="16"/><w:szCs w:val="16"/></w:rPr><w:t>${xmlEscape(preview.site)}</w:t></w:r></w:p>`);
+    if (preview.title) parts.push(`<w:p><w:pPr><w:jc w:val="${align}"/><w:spacing w:after="35"/></w:pPr><w:r><w:rPr><w:b/><w:color w:val="24242A"/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr><w:t>${xmlEscape(preview.title)}</w:t></w:r></w:p>`);
+    if (preview.description) parts.push(`<w:p><w:pPr><w:jc w:val="${align}"/><w:spacing w:after="30"/></w:pPr>${richTextRuns(preview.description)}</w:p>`);
+    if (preview.displayUrl) parts.push(`<w:p><w:pPr><w:jc w:val="${align}"/><w:spacing w:after="35"/></w:pPr><w:r><w:rPr><w:color w:val="777780"/><w:sz w:val="17"/><w:szCs w:val="17"/></w:rPr><w:t>${xmlEscape(preview.displayUrl)}</w:t></w:r></w:p>`);
+    if (imageInfo) parts.push(wordImageParagraph(imageInfo, align, 2.25, 1.75, ''));
+    return `<w:tbl><w:tblPr><w:tblW w:w="7600" w:type="dxa"/><w:tblBorders><w:top w:val="single" w:sz="6" w:color="D6D6DE"/><w:left w:val="single" w:sz="6" w:color="D6D6DE"/><w:bottom w:val="single" w:sz="6" w:color="D6D6DE"/><w:right w:val="single" w:sz="6" w:color="D6D6DE"/></w:tblBorders><w:tblCellMar><w:top w:w="110" w:type="dxa"/><w:left w:w="140" w:type="dxa"/><w:bottom w:w="110" w:type="dxa"/><w:right w:w="140" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tr><w:tc><w:tcPr><w:tcW w:w="7600" w:type="dxa"/></w:tcPr>${parts.join('')}</w:tc></w:tr></w:tbl><w:p><w:pPr><w:spacing w:after="100"/></w:pPr></w:p>`;
+  }
+
   async function buildRichDocx() {
     const prepared = await prepareDocxImages(state);
     const blocks = [];
@@ -3543,12 +3892,15 @@ ${imageRels}
     if (state.sceneHeader) blocks.push(wordSceneHeaderParagraph());
     state.messages.forEach((item, index) => {
       const imageInfo = item.imageAttachment ? prepared.images.get(item.imageAttachment.id) : null;
+      const preview = normalizeLinkPreview(item.linkPreview);
+      const previewImageInfo = preview?.thumbnail ? prepared.images.get(preview.thumbnail.id) : null;
       if (isNarrative(item)) {
         blocks.push(wordNarrativeParagraph(item.text));
         if (imageInfo) {
           blocks.push(wordImageParagraph(imageInfo, 'center', 5.4, 6.5, item.imageAttachment?.altText || ''));
           if (item.imageAttachment?.caption) blocks.push(wordImageCaptionParagraph(item.imageAttachment.caption, 'center'));
         }
+        if (preview) blocks.push(wordLinkPreviewBlock(preview, previewImageInfo, 'center'));
         return;
       }
       const p = getParticipant(item.speakerId);
@@ -3563,6 +3915,10 @@ ${imageRels}
         blocks.push(wordImageParagraph(imageInfo, align, state.conversationStyle === 'transcript' ? 5.4 : 4.7, 6.3, item.imageAttachment?.altText || ''));
         if (item.imageAttachment?.caption) blocks.push(wordImageCaptionParagraph(item.imageAttachment.caption, align));
         if (item.annotation) blocks.push(wordAnnotationParagraph(item.annotation, align));
+      }
+      if (preview) {
+        const previewAlign = state.conversationStyle === 'transcript' ? 'left' : (p?.side === 'right' ? 'right' : 'left');
+        blocks.push(wordLinkPreviewBlock(preview, previewImageInfo, previewAlign));
       }
     });
 

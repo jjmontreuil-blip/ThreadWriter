@@ -1,4 +1,4 @@
-# ThreadWriter v0.9.1
+# ThreadWriter v0.9.2
 
 A small local-first dialogue editor that looks and behaves like a message thread, but can also switch into a plain transcript-style drafting view.
 
@@ -26,12 +26,13 @@ A small local-first dialogue editor that looks and behaves like a message thread
 - Optional editable timestamps, including free-form story labels such as “two hours later”
 - Timestamped messages create a visual time-break before the new message beat
 - Move Up / Move Down controls in each message menu for reliable one-step reordering
-- Find & Replace across message, narrative, annotation, image-caption, and alt-text content, including next/previous navigation and case-sensitive search
-- Live thread word count for committed message, narrative, and visible image-caption text (headers, timestamps, annotations, alt text, and participant labels are excluded)
+- Find & Replace across message, narrative, annotation, image-caption, alt-text, and faux-link-preview content, including next/previous navigation and case-sensitive search
+- Live thread word count for committed message, narrative, visible image-caption text, and faux-link title/description text (headers, timestamps, annotations, alt text, source labels, URLs, and participant labels are excluded)
 - Insert Above / Insert Below commands for adding a message directly where it belongs in an existing thread
 - General-purpose narrative / system blocks in the ordered thread flow
 - Multiline under-message annotations for actions, stage directions, read receipts, reactions, metrics, and notes
 - One static image attachment per message or narrative block, with optional visible captions and accessibility alt text; image binaries are stored once in IndexedDB rather than duplicated through local version-history snapshots
+- One manually authored faux link preview per message or narrative block, with source/site, title, description, display URL/domain, and optional thumbnail; previews never scrape or contact a live website
 - Browser-readable image imports are normalized to PNG or JPEG and resized to a maximum 2400-pixel dimension for saner local storage
 - Optional centered scene header for chapter names, dates/times, group names, scene labels, interstitials, etc.
 - Four simple header-font families: Rounded, Sans, Serif, and Mono
@@ -40,7 +41,7 @@ A small local-first dialogue editor that looks and behaves like a message thread
 - Two `.docx` export modes with no external libraries: Portable transcript and Rich layout
 - Plain `.txt` transcript export
 - Clean Print / Save as PDF stylesheet, including box-free Transcript output and no app status/project/version metadata
-- Headers, timestamps, Transcript style, images, and visible image captions carry through the relevant visual exports; TXT and Portable DOCX preserve readable image placeholders plus caption/alt metadata
+- Headers, timestamps, Transcript style, images, visible image captions, and faux link previews carry through the relevant visual exports; TXT and Portable DOCX preserve readable image/link metadata
 - Installable PWA behavior when served over HTTP/HTTPS
 
 ## Running it
@@ -61,6 +62,18 @@ Then open `http://localhost:8000/` in your browser. Service-worker/offline insta
 
 GitHub Pages is also a good fit: place these files at the publishing root and add the resulting site to an iPhone/iPad Home Screen if desired.
 
+
+## New in v0.9.2
+
+### Faux link previews
+
+- Messages and Narrative blocks can now carry **one manually authored faux link preview**. Add or edit it from the block/message `…` menu.
+- Preview fields are **Site / source**, **Title**, **Description**, and **Display URL / domain**. None are fetched from the network, so fictional URLs and in-world publications work exactly as well as real ones.
+- Each preview can optionally include a **thumbnail image**. Thumbnail binaries reuse ThreadWriter's IndexedDB media store and lightweight ID references, so Version History does not duplicate the image six times.
+- Preview title and description count toward thread/project word counts because they are visible authored prose; source labels and display URLs do not.
+- Find & Replace and project-wide search include all four text fields.
+- Faux previews carry through **PNG**, **Print/PDF**, and **Rich DOCX** visually. **TXT** and **Portable DOCX** preserve their fields as readable structured metadata, including a thumbnail filename placeholder when present.
+- `.threadwriter` files and project backups automatically include preview thumbnails alongside ordinary image attachments.
 
 ## New in v0.9.1
 
@@ -317,8 +330,6 @@ v0.6 project files add fields for the scene header and Conversation Style, but o
 
 ### Authoring tools
 
-- Image captions / alt text
-- Faux link previews
 
 ### Import / migration
 
@@ -327,7 +338,6 @@ v0.6 project files add fields for the scene header and Conversation Style, but o
 ### Presentation
 
 - Additional generic Conversation Styles such as Work Chat, AI / Terminal, and Retro IM
-- Image captions / alt text
 - Optional participant avatars
 - Optional word-balloon tails
 
