@@ -1,5 +1,5 @@
 (() => {
-  const APP_VERSION = '0.10.5';
+  const APP_VERSION = '0.10.6';
   const LEGACY_STORAGE_KEY = 'threadwriter.project.v1';
   const LIBRARY_KEY = 'threadwriter.library.v1';
   const DOCUMENT_PREFIX = 'threadwriter.document.v1.';
@@ -13,17 +13,18 @@
   const MAX_IMAGE_DIMENSION = 2400;
   const MAX_IMAGE_FILE_BYTES = 25 * 1024 * 1024;
   const defaultState = () => ({
-    version: 7,
+    version: 8,
     title: 'Untitled Thread',
     sceneHeader: '',
     headerFont: 'rounded',
     conversationStyle: 'chat',
+    conversationWidth: 'wide',
     conversationBackground: { mode: 'default', solid: '#f4f4f7', colors: ['#f4f4f7', '#d9e6ff'], direction: 'vertical' },
     highContrastLabels: false,
     activeParticipantId: 'p1',
     participants: [
-      { id: 'p1', name: 'Participant 1', side: 'left', color: '#d9e6ff' },
-      { id: 'p2', name: 'Participant 2', side: 'right', color: '#c9f2d0' }
+      { id: 'p1', name: 'Participant 1', side: 'left', color: '#d9e6ff', textColorMode: 'auto', textColor: '#151518' },
+      { id: 'p2', name: 'Participant 2', side: 'right', color: '#c9f2d0', textColorMode: 'auto', textColor: '#151518' }
     ],
     messages: []
   });
@@ -73,6 +74,7 @@
     narrativeBtn: document.getElementById('narrativeBtn'),
     quickNarrativeBtn: document.getElementById('quickNarrativeBtn'),
     conversationStyle: document.getElementById('conversationStyle'),
+    conversationWidth: document.getElementById('conversationWidth'),
     backgroundBtn: document.getElementById('backgroundBtn'),
     backgroundDialog: document.getElementById('backgroundDialog'),
     closeBackgroundDialogBtn: document.getElementById('closeBackgroundDialogBtn'),
@@ -178,6 +180,7 @@
     saveAnnotationBtn: document.getElementById('saveAnnotationBtn'),
     narrativeDialog: document.getElementById('narrativeDialog'),
     narrativeInput: document.getElementById('narrativeInput'),
+    narrativeStyle: document.getElementById('narrativeStyle'),
     closeNarrativeDialogBtn: document.getElementById('closeNarrativeDialogBtn'),
     removeNarrativeBtn: document.getElementById('removeNarrativeBtn'),
     saveNarrativeBtn: document.getElementById('saveNarrativeBtn'),
@@ -821,6 +824,36 @@
     }
   }
 
+  function normalizeConversationWidth(value) {
+    return value === 'tablet' || value === 'phone' ? value : 'wide';
+  }
+
+  function normalizeBubbleTextMode(value) {
+    return value === 'black' || value === 'white' || value === 'custom' ? value : 'auto';
+  }
+
+  function relativeLuminance(hex) {
+    const normalized = normalizeHex(hex, '#e5e5ea').slice(1);
+    const channels = [0, 2, 4].map(index => parseInt(normalized.slice(index, index + 2), 16) / 255)
+      .map(channel => channel <= 0.04045 ? channel / 12.92 : Math.pow((channel + 0.055) / 1.055, 2.4));
+    return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+  }
+
+  function automaticBubbleTextColor(background) {
+    const luminance = relativeLuminance(background);
+    const blackContrast = (luminance + 0.05) / 0.05;
+    const whiteContrast = 1.05 / (luminance + 0.05);
+    return whiteContrast > blackContrast ? '#ffffff' : '#111116';
+  }
+
+  function participantBubbleTextColor(participant) {
+    const mode = normalizeBubbleTextMode(participant?.textColorMode);
+    if (mode === 'black') return '#111116';
+    if (mode === 'white') return '#ffffff';
+    if (mode === 'custom') return normalizeHex(participant?.textColor, '#ff2d55');
+    return automaticBubbleTextColor(participant?.color || '#e5e5ea');
+  }
+
   function blankConversationPresetLibrary() {
     return { version: 1, presets: [] };
   }
@@ -830,13 +863,16 @@
     const participants = Array.isArray(value.participants) ? value.participants.map((participant, participantIndex) => ({
       name: typeof participant?.name === 'string' && participant.name.trim() ? participant.name.trim() : `Participant ${participantIndex + 1}`,
       side: participant?.side === 'right' ? 'right' : 'left',
-      color: normalizeHex(participant?.color, '#e5e5ea')
+      color: normalizeHex(participant?.color, '#e5e5ea'),
+      textColorMode: normalizeBubbleTextMode(participant?.textColorMode),
+      textColor: normalizeHex(participant?.textColor, '#ff2d55')
     })).slice(0, 24) : [];
     if (!participants.length) return null;
     return {
       id: typeof value.id === 'string' && value.id ? value.id : `preset-${Date.now()}-${index}-${Math.random().toString(16).slice(2)}`,
       name: typeof value.name === 'string' && value.name.trim() ? value.name.trim() : `Preset ${index + 1}`,
       conversationStyle: normalizeConversationStyle(value.conversationStyle),
+      conversationWidth: normalizeConversationWidth(value.conversationWidth),
       conversationBackground: normalizeConversationBackground(value.conversationBackground),
       highContrastLabels: value.highContrastLabels === true,
       participants,
@@ -973,16 +1009,19 @@
       id: p.id || `p${index + 1}`,
       name: typeof p.name === 'string' && p.name.trim() ? p.name : `Participant ${index + 1}`,
       side: p.side === 'right' ? 'right' : 'left',
-      color: /^#?[0-9a-fA-F]{6}$/.test(String(p.color || '')) ? (String(p.color).startsWith('#') ? p.color : `#${p.color}`) : '#e5e5ea'
+      color: /^#?[0-9a-fA-F]{6}$/.test(String(p.color || '')) ? (String(p.color).startsWith('#') ? p.color : `#${p.color}`) : '#e5e5ea',
+      textColorMode: normalizeBubbleTextMode(p.textColorMode),
+      textColor: normalizeHex(p.textColor, '#ff2d55')
     }));
     const fallbackSpeakerId = participants[0]?.id || null;
     return {
       ...project,
-      version: 7,
+      version: 8,
       title: typeof project.title === 'string' ? project.title : base.title,
       sceneHeader: typeof project.sceneHeader === 'string' ? project.sceneHeader : '',
       headerFont: allowedFonts.has(project.headerFont) ? project.headerFont : 'rounded',
       conversationStyle: normalizeConversationStyle(project.conversationStyle),
+      conversationWidth: normalizeConversationWidth(project.conversationWidth),
       conversationBackground: normalizeConversationBackground(project.conversationBackground),
       highContrastLabels: project.highContrastLabels === true,
       activeParticipantId: project.activeParticipantId || fallbackSpeakerId,
@@ -1003,6 +1042,7 @@
         if (linkPreview) item.linkPreview = linkPreview;
         else delete item.linkPreview;
         if (kind === 'narrative') {
+          item.narrativeStyle = m?.narrativeStyle === 'system' ? 'system' : 'narrative';
           delete item.speakerId;
           delete item.annotation;
           delete item.displayTimestamp;
@@ -1298,12 +1338,16 @@
     els.conversationCanvas.classList.toggle('custom-background', background.mode !== 'default');
     els.conversationCanvas.classList.toggle('custom-background-dark', background.mode !== 'default' && customBackgroundIsDark(background));
     els.conversationCanvas.classList.toggle('high-contrast-labels', state.highContrastLabels === true);
+    const width = normalizeConversationWidth(state.conversationWidth);
+    els.conversationCanvas.classList.toggle('width-tablet', width === 'tablet');
+    els.conversationCanvas.classList.toggle('width-phone', width === 'phone');
   }
 
   function render() {
     ensureActiveParticipant();
     els.title.value = state.title || 'Untitled Thread';
     els.conversationStyle.value = state.conversationStyle || 'chat';
+    if (els.conversationWidth) els.conversationWidth.value = normalizeConversationWidth(state.conversationWidth);
     applyConversationPresentation();
     renderSpeakers();
     renderThread();
@@ -1444,7 +1488,7 @@
     state.messages.forEach((item, index) => {
       if (isNarrative(item)) {
         const row = document.createElement('article');
-        row.className = 'narrative-row';
+        row.className = `narrative-row narrative-${item.narrativeStyle === 'system' ? 'system' : 'narrative'}`;
         if (textMatchIds.has(item.id)) row.classList.add('find-match');
         if (currentMatch?.messageId === item.id && currentMatch.field === 'text') row.classList.add('find-current');
         row.dataset.messageId = item.id;
@@ -1580,6 +1624,7 @@
       const bubble = document.createElement('div');
       bubble.className = 'bubble';
       bubble.style.setProperty('--bubble-color', p.color);
+      bubble.style.setProperty('--bubble-text-color', participantBubbleTextColor(p));
       bubble.textContent = item.text;
       bubble.tabIndex = 0;
 
@@ -2081,6 +2126,7 @@
     narrativeInsertIndex = Number.isInteger(insertIndex) ? insertIndex : state.messages.length;
     narrativeReturnFocusToComposer = Boolean(options.returnFocusToComposer);
     els.narrativeInput.value = block?.text || '';
+    if (els.narrativeStyle) els.narrativeStyle.value = block?.narrativeStyle === 'system' ? 'system' : 'narrative';
     els.removeNarrativeBtn.disabled = !block;
     els.narrativeDialog.showModal();
     requestAnimationFrame(() => {
@@ -2111,12 +2157,16 @@
 
     if (narrativeBlockId) {
       const block = state.messages.find(item => item.id === narrativeBlockId && isNarrative(item));
-      if (block) block.text = text;
+      if (block) {
+        block.text = text;
+        block.narrativeStyle = els.narrativeStyle?.value === 'system' ? 'system' : 'narrative';
+      }
     } else {
       const block = {
         kind: 'narrative',
         id: crypto.randomUUID ? crypto.randomUUID() : `narrative-${Date.now()}-${Math.random()}`,
         text,
+        narrativeStyle: els.narrativeStyle?.value === 'system' ? 'system' : 'narrative',
         createdAt: new Date().toISOString()
       };
       const index = Math.max(0, Math.min(Number.isInteger(narrativeInsertIndex) ? narrativeInsertIndex : state.messages.length, state.messages.length));
@@ -2190,6 +2240,13 @@
     state.conversationStyle = normalizeConversationStyle(els.conversationStyle.value);
     scheduleSave();
     renderThread();
+    closeTopMenus();
+  });
+
+  els.conversationWidth?.addEventListener('change', () => {
+    state.conversationWidth = normalizeConversationWidth(els.conversationWidth.value);
+    scheduleSave();
+    applyConversationPresentation();
     closeTopMenus();
   });
 
@@ -2341,9 +2398,10 @@
       id: existing?.id || (crypto.randomUUID ? crypto.randomUUID() : `preset-${Date.now()}-${Math.random().toString(16).slice(2)}`),
       name,
       conversationStyle: state.conversationStyle,
+      conversationWidth: normalizeConversationWidth(state.conversationWidth),
       conversationBackground: cloneState(normalizeConversationBackground(state.conversationBackground)),
       highContrastLabels: state.highContrastLabels === true,
-      participants: state.participants.map(participant => ({ name: participant.name, side: participant.side, color: participant.color })),
+      participants: state.participants.map(participant => ({ name: participant.name, side: participant.side, color: participant.color, textColorMode: normalizeBubbleTextMode(participant.textColorMode), textColor: normalizeHex(participant.textColor, '#ff2d55') })),
       createdAt: existing?.createdAt || now,
       updatedAt: now
     });
@@ -2369,7 +2427,7 @@
       name.textContent = preset.name;
       const meta = document.createElement('div');
       meta.className = 'conversation-preset-meta';
-      meta.textContent = `${conversationStyleLabel(preset.conversationStyle)} · ${preset.participants.length} participant${preset.participants.length === 1 ? '' : 's'}${preset.highContrastLabels ? ' · high contrast labels' : ''}`;
+      meta.textContent = `${conversationStyleLabel(preset.conversationStyle)} · ${normalizeConversationWidth(preset.conversationWidth)} width · ${preset.participants.length} participant${preset.participants.length === 1 ? '' : 's'}${preset.highContrastLabels ? ' · high contrast labels' : ''}`;
       const swatches = document.createElement('div');
       swatches.className = 'conversation-preset-swatches';
       preset.participants.slice(0, 8).forEach(participant => {
@@ -2440,6 +2498,7 @@
     if (!preset) return;
     createSnapshot(currentDocumentId, state, 'Before applying conversation preset', { force: true });
     state.conversationStyle = preset.conversationStyle;
+    state.conversationWidth = normalizeConversationWidth(preset.conversationWidth);
     state.conversationBackground = cloneState(preset.conversationBackground);
     state.highContrastLabels = preset.highContrastLabels === true;
 
@@ -2449,7 +2508,9 @@
       id: existing[index]?.id || (crypto.randomUUID ? crypto.randomUUID() : `p-${Date.now()}-${index}`),
       name: participant.name,
       side: participant.side,
-      color: participant.color
+      color: participant.color,
+      textColorMode: normalizeBubbleTextMode(participant.textColorMode),
+      textColor: normalizeHex(participant.textColor, '#ff2d55')
     }));
     if (keepExtras && existing.length > nextParticipants.length) {
       existing.slice(nextParticipants.length).forEach(participant => nextParticipants.push({ ...participant }));
@@ -2750,12 +2811,25 @@
       id: crypto.randomUUID ? crypto.randomUUID() : 'p' + Date.now(),
       name: `Participant ${state.participants.length + 1}`,
       side: state.participants.length % 2 ? 'right' : 'left',
-      color: '#e5e5ea'
+      color: '#e5e5ea',
+      textColorMode: 'auto',
+      textColor: '#ff2d55'
     };
     node.dataset.id = p.id;
     node.querySelector('.participant-name').value = p.name;
     node.querySelector('.participant-side').value = p.side;
-    node.querySelector('.participant-color').value = p.color;
+    const bubbleColorInput = node.querySelector('.participant-color');
+    const textModeInput = node.querySelector('.participant-text-mode');
+    const textColorInput = node.querySelector('.participant-text-color');
+    bubbleColorInput.value = normalizeHex(p.color, '#e5e5ea');
+    textModeInput.value = normalizeBubbleTextMode(p.textColorMode);
+    textColorInput.value = normalizeHex(p.textColor, '#ff2d55');
+    const updateTextColorVisibility = () => { textColorInput.hidden = textModeInput.value !== 'custom'; };
+    updateTextColorVisibility();
+    textModeInput.addEventListener('change', updateTextColorVisibility);
+    node.querySelectorAll('[data-bubble-color]').forEach(button => button.addEventListener('click', () => {
+      bubbleColorInput.value = normalizeHex(button.dataset.bubbleColor, '#e5e5ea');
+    }));
     node.querySelector('.remove-participant').addEventListener('click', () => {
       if (els.editor.children.length <= 1) return;
       node.remove();
@@ -2771,7 +2845,9 @@
       id: row.dataset.id || 'p' + Date.now() + idx,
       name: row.querySelector('.participant-name').value.trim() || `Participant ${idx + 1}`,
       side: row.querySelector('.participant-side').value,
-      color: row.querySelector('.participant-color').value
+      color: row.querySelector('.participant-color').value,
+      textColorMode: normalizeBubbleTextMode(row.querySelector('.participant-text-mode')?.value),
+      textColor: normalizeHex(row.querySelector('.participant-text-color')?.value, '#ff2d55')
     }));
     const validIds = new Set(newParticipants.map(p => p.id));
     const fallbackId = newParticipants[0].id;
@@ -3799,9 +3875,11 @@
   function paintPngThread(ctx, draw = false, imageMap = new Map(), options = {}) {
     const W = 1080;
     const safeBreaks = Array.isArray(options.safeBreaks) ? options.safeBreaks : null;
-    const left = 72;
-    const right = 72;
-    const contentWidth = W - left - right;
+    const widthMode = normalizeConversationWidth(state.conversationWidth);
+    const desiredContentWidth = widthMode === 'phone' ? 500 : (widthMode === 'tablet' ? 720 : 936);
+    const contentWidth = Math.min(W - 48, desiredContentWidth);
+    const left = (W - contentWidth) / 2;
+    const right = left;
     const maxBubbleWidth = contentWidth * 0.67;
     const style = normalizeConversationStyle(state.conversationStyle);
     const plainDraft = style !== 'chat';
@@ -3840,7 +3918,8 @@
     state.messages.forEach((item, index) => {
       if (isNarrative(item)) {
         if (index > 0) y += 26;
-        ctx.font = 'italic 500 22px Georgia, "Times New Roman", serif';
+        const systemNarrative = item.narrativeStyle === 'system';
+        ctx.font = systemNarrative ? '560 22px Arial, sans-serif' : 'italic 500 22px Georgia, "Times New Roman", serif';
         const narrativeWidth = theater ? contentWidth * 0.76 : (screen ? contentWidth * 0.72 : contentWidth * 0.78);
         const lines = wrapCanvasText(ctx, item.text, narrativeWidth);
         const narrativeX = theater ? left + contentWidth * 0.08 : (screen ? (W - narrativeWidth) / 2 : W / 2);
@@ -3973,7 +4052,7 @@
           ctx.fillStyle = participant.color || '#e5e5ea';
           roundedRectPath(ctx, x, y, bubbleWidth, bubbleHeight, 23);
           ctx.fill();
-          ctx.fillStyle = '#151518';
+          ctx.fillStyle = participantBubbleTextColor(participant);
           lines.forEach((line, lineIndex) => ctx.fillText(line, x + padX, y + padY + lineIndex * 35));
         }
         y += bubbleHeight;
@@ -4415,11 +4494,13 @@
     const documentText = darkBackground ? '#f7f7fa' : '#17171b';
     const documentMuted = darkBackground ? '#dedee6' : '#6d6d78';
     const highContrastLabels = state.highContrastLabels === true;
+    const widthMode = normalizeConversationWidth(state.conversationWidth);
+    const documentMaxWidth = widthMode === 'phone' ? 440 : (widthMode === 'tablet' ? 680 : 820);
     const body = [];
     let previousSpeaker = null;
     for (const item of state.messages) {
       if (isNarrative(item)) {
-        body.push(`<section class="narrative"><div class="narrative-text">${htmlMultiline(item.text)}</div>${htmlAttachment(item.imageAttachment, mediaMap, 'center')}${htmlLinkPreview(item.linkPreview, mediaMap, 'center')}</section>`);
+        body.push(`<section class="narrative ${item.narrativeStyle === 'system' ? 'system' : 'prose'}"><div class="narrative-text">${htmlMultiline(item.text)}</div>${htmlAttachment(item.imageAttachment, mediaMap, 'center')}${htmlLinkPreview(item.linkPreview, mediaMap, 'center')}</section>`);
         previousSpeaker = null;
         continue;
       }
@@ -4430,7 +4511,7 @@
       const showSpeaker = plainDraft || !continues;
       const speaker = showSpeaker ? `<div class="speaker">${htmlEscape(plainDraft ? p.name.toLocaleUpperCase() : p.name)}</div>` : '';
       const timestamp = item.displayTimestamp ? `<div class="timestamp">${htmlEscape(item.displayTimestamp)}</div>` : '';
-      const bubbleStyle = plainDraft ? '' : ` style="--bubble:${htmlEscape(p.color || '#e5e5ea')}"`;
+      const bubbleStyle = plainDraft ? '' : ` style="--bubble:${htmlEscape(p.color || '#e5e5ea')};--bubble-text:${htmlEscape(participantBubbleTextColor(p))}"`;
       const bubble = `<div class="bubble"${bubbleStyle}>${htmlMultiline(item.text)}</div>`;
       const annotation = item.annotation ? `<div class="annotation">${htmlMultiline(item.annotation)}</div>` : '';
       const mediaAlign = style === 'screen' ? 'center' : (plainDraft ? 'left' : side);
@@ -4446,7 +4527,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${title}</title>
 <style>
-*{box-sizing:border-box}body{margin:0;background:${backgroundCss};color:${documentText};font-family:ui-rounded,"SF Pro Rounded","Segoe UI",system-ui,-apple-system,sans-serif}.document{width:min(100%,820px);margin:0 auto;padding:34px 18px 60px}h1{font-size:28px;margin:0 0 24px}.scene-header{text-align:center;font-weight:720;font-size:21px;line-height:1.3;margin:0 auto 30px;white-space:pre-wrap}.scene-header.serif{font-family:Georgia,"Times New Roman",serif}.scene-header.mono{font-family:ui-monospace,Consolas,monospace}.message{display:flex;margin:11px 0}.message.continuation{margin-top:-7px}.message.left{justify-content:flex-start}.message.right{justify-content:flex-end}.message-card{max-width:${plainDraft ? '100%' : '67%'}}.speaker{font-size:12px;color:${documentMuted};margin:0 10px 4px}.high-contrast-labels .speaker{display:block;width:max-content;padding:2px 7px;border-radius:999px;background:rgba(0,0,0,.78);color:#fff!important}.high-contrast-labels .right .speaker{margin-left:auto}.high-contrast-labels.transcript .right .speaker{margin-left:10px;margin-right:10px}.high-contrast-labels.theater .speaker,.high-contrast-labels.screen .speaker{margin-left:auto!important;margin-right:auto!important}.right .speaker,.right .timestamp,.right .annotation,.right figcaption{text-align:right}.timestamp{font-size:10.5px;color:${documentMuted};margin:0 10px 4px}.bubble{background:${plainDraft ? 'transparent' : 'var(--bubble,#e5e5ea)'};padding:${plainDraft ? '0' : '10px 13px'};border-radius:${plainDraft ? '0' : '18px'};color:${plainDraft ? documentText : '#151518'};line-height:1.42;white-space:pre-wrap;overflow-wrap:anywhere}.annotation{margin:7px 10px 0;color:${documentMuted};font-size:12px;font-style:italic;line-height:1.4}.narrative{width:min(78%,680px);margin:24px auto;color:${documentMuted};font:italic 14px/1.5 Georgia,"Times New Roman",serif}.narrative-text{text-align:center}.attachment{margin:9px 0 0;max-width:610px}.attachment.center{margin-left:auto;margin-right:auto}.attachment.right{margin-left:auto}.attachment img{display:block;max-width:100%;max-height:70vh;border-radius:12px}.attachment figcaption{margin-top:6px;color:${documentMuted};font-size:12px;line-height:1.4}.attachment.right img{margin-left:auto}.attachment.center img{margin-left:auto;margin-right:auto}.link-preview{display:flex;gap:12px;margin-top:10px;max-width:620px;padding:12px;border:1px solid #d8d8df;border-radius:14px;background:#f7f7f9;color:#17171b;font-family:ui-rounded,"Segoe UI",system-ui,sans-serif;text-align:left}.link-preview.right{margin-left:auto}.link-preview.center{margin-left:auto;margin-right:auto}.preview-thumb{width:min(31%,150px);object-fit:cover;align-self:stretch;max-height:130px}.preview-copy{min-width:0}.preview-site,.preview-url{font-size:11px;color:#777780}.preview-title{font-size:16px;font-weight:750;line-height:1.28;margin:3px 0}.preview-description{font-size:13px;color:#555560;line-height:1.35;margin:3px 0}.missing-image{padding:20px;background:#e5e5ea;color:#686872;text-align:center;border-radius:12px}.transcript .message,.theater .message,.screen .message{justify-content:flex-start;margin:18px 0}.transcript .message-card,.theater .message-card,.screen .message-card{width:100%;max-width:100%}.transcript .right .speaker,.transcript .right .timestamp,.transcript .right .annotation,.transcript .right figcaption,.theater .right .annotation,.screen .right .annotation{text-align:left}.transcript .attachment.right,.transcript .link-preview.right,.theater .attachment.right,.theater .link-preview.right{margin-left:0;margin-right:auto}.theater .speaker,.screen .speaker{text-align:center!important;text-transform:uppercase;font-weight:800;letter-spacing:.07em}.theater .timestamp,.screen .timestamp{text-align:center!important}.theater .bubble{text-align:left}.theater .narrative{margin-left:8%;margin-right:auto}.theater .narrative-text{text-align:left}.screen .bubble{width:min(62%,520px);margin:0 auto;text-align:left}.screen .annotation{width:min(62%,520px);margin-left:auto;margin-right:auto;text-align:left!important}.screen .narrative{width:min(76%,650px)}.screen .narrative-text{text-align:left}@media(max-width:600px){.document{padding:24px 12px 42px}.message-card{max-width:${plainDraft ? '100%' : '78%'}.attachment,.link-preview{max-width:100%}.screen .bubble,.screen .annotation{width:min(76%,520px)}}@media print{@page{margin:.55in}body{background:#fff!important;color:#17171b}.document{width:100%;padding:0}.message-card,.narrative,.attachment,.link-preview{break-inside:avoid}.bubble{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+*{box-sizing:border-box}body{margin:0;background:${backgroundCss};color:${documentText};font-family:ui-rounded,"SF Pro Rounded","Segoe UI",system-ui,-apple-system,sans-serif}.document{width:min(100%,${documentMaxWidth}px);margin:0 auto;padding:34px 18px 60px}h1{font-size:28px;margin:0 0 24px}.scene-header{text-align:center;font-weight:720;font-size:21px;line-height:1.3;margin:0 auto 30px;white-space:pre-wrap}.scene-header.serif{font-family:Georgia,"Times New Roman",serif}.scene-header.mono{font-family:ui-monospace,Consolas,monospace}.message{display:flex;margin:11px 0}.message.continuation{margin-top:-7px}.message.left{justify-content:flex-start}.message.right{justify-content:flex-end}.message-card{max-width:${plainDraft ? '100%' : '67%'}}.speaker{font-size:12px;color:${documentMuted};margin:0 10px 4px}.high-contrast-labels .speaker{display:block;width:max-content;padding:2px 7px;border-radius:999px;background:rgba(0,0,0,.78);color:#fff!important}.high-contrast-labels .right .speaker{margin-left:auto}.high-contrast-labels.transcript .right .speaker{margin-left:10px;margin-right:10px}.high-contrast-labels.theater .speaker,.high-contrast-labels.screen .speaker{margin-left:auto!important;margin-right:auto!important}.right .speaker,.right .timestamp,.right .annotation,.right figcaption{text-align:right}.timestamp{font-size:10.5px;color:${documentMuted};margin:0 10px 4px}.bubble{background:${plainDraft ? 'transparent' : 'var(--bubble,#e5e5ea)'};padding:${plainDraft ? '0' : '10px 13px'};border-radius:${plainDraft ? '0' : '18px'};color:${plainDraft ? documentText : 'var(--bubble-text,#151518)'};line-height:1.42;white-space:pre-wrap;overflow-wrap:anywhere}.annotation{margin:7px 10px 0;color:${documentMuted};font-size:12px;font-style:italic;line-height:1.4}.narrative{width:min(78%,680px);margin:24px auto;color:${documentMuted};font:italic 14px/1.5 Georgia,"Times New Roman",serif}.narrative.system{font-family:ui-rounded,"Segoe UI",system-ui,sans-serif;font-style:normal;font-weight:560}.narrative-text{text-align:center}.attachment{margin:9px 0 0;max-width:610px}.attachment.center{margin-left:auto;margin-right:auto}.attachment.right{margin-left:auto}.attachment img{display:block;max-width:100%;max-height:70vh;border-radius:12px}.attachment figcaption{margin-top:6px;color:${documentMuted};font-size:12px;line-height:1.4}.attachment.right img{margin-left:auto}.attachment.center img{margin-left:auto;margin-right:auto}.link-preview{display:flex;gap:12px;margin-top:10px;max-width:620px;padding:12px;border:1px solid #d8d8df;border-radius:14px;background:#f7f7f9;color:#17171b;font-family:ui-rounded,"Segoe UI",system-ui,sans-serif;text-align:left}.link-preview.right{margin-left:auto}.link-preview.center{margin-left:auto;margin-right:auto}.preview-thumb{width:min(31%,150px);object-fit:cover;align-self:stretch;max-height:130px}.preview-copy{min-width:0}.preview-site,.preview-url{font-size:11px;color:#777780}.preview-title{font-size:16px;font-weight:750;line-height:1.28;margin:3px 0}.preview-description{font-size:13px;color:#555560;line-height:1.35;margin:3px 0}.missing-image{padding:20px;background:#e5e5ea;color:#686872;text-align:center;border-radius:12px}.transcript .message,.theater .message,.screen .message{justify-content:flex-start;margin:18px 0}.transcript .message-card,.theater .message-card,.screen .message-card{width:100%;max-width:100%}.transcript .right .speaker,.transcript .right .timestamp,.transcript .right .annotation,.transcript .right figcaption,.theater .right .annotation,.screen .right .annotation{text-align:left}.transcript .attachment.right,.transcript .link-preview.right,.theater .attachment.right,.theater .link-preview.right{margin-left:0;margin-right:auto}.theater .speaker,.screen .speaker{text-align:center!important;text-transform:uppercase;font-weight:800;letter-spacing:.07em}.theater .timestamp,.screen .timestamp{text-align:center!important}.theater .bubble{text-align:left}.theater .narrative{margin-left:8%;margin-right:auto}.theater .narrative-text{text-align:left}.screen .bubble{width:min(62%,520px);margin:0 auto;text-align:left}.screen .annotation{width:min(62%,520px);margin-left:auto;margin-right:auto;text-align:left!important}.screen .narrative{width:min(76%,650px)}.screen .narrative-text{text-align:left}@media(max-width:600px){.document{padding:24px 12px 42px}.message-card{max-width:${plainDraft ? '100%' : '78%'}.attachment,.link-preview{max-width:100%}.screen .bubble,.screen .annotation{width:min(76%,520px)}}@media print{@page{margin:.55in}body{background:#fff!important;color:#17171b}.document{width:100%;padding:0}.message-card,.narrative,.attachment,.link-preview{break-inside:avoid}.narrative{color:#000!important}.bubble{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
 </style>
 </head>
 <body><main class="document ${style}${highContrastLabels ? ' high-contrast-labels' : ''}"><h1>${title}</h1>${sceneHeader}${body.join('')}</main></body>
@@ -4528,10 +4609,14 @@ ${imageRels}
     return `<w:p><w:pPr><w:jc w:val="center"/><w:spacing w:before="40" w:after="300"/></w:pPr>${runs}</w:p>`;
   }
 
-  function wordNarrativeParagraph(text) {
+  function wordNarrativeParagraph(text, narrativeStyle = 'narrative') {
+    const systemStyle = narrativeStyle === 'system';
+    const runProps = systemStyle
+      ? '<w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:color w:val="33333A"/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr>'
+      : '<w:rPr><w:i/><w:color w:val="666670"/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr>';
     const runs = String(text).split('\n').map((line, index) => {
       const br = index ? '<w:r><w:br/></w:r>' : '';
-      return `${br}<w:r><w:rPr><w:i/><w:color w:val="666670"/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr><w:t xml:space="preserve">${xmlEscape(line)}</w:t></w:r>`;
+      return `${br}<w:r>${runProps}<w:t xml:space="preserve">${xmlEscape(line)}</w:t></w:r>`;
     }).join('');
     const style = normalizeConversationStyle(state.conversationStyle);
     if (style === 'theater') return `<w:p><w:pPr><w:jc w:val="left"/><w:ind w:left="720" w:right="1080"/><w:spacing w:before="160" w:after="200"/></w:pPr>${runs}</w:p>`;
@@ -4589,7 +4674,7 @@ ${imageRels}
     if (state.sceneHeader) paragraphs.push(wordSceneHeaderParagraph());
     for (const item of state.messages) {
       if (isNarrative(item)) {
-        paragraphs.push(wordNarrativeParagraph(item.text));
+        paragraphs.push(wordNarrativeParagraph(item.text, item.narrativeStyle));
         paragraphs.push(...wordPortableImageMetadata(item.imageAttachment, 'center', item.linkPreview ? 60 : 180));
         paragraphs.push(...wordPortableLinkPreview(item.linkPreview, 'center', 180));
         continue;
@@ -4625,9 +4710,10 @@ ${imageRels}
     return Math.max(20, Math.min(67, Math.round(18 + visualLength * 0.78)));
   }
 
-  function richTextRuns(text) {
+  function richTextRuns(text, color = '111116') {
+    const safeColor = sanitizeHexColor(color);
     return String(text).split('\n').map((line, idx) => {
-      const run = `<w:r><w:rPr><w:color w:val="111116"/><w:sz w:val="23"/><w:szCs w:val="23"/></w:rPr><w:t xml:space="preserve">${xmlEscape(line)}</w:t></w:r>`;
+      const run = `<w:r><w:rPr><w:color w:val="${safeColor}"/><w:sz w:val="23"/><w:szCs w:val="23"/></w:rPr><w:t xml:space="preserve">${xmlEscape(line)}</w:t></w:r>`;
       return idx === 0 ? run : `<w:r><w:br/></w:r>${run}`;
     }).join('');
   }
@@ -4643,7 +4729,7 @@ ${imageRels}
     </w:tc>`;
   }
 
-  function bubbleCell(width, text, fill) {
+  function bubbleCell(width, text, fill, textColor = '111116') {
     return `<w:tc>
       <w:tcPr>
         <w:tcW w:w="${width}" w:type="dxa"/>
@@ -4652,7 +4738,7 @@ ${imageRels}
         <w:tcBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/></w:tcBorders>
         <w:vAlign w:val="center"/>
       </w:tcPr>
-      <w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="300" w:lineRule="auto"/></w:pPr>${richTextRuns(text)}</w:p>
+      <w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="300" w:lineRule="auto"/></w:pPr>${richTextRuns(text, textColor)}</w:p>
     </w:tc>`;
   }
 
@@ -4680,12 +4766,13 @@ ${imageRels}
     const spacerWidth = CONTENT_WIDTH - bubbleWidth;
     const side = participant?.side === 'right' ? 'right' : 'left';
     const fill = sanitizeHexColor(participant?.color);
+    const textColor = sanitizeHexColor(participantBubbleTextColor(participant));
     const name = participant?.name || 'Unknown';
     const firstWidth = side === 'left' ? bubbleWidth : spacerWidth;
     const secondWidth = CONTENT_WIDTH - firstWidth;
     const grid = `<w:tblGrid><w:gridCol w:w="${firstWidth}"/><w:gridCol w:w="${secondWidth}"/></w:tblGrid>`;
     const labelRow = continuesSpeaker ? '' : `<w:tr><w:trPr><w:cantSplit/></w:trPr>${labelCell(name, side)}</w:tr>`;
-    const bubbleRow = `<w:tr><w:trPr><w:cantSplit/></w:trPr>${side === 'left' ? `${bubbleCell(bubbleWidth, message.text, fill)}${emptyCell(spacerWidth)}` : `${emptyCell(spacerWidth)}${bubbleCell(bubbleWidth, message.text, fill)}`}</w:tr>`;
+    const bubbleRow = `<w:tr><w:trPr><w:cantSplit/></w:trPr>${side === 'left' ? `${bubbleCell(bubbleWidth, message.text, fill, textColor)}${emptyCell(spacerWidth)}` : `${emptyCell(spacerWidth)}${bubbleCell(bubbleWidth, message.text, fill, textColor)}`}</w:tr>`;
     const timestampRow = message.displayTimestamp ? `<w:tr><w:trPr><w:cantSplit/></w:trPr>${side === 'left' ? `${timestampCell(bubbleWidth, message.displayTimestamp, side)}${emptyCell(spacerWidth)}` : `${emptyCell(spacerWidth)}${timestampCell(bubbleWidth, message.displayTimestamp, side)}`}</w:tr>` : '';
     const annotationRow = includeAnnotation && message.annotation ? `<w:tr><w:trPr><w:cantSplit/></w:trPr>${side === 'left' ? `${annotationCell(bubbleWidth, message.annotation, side)}${emptyCell(spacerWidth)}` : `${emptyCell(spacerWidth)}${annotationCell(bubbleWidth, message.annotation, side)}`}</w:tr>` : '';
     // A timestamp is part of the new message beat and sits above the bubble.
@@ -4829,7 +4916,7 @@ ${imageRels}
       const preview = normalizeLinkPreview(item.linkPreview);
       const previewImageInfo = preview?.thumbnail ? prepared.images.get(preview.thumbnail.id) : null;
       if (isNarrative(item)) {
-        blocks.push(wordNarrativeParagraph(item.text));
+        blocks.push(wordNarrativeParagraph(item.text, item.narrativeStyle));
         if (imageInfo) {
           blocks.push(wordImageParagraph(imageInfo, 'center', 5.4, 6.5, item.imageAttachment?.altText || ''));
           if (item.imageAttachment?.caption) blocks.push(wordImageCaptionParagraph(item.imageAttachment.caption, 'center'));
@@ -4979,7 +5066,7 @@ ${imageRels}
   });
 
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-    navigator.serviceWorker.register('./sw.js?v=0.10.5').catch(() => {});
+    navigator.serviceWorker.register('./sw.js?v=0.10.6').catch(() => {});
   }
 
   if (els.runtimeVersion) els.runtimeVersion.textContent = `v${APP_VERSION}`;

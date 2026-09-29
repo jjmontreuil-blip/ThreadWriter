@@ -1,6 +1,14 @@
-# ThreadWriter v0.10.5
+# ThreadWriter v0.10.6
 
 A small local-first dialogue editor for writing, revising, moving, and publishing conversation-heavy material, with chat, transcript, theater-draft, and screen-draft presentation styles.
+
+## v0.10.6
+
+- Adds per-participant **bubble text color** controls: Auto contrast, Black, White, or Custom. Bubble text color carries through chat rendering, saved presets, HTML, raster exports, and Rich DOCX.
+- Adds generic **quick bubble-color swatches**, including neutral gray, bright blue, message green, soft blue/green, signal red, and terminal black.
+- Narrative/system blocks can now choose **Narrative** (serif italic) or **System** (sans serif) appearance per block. Print/PDF forces narrative/system text to black for reliable paper readability.
+- Adds **Conversation Width** presets: Wide, Tablet, and Phone. The choice is saved with the thread, included in Conversation Presets, and reflected in desktop layout, HTML, and raster exports.
+- Conversation Presets now preserve participant bubble-text settings and conversation width in addition to the existing style/background/participant configuration.
 
 ## v0.10.5
 
@@ -12,7 +20,7 @@ A small local-first dialogue editor for writing, revising, moving, and publishin
 ## Current features
 
 - Responsive desktop / phone / tablet layout
-- Multiple participants with names, left/right alignment, and bubble colors
+- Multiple participants with names, left/right alignment, bubble colors, quick color swatches, and Auto/Black/White/Custom bubble-text colors
 - `Enter` creates a message
 - `Shift+Enter` inserts a line break
 - `Tab` / `Shift+Tab` cycles participants while composing
@@ -36,7 +44,7 @@ A small local-first dialogue editor for writing, revising, moving, and publishin
 - Find & Replace across message, narrative, annotation, image-caption, alt-text, and faux-link-preview content, including next/previous navigation and case-sensitive search
 - Live thread word count for committed message, narrative, visible image-caption text, and faux-link title/description text (headers, timestamps, annotations, alt text, source labels, URLs, and participant labels are excluded)
 - Insert Above / Insert Below commands for adding a message directly where it belongs in an existing thread
-- General-purpose narrative / system blocks in the ordered thread flow
+- General-purpose narrative / system blocks in the ordered thread flow, with per-block Narrative (serif italic) or System (sans-serif) appearance
 - Multiline under-message annotations for actions, stage directions, read receipts, reactions, metrics, and notes
 - One static image attachment per message or narrative block, with optional visible captions and accessibility alt text; image binaries are stored once in IndexedDB rather than duplicated through local version-history snapshots
 - One manually authored faux link preview per message or narrative block, with source/site, title, description, display URL/domain, and optional thumbnail; previews never scrape or contact a live website
@@ -45,6 +53,7 @@ A small local-first dialogue editor for writing, revising, moving, and publishin
 - Four simple header-font families: Rounded, Sans, Serif, and Mono
 - Conversation Styles: **Mobile Chat**, **Transcript**, **Theater Draft**, and **Screen Draft**
 - Conversation backgrounds can use solid colors, editable 2–4 color gradients, quick presets, stop reordering, and one-click gradient reversal
+- Conversation width can be set to Wide, Tablet, or Phone for denser phone-like desktop and exported chat layouts
 - Unified PNG/JPEG/TIFF image export for screen, high-resolution, print, or custom-width conversation graphics, with optional grayscale and smart splitting
 - Two `.docx` export modes with no external libraries: Portable transcript and Rich layout
 - Plain `.txt` transcript export
@@ -72,13 +81,18 @@ Then open `http://localhost:8000/` in your browser. Service-worker/offline insta
 GitHub Pages is also a good fit: place these files at the publishing root and add the resulting site to an iPhone/iPad Home Screen if desired.
 
 
-## New in v0.10.5
+## New in v0.10.3
 
 - Added eight editable **Conversation Background presets**: Spectrum, Steel, Terminal, Ocean, Sunset, Twilight, Paper, and Midnight. Presets are generic visual recipes rather than replicas of specific apps.
 - Gradient color stops can now be reordered with simple left/right controls; unavailable moves disable automatically at the ends of the active stop list.
 - Added **Flip gradient**, which reverses the active 2–4 color stop order without changing the gradient direction.
 - Presets only populate the existing background controls, so their colors, count, and direction can be customized immediately after selection.
 - Background preset and stop-order controls are responsive on phone layouts and require no change to the saved document format.
+
+
+## New in v0.10.4
+
+- Darkened the built-in **Terminal** background preset so its full green-to-black range keeps speaker labels readable with ThreadWriter's dark-background text treatment. Custom gradients remain intentionally unrestricted.
 
 
 ## New in v0.10.2

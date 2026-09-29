@@ -201,7 +201,7 @@ button { cursor: pointer; }
   padding: 10px 13px;
   border-radius: 18px;
   background: var(--bubble-color, #dfe7ff);
-  color: var(--bubble-text);
+  color: var(--bubble-text-color, var(--bubble-text));
   line-height: 1.42;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -512,6 +512,30 @@ dialog::backdrop { background: rgba(0,0,0,.45); backdrop-filter: blur(3px); }
   padding: 8px;
 }
 .participant-color { width: 48px; height: 38px; padding: 3px !important; }
+.participant-appearance-row {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 8px;
+  align-items: end;
+  padding: 7px 8px;
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--field) 82%, transparent);
+}
+.participant-bubble-swatches { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; min-width: 0; }
+.participant-bubble-swatches > span { margin-right: 2px; color: var(--muted); font-size: 10.5px; font-weight: 700; }
+.participant-swatch {
+  width: 22px; height: 22px; padding: 0; border-radius: 50%;
+  border: 1px solid color-mix(in srgb, var(--border), #000 12%);
+  background: var(--swatch);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.18);
+}
+.participant-swatch:hover, .participant-swatch:focus-visible { outline: 2px solid color-mix(in srgb, var(--text) 45%, transparent); outline-offset: 1px; }
+.participant-text-setting { display: grid; gap: 3px; color: var(--muted); font-size: 10.5px; font-weight: 700; }
+.participant-text-setting select { min-width: 126px; }
+.participant-text-color { width: 42px !important; height: 36px; padding: 3px !important; }
+.participant-text-color[hidden] { display: none !important; }
 
 .dialog-copy {
   margin: 12px 0 14px;
@@ -721,6 +745,9 @@ dialog::backdrop { background: rgba(0,0,0,.45); backdrop-filter: blur(3px); }
   .composer-meta { grid-template-columns: 1fr; }
   .word-count { grid-column: 1; justify-self: end; }
   .participant-edit-row { grid-template-columns: 1fr auto auto; }
+  .participant-appearance-row { grid-template-columns: 1fr auto; }
+  .participant-bubble-swatches { grid-column: 1 / -1; }
+  .participant-text-color { align-self: end; }
   .docx-options { grid-template-columns: 1fr; }
   .remove-participant { grid-column: 1 / -1; }
 
@@ -831,6 +858,12 @@ dialog::backdrop { background: rgba(0,0,0,.45); backdrop-filter: blur(3px); }
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   padding: 2px 10px;
+}
+.narrative-row.narrative-system .narrative-text {
+  font-family: ui-rounded, "SF Pro Rounded", "Segoe UI", system-ui, -apple-system, sans-serif;
+  font-style: normal;
+  font-weight: 560;
+  letter-spacing: .005em;
 }
 .narrative-actions {
   right: -42px;
@@ -1082,6 +1115,8 @@ dialog::backdrop { background: rgba(0,0,0,.45); backdrop-filter: blur(3px); }
   --conversation-text: var(--text);
   --conversation-muted: var(--muted);
 }
+.conversation-canvas.width-tablet .thread { width: min(100%, 680px); }
+.conversation-canvas.width-phone .thread { width: min(100%, 440px); }
 .conversation-canvas.custom-background-dark {
   --conversation-text: #f7f7fa;
   --conversation-muted: rgba(247,247,250,.78);
@@ -1291,6 +1326,9 @@ dialog::backdrop { background: rgba(0,0,0,.45); backdrop-filter: blur(3px); }
 
 @media print {
   .conversation-canvas { background: white !important; --conversation-text: black; --conversation-muted: #555; }
+  .conversation-canvas.width-tablet .thread,
+  .conversation-canvas.width-phone .thread { width: 100%; max-width: none; }
+  .conversation-canvas .narrative-text { color: #000 !important; }
   .thread.style-theater .message-card,
   .thread.style-screen .message-card { max-width: 100%; padding-right: 0; }
   .thread.style-theater .bubble,
