@@ -1,5 +1,5 @@
 (() => {
-  const APP_VERSION = '0.11';
+  const APP_VERSION = '0.11.1';
   const LEGACY_STORAGE_KEY = 'threadwriter.project.v1';
   const LIBRARY_KEY = 'threadwriter.library.v1';
   const DOCUMENT_PREFIX = 'threadwriter.document.v1.';
@@ -3751,7 +3751,7 @@
     const deletedCount = documentDoc.getElementsByTagNameNS(WORD_NS, 'del').length;
     const insertedCount = documentDoc.getElementsByTagNameNS(WORD_NS, 'ins').length;
     const warnings = [];
-    if (imageCount) warnings.push(`${imageCount} embedded image${imageCount === 1 ? '' : 's'} detected. Images are not imported in v0.11.`);
+    if (imageCount) warnings.push(`${imageCount} embedded image${imageCount === 1 ? '' : 's'} detected. Images are not imported in this release.`);
     if (tableCount) warnings.push(`${tableCount} table${tableCount === 1 ? '' : 's'} detected. Table contents are skipped.`);
     if (deletedCount || insertedCount) warnings.push('Tracked changes were detected. Inserted text is kept where readable; deleted text is ignored. Review the preview carefully.');
     return { kind: 'docx', title: importTitleFromFilename(file.name), filename: file.name, paragraphs, warnings, imageCount, tableCount };
@@ -3776,10 +3776,109 @@
     return source.kind === 'txt' ? source.lines.filter(line => line.trim()) : source.paragraphs.map(p => p.text).filter(Boolean);
   }
 
+  function dramaTextUnits(source) {
+    // Word can use either separate paragraphs or manual line breaks for cues.
+    return importTextUnits(source).flatMap(text => text.split(/\r?\n/)).map(text => text.trim()).filter(Boolean);
+  }
+
+  function dramaNarrativeLine(text) {
+    return /^[\[(]/.test(text) || /^(?:act|scene|prologue|epilogue|intermission|curtain|blackout|lights|enter|exit|exeunt|stage directions?|setting|aside|end of)\b/i.test(text)
+      || /^(?:INT\.|EXT\.|INT\/EXT\.|FADE\b|CUT TO\b)/i.test(text)
+      || /^(?:a|an|the)\s+(?:room|street|garden|hall|forest|house|palace|court|field|stage)\b/i.test(text);
+  }
+
+  function dramaCueMatch(text) {
+    if (dramaNarrativeLine(text) || text.length > 40) return null;
+    // A final period and periods in honorifics/initials are name punctuation.
+    const label = text.replace(/\.$/, '').replace(/\s+/g, ' ').trim();
+    if (!/^[\p{L}][\p{L}\p{N} ._'’\-]*$/u.test(label)) return null;
+    const words = label.split(' ');
+    if (words.length > 6 || /^(?:I|Yes|No|Okay|OK|Well|Oh|Ah|Hello|Goodbye|Thanks|Thank you)$/i.test(label)) return null;
+    const allCaps = label === label.toLocaleUpperCase() && label !== label.toLocaleLowerCase();
+    const titleCase = words.every(word => /^(?:of|the|and|de|van|von)$/i.test(word) || /^[\p{Lu}][\p{L}\p{N}._'’\-]*$/u.test(word));
+    if (!allCaps && !titleCase) return null;
+    // Only initials/honorifics may carry an interior period.
+    if (words.some(word => word.includes('.') && !/^(?:Mr|Mrs|Ms|Dr|St|Sr|Jr|Prof|Rev|Capt|Lt|Col|Sgt|[\p{L}])\.$/iu.test(word))) return null;
+    return { label, key: label.replace(/\./g, '').toLocaleLowerCase(), allCaps };
+  }
+
+  function dramaSpeakerData(source) {
+    const units = dramaTextUnits(source);
+    const candidates = units.map(dramaCueMatch);
+    // A cue must have a body. This also keeps a one-word reply such as
+    // "Borachio." before the next cue from being consumed as an empty turn.
+    const occurrences = candidates.map((cue, index) => {
+      let next = index + 1;
+      while (next < units.length && /^[\[(]/.test(units[next])) next += 1;
+      return cue && next < units.length && !dramaNarrativeLine(units[next])
+        && (!candidates[next] || /[.!?]$/.test(units[next])) ? { ...cue, index } : null;
+    });
+    const counts = new Map();
+    occurrences.filter(Boolean).forEach(cue => counts.set(cue.key, (counts.get(cue.key) || 0) + 1));
+    const repeated = new Set([...counts].filter(([, count]) => count >= 2).map(([key]) => key));
+    const anchors = occurrences.filter(cue => cue && repeated.has(cue.key));
+    const first = anchors[0]?.index ?? -1;
+    const last = anchors[anchors.length - 1]?.index ?? -1;
+    const cues = occurrences.filter(cue => cue && (repeated.has(cue.key)
+      || (cue.allCaps && anchors.length >= 2)
+      || (cue.index > first && cue.index < last)));
+    const map = new Map();
+    for (const cue of cues) {
+      const found = map.get(cue.key);
+      if (found) found.count += 1;
+      else map.set(cue.key, { key: cue.key, label: cue.label, count: 1 });
+    }
+    const speakers = [...map.values()];
+    const confident = cues.length >= 3 && anchors.length >= 2
+      && (speakers.length >= 2 || anchors.filter(cue => cue.allCaps).length >= 3);
+    // Explicit mode also permits short two-person extracts without recurrence.
+    const manualCues = occurrences.filter(Boolean);
+    return { units, candidates, cues, speakers, confident, manualCues };
+  }
+
+  function resolvedDramaData(source, manual = false) {
+    const data = dramaSpeakerData(source);
+    if (!manual || data.confident) return data;
+    const map = new Map();
+    for (const cue of data.manualCues) {
+      const found = map.get(cue.key);
+      if (found) found.count += 1;
+      else map.set(cue.key, { key: cue.key, label: cue.label, count: 1 });
+    }
+    return { ...data, cues: data.manualCues, speakers: [...map.values()] };
+  }
+
+  function buildDramaMigration(source, overrides = new Map(), manual = false) {
+    const data = resolvedDramaData(source, manual);
+    const participants = data.speakers.map((cue, index) => makeImportedParticipant(overrides.get(cue.key) || cue.label, index));
+    const keyToParticipant = new Map(data.speakers.map((cue, index) => [cue.key, participants[index]]));
+    const cueAt = new Map(data.cues.map(cue => [cue.index, cue]));
+    const items = [];
+    let pending = null;
+    let current = null;
+    data.units.forEach((text, index) => {
+      const cue = cueAt.get(index);
+      if (cue) { pending = keyToParticipant.get(cue.key); current = null; return; }
+      // Unknown name-like lines and marked stage material remain unassigned.
+      // A punctuated reply immediately following a cue is its dialogue.
+      if (dramaNarrativeLine(text) || (data.candidates[index] && !(pending && /[.!?]$/.test(text)))) {
+        const continuing = /^[\[(]/.test(text) ? (pending || participants.find(p => p.id === current?.speakerId)) : null;
+        pushNarrativeImport(items, text, { merge: false }); pending = continuing; current = null; return;
+      }
+      if (pending) {
+        current = { kind: 'message', speakerId: pending.id, text };
+        items.push(current); pending = null;
+      } else if (current) current.text += `\n${text}`;
+      else pushNarrativeImport(items, text, { merge: false });
+    });
+    return { participants: participants.length ? participants : defaultState().participants, items, speakers: data.speakers };
+  }
+
   function detectMigrationMethod(source) {
     const speakerData = canonicalSpeakerData(importTextUnits(source));
     const repeatedOne = speakerData.speakers.length === 1 && speakerData.speakers[0].count >= 2;
     if (speakerData.labelled >= 2 && (speakerData.speakers.length >= 2 || repeatedOne)) return 'speaker';
+    if (dramaSpeakerData(source).confident) return 'drama';
     if (source.kind === 'docx') {
       const counts = source.paragraphs.reduce((out, p) => { out[p.align] = (out[p.align] || 0) + 1; return out; }, {});
       if ((counts.right || 0) > 0 && ((counts.left || 0) > 0 || (counts.default || 0) > 0)) return 'alignment';
@@ -3887,6 +3986,12 @@
 
   function migrationWarningsFor(source, actualMethod, result) {
     const warnings = [...(source.warnings || [])];
+    if (actualMethod === 'drama') {
+      warnings.push(`Detected ${result.speakers.length} speaker${result.speakers.length === 1 ? '' : 's'} from standalone character cues. Review the speaker names and dialogue in the preview before importing.`);
+      if (!result.speakers.length) warnings.push('No standalone character cues with following dialogue were detected. Content will become Narrative blocks.');
+      const narratives = result.items.filter(item => item.kind === 'narrative').length;
+      if (narratives) warnings.push(`${narratives} stage, heading, or unassigned block${narratives === 1 ? '' : 's'} will become Narrative blocks.`);
+    }
     if (actualMethod === 'speaker') {
       if (!sourceSpeakerData(source).speakers.length) warnings.push('No speaker labels were detected. Unassigned content will become Narrative blocks.');
       const narratives = result.items.filter(item => item.kind === 'narrative').length;
@@ -3902,8 +4007,8 @@
     return [...new Set(warnings)];
   }
 
-  function renderMigrationSpeakerOptions(source) {
-    const speakerData = sourceSpeakerData(source);
+  function renderMigrationSpeakerOptions(source, actual, manual) {
+    const speakerData = actual === 'drama' ? resolvedDramaData(source, manual) : sourceSpeakerData(source);
     const existing = speakerOverrideMap();
     els.migrationSpeakerMap.innerHTML = '';
     for (const speaker of speakerData.speakers) {
@@ -3928,6 +4033,7 @@
     const actual = requested === 'auto' ? detectMigrationMethod(source) : requested;
     let result;
     if (actual === 'speaker') result = buildSpeakerMigration(source, speakerOverrideMap());
+    else if (actual === 'drama') result = buildDramaMigration(source, speakerOverrideMap(), requested === 'drama');
     else if (actual === 'alignment' && source.kind === 'docx') result = buildAlignmentMigration(source);
     else if (actual === 'alignment') result = buildPlainMigration(source);
     else result = buildPlainMigration(source);
@@ -3939,12 +4045,13 @@
     if (!source) return;
     const requested = els.migrationImportMethod.value;
     const actual = requested === 'auto' ? detectMigrationMethod(source) : requested;
-    if (actual === 'speaker' && !els.migrationSpeakerMap.children.length) renderMigrationSpeakerOptions(source);
-    els.migrationSpeakerOptions.hidden = actual !== 'speaker';
+    if ((actual === 'speaker' || actual === 'drama') && !els.migrationSpeakerMap.children.length) renderMigrationSpeakerOptions(source, actual, requested === 'drama');
+    els.migrationSpeakerOptions.hidden = actual !== 'speaker' && actual !== 'drama';
     els.migrationAlignmentOptions.hidden = actual !== 'alignment' || source.kind !== 'docx';
+    const methodName = { speaker: 'Speaker labels', drama: 'Drama script / standalone speaker cues', alignment: 'Left / right DOCX alignment', plain: 'Plain blocks → Narrative' }[actual];
     els.migrationMethodNote.textContent = requested === 'auto'
-      ? `Auto detect chose ${actual === 'speaker' ? 'Speaker labels' : actual === 'alignment' ? 'Left / right DOCX alignment' : 'Plain blocks → Narrative'}. You can override it above.`
-      : `Using ${actual === 'speaker' ? 'speaker labels' : actual === 'alignment' ? 'left / right alignment' : 'plain blocks'} as requested.`;
+      ? `Auto detect chose ${methodName}. You can override it above.`
+      : `Using ${methodName} as requested.`;
     const result = migrationResult();
     const messages = result.items.filter(item => item.kind === 'message').length;
     const narratives = result.items.filter(item => item.kind === 'narrative').length;
@@ -3982,6 +4089,8 @@
     els.migrationSourceSummary.innerHTML = `<strong>${htmlEscape(source.filename)}</strong><br>${source.kind.toUpperCase()} · ${detail}`;
     refreshMigrationPreview();
     els.migrationImportDialog.showModal();
+    els.migrationImportDialog.querySelector('.migration-import-body').scrollTop = 0;
+    els.migrationPreview.scrollTop = 0;
   }
 
   function closeMigrationImport() {
@@ -5575,7 +5684,7 @@ ${imageRels}
   });
 
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-    navigator.serviceWorker.register('./sw.js?v=0.11').catch(() => {});
+    navigator.serviceWorker.register('./sw.js?v=0.11.1').catch(() => {});
   }
 
   if (els.runtimeVersion) els.runtimeVersion.textContent = `v${APP_VERSION}`;

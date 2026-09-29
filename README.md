@@ -1,4 +1,14 @@
-# ThreadWriter v0.11
+# ThreadWriter v0.11.1
+
+## v0.11.1 — Import layout and dramatic scripts
+
+- Import dialog fits narrow desktop and phone windows without sideways scrolling. The header and Cancel / Import buttons stay visible while its contents scroll vertically.
+- Adds **Drama script (standalone speaker cues)** for TXT and DOCX, including Word manual line breaks. Auto detect selects it when repeated character-cue/dialogue patterns provide strong evidence.
+- Character cues tolerate mixed capitalization, honorifics, and a trailing period (for example, `MR. ONE` and `Mr. One.` share one speaker).
+- Stage directions, act/scene headings, and unrecognized name-like lines remain Narrative. Ordinary multi-line dialogue stays with its speaker; common short replies do not become characters.
+- Preview shows the interpretation and editable speaker names before importing. Use the explicit Drama script mode for short excerpts, or Plain blocks to keep everything as Narrative.
+- This is conservative stage-play support, not a complete screenplay parser. Unmarked prose directions may need cleanup after import; always review the preview.
+- Existing labelled and left/right imports remain available. Runtime, asset URLs, and offline cache are bumped to 0.11.1.
 
 ## v0.11 — Migration / Import
 

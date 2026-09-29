@@ -1397,7 +1397,14 @@ dialog::backdrop { background: rgba(0,0,0,.45); backdrop-filter: blur(3px); }
 
 
 /* v0.11 structured TXT/DOCX import */
-.migration-import-dialog-card { width: min(94vw, 760px); max-height: min(88vh, 820px); overflow: auto; }
+#migrationImportDialog { background: var(--bg); width: min(760px, calc(100vw - 24px)); max-width: calc(100vw - 24px); max-height: calc(100dvh - 24px); overflow: hidden; }
+.migration-import-dialog-card { width: 100%; max-width: 100%; max-height: min(88dvh, 820px); overflow: hidden; display: flex; flex-direction: column; }
+.migration-import-dialog-card > .dialog-head, .migration-actions { flex: 0 0 auto; }
+.migration-import-body { min-height: 0; min-width: 0; overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable; margin-top: 8px; }
+.migration-import-body > *, .migration-import-grid label, .migration-name-grid label, .migration-speaker-row > * { min-width: 0; max-width: 100%; }
+.migration-import-body { overflow-wrap: anywhere; }
+.migration-import-dialog-card .dialog-head h2 { min-width: 0; }
+.migration-import-dialog-card .dialog-head .icon-btn { flex-shrink: 0; }
 .migration-source-summary { margin: 8px 0 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; background: color-mix(in srgb, var(--panel), var(--bg) 32%); font-size: 13px; line-height: 1.45; }
 .migration-import-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
 .migration-import-grid label, .migration-name-grid label { display: grid; gap: 6px; color: var(--muted); font-size: 12px; font-weight: 700; }
@@ -1407,23 +1414,24 @@ dialog::backdrop { background: rgba(0,0,0,.45); backdrop-filter: blur(3px); }
 .migration-section-head, .migration-preview-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
 .migration-section-head span, .migration-preview-head span { color: var(--muted); font-size: 12px; }
 .migration-speaker-map { display: grid; gap: 7px; }
-.migration-speaker-row { display: grid; grid-template-columns: minmax(110px, .8fr) minmax(140px, 1.2fr); gap: 8px; align-items: center; }
+.migration-speaker-row { display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr); gap: 8px; align-items: center; }
 .migration-speaker-source { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
-.migration-name-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+.migration-name-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 9px; }
 .migration-name-grid label:last-child { grid-column: 1 / -1; }
 .migration-warnings { margin-top: 13px; padding: 10px 12px; border-radius: 12px; border: 1px solid color-mix(in srgb, #e4a11b, var(--border) 50%); background: color-mix(in srgb, #e4a11b 9%, var(--panel)); font-size: 12px; line-height: 1.45; }
 .migration-warnings strong { display: block; margin-bottom: 5px; }
 .migration-warnings ul { margin: 0; padding-left: 19px; }
 .migration-preview-head { margin-top: 15px; }
 .migration-preview { border: 1px solid var(--border); border-radius: 13px; background: var(--panel); max-height: 300px; overflow: auto; padding: 7px; }
-.migration-preview-item { padding: 8px 9px; border-radius: 9px; line-height: 1.35; font-size: 13px; }
+.migration-preview-item { white-space: pre-wrap; overflow-wrap: anywhere; padding: 8px 9px; border-radius: 9px; line-height: 1.35; font-size: 13px; }
 .migration-preview-item + .migration-preview-item { border-top: 1px solid color-mix(in srgb, var(--border), transparent 30%); }
 .migration-preview-speaker { font-size: 10px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); margin-bottom: 2px; }
 .migration-preview-narrative { color: var(--muted); font-style: italic; }
 .migration-preview-more { padding: 10px 9px; color: var(--muted); font-size: 12px; text-align: center; }
-.migration-actions { margin-top: 14px; }
+.migration-actions { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--border); background: var(--panel); flex-wrap: wrap; }
+.migration-actions button { max-width: 100%; white-space: normal; }
 @media (max-width: 620px) {
-  .migration-import-dialog-card { width: min(96vw, 760px); max-height: 91vh; padding: 13px; }
+  .migration-import-dialog-card { width: 100%; max-height: calc(100dvh - 26px); padding: 13px; }
   .migration-name-grid { grid-template-columns: 1fr; }
   .migration-name-grid label:last-child { grid-column: auto; }
   .migration-speaker-row { grid-template-columns: 1fr; gap: 3px; }
