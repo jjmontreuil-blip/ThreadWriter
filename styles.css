@@ -1117,6 +1117,10 @@ dialog::backdrop { background: rgba(0,0,0,.45); backdrop-filter: blur(3px); }
 }
 .conversation-canvas.width-tablet .thread { width: min(100%, 680px); }
 .conversation-canvas.width-phone .thread { width: min(100%, 440px); }
+.conversation-canvas.custom-background-light {
+  --conversation-text: #17171b;
+  --conversation-muted: #6d6d78;
+}
 .conversation-canvas.custom-background-dark {
   --conversation-text: #f7f7fa;
   --conversation-muted: rgba(247,247,250,.78);

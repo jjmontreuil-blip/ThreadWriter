@@ -1,5 +1,5 @@
 (() => {
-  const APP_VERSION = '0.10.6';
+  const APP_VERSION = '0.10.7';
   const LEGACY_STORAGE_KEY = 'threadwriter.project.v1';
   const LIBRARY_KEY = 'threadwriter.library.v1';
   const DOCUMENT_PREFIX = 'threadwriter.document.v1.';
@@ -1335,8 +1335,11 @@
     if (!els.conversationCanvas) return;
     const css = conversationBackgroundCss(background);
     els.conversationCanvas.style.background = css || '';
-    els.conversationCanvas.classList.toggle('custom-background', background.mode !== 'default');
-    els.conversationCanvas.classList.toggle('custom-background-dark', background.mode !== 'default' && customBackgroundIsDark(background));
+    const customBackground = background.mode !== 'default';
+    const darkBackground = customBackground && customBackgroundIsDark(background);
+    els.conversationCanvas.classList.toggle('custom-background', customBackground);
+    els.conversationCanvas.classList.toggle('custom-background-dark', darkBackground);
+    els.conversationCanvas.classList.toggle('custom-background-light', customBackground && !darkBackground);
     els.conversationCanvas.classList.toggle('high-contrast-labels', state.highContrastLabels === true);
     const width = normalizeConversationWidth(state.conversationWidth);
     els.conversationCanvas.classList.toggle('width-tablet', width === 'tablet');
@@ -5066,7 +5069,7 @@ ${imageRels}
   });
 
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-    navigator.serviceWorker.register('./sw.js?v=0.10.6').catch(() => {});
+    navigator.serviceWorker.register('./sw.js?v=0.10.7').catch(() => {});
   }
 
   if (els.runtimeVersion) els.runtimeVersion.textContent = `v${APP_VERSION}`;

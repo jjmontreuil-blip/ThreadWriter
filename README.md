@@ -1,6 +1,11 @@
-# ThreadWriter v0.10.6
+# ThreadWriter v0.10.7
 
 A small local-first dialogue editor for writing, revising, moving, and publishing conversation-heavy material, with chat, transcript, theater-draft, and screen-draft presentation styles.
+
+## v0.10.7
+
+- Fixes scene headers and other out-of-bubble text becoming too light on custom light backgrounds when ThreadWriter itself is using a dark UI theme.
+- Custom light backgrounds now explicitly use dark conversation text/muted labels, while custom dark backgrounds continue to use the existing light contrast treatment. HTML/raster exports already used background-aware contrast and remain unchanged.
 
 ## v0.10.6
 
