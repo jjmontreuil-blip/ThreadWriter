@@ -4,10 +4,10 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#f4f4f7" />
-  <title>ThreadWriter v0.12.7</title>
-  <link rel="manifest" href="manifest.webmanifest?v=0.12.7" />
-  <link rel="icon" href="icon.svg?v=0.12.7" type="image/svg+xml" />
-  <link rel="stylesheet" href="styles.css?v=0.12.7" />
+  <title>ThreadWriter v0.12.8</title>
+  <link rel="manifest" href="manifest.webmanifest?v=0.12.8" />
+  <link rel="icon" href="icon.svg?v=0.12.8" type="image/svg+xml" />
+  <link rel="stylesheet" href="styles.css?v=0.12.8" />
 </head>
 <body>
   <div class="app-shell">
@@ -67,6 +67,7 @@
               <button id="exportImageBtn" type="button">Image…</button>
               <button id="printBtn" type="button">PDF / Print</button>
             </div>
+            <button id="aboutBtn" type="button">About ThreadWriter…</button>
           </div>
         </div>
 
@@ -636,6 +637,24 @@
     </div>
   </dialog>
 
+
+  <dialog id="aboutDialog">
+    <div class="dialog-card about-dialog-card">
+      <div class="dialog-head about-dialog-head">
+        <h2>ThreadWriter <span id="aboutVersion">v0.12.8</span></h2>
+        <button id="closeAboutDialogBtn" class="icon-btn" type="button" aria-label="Close">×</button>
+      </div>
+      <div class="about-copy">
+        <p>A local-first browser editor for drafting,<br>formatting, and exporting dialogue-heavy<br>writing like texts and instant messaging.</p>
+        <p>By Josh Montreuil</p>
+        <p><strong>Local-first privacy:</strong><br>Your writing stays in your browser on your device.<br>ThreadWriter does not require an account,<br>upload your documents to a ThreadWriter server,<br>or send your text to an AI service.<br>For important work, keep exported backups,<br>because browser storage can be cleared.</p>
+        <p><strong>AI disclosure:</strong><br>ThreadWriter was developed with AI coding assistance.<br>The app itself does not use AI,<br>generate or rewrite your text,<br>or send your writing to an AI model.</p>
+        <p><a href="https://github.com/user-attachments/files/32849449/ThreadWriter.QuickStart.Guide.pdf" target="_blank" rel="noopener noreferrer"><strong>Download the ThreadWriter Quick Guide to get started.</strong></a></p>
+        <p><a href="https://github.com/jjmontreuil-blip/ThreadWriter" target="_blank" rel="noopener noreferrer"><strong>ThreadWriter on GitHub</strong></a></p>
+      </div>
+    </div>
+  </dialog>
+
   <input id="projectBackupInput" type="file" accept="application/json,.threadwriter-project,.json" hidden />
 
   <template id="participantEditorTemplate">
@@ -705,6 +724,6 @@
     </div>
   </template>
 
-  <script src="app.js?v=0.12.7"></script>
+  <script src="app.js?v=0.12.8"></script>
 </body>
 </html>

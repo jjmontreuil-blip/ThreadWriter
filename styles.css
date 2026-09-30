@@ -746,6 +746,18 @@ dialog::backdrop { background: rgba(0,0,0,.45); backdrop-filter: blur(3px); }
   color: var(--muted);
   line-height: 1.45;
 }
+.about-dialog-card { width: min(92vw, 560px); }
+.about-dialog-head { justify-content: center; position: relative; }
+.about-dialog-head .icon-btn { position: absolute; right: 0; top: 50%; transform: translateY(-50%); }
+.about-dialog-head h2 { text-align: center; padding: 0 42px; }
+.about-copy { text-align: center; line-height: 1.5; }
+.about-copy p { margin: 15px auto; }
+.about-copy a { color: inherit; text-underline-offset: 3px; }
+.about-copy a:hover, .about-copy a:focus-visible { color: color-mix(in srgb, var(--text) 72%, #4169e1); }
+@media (max-width: 520px) {
+  .about-copy br { display: none; }
+  .about-copy { font-size: 14px; }
+}
 .docx-options {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

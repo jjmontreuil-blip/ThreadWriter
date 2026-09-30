@@ -1,4 +1,11 @@
-# ThreadWriter v0.12.7
+# ThreadWriter v0.12.8
+
+## v0.12.8 — First-run resilience and About
+
+- Built-in welcome images now have a direct embedded fallback instead of depending on IndexedDB being available. The introductory image attachment and faux-link thumbnail therefore remain visible in browsers/private-browsing modes that restrict local Blob storage, including the Safari private-window case that exposed the issue.
+- Adds **File → About ThreadWriter…** with a short product description, author credit, local-first privacy note, AI-development disclosure, Quick Guide link, and GitHub project link.
+- The About text explicitly distinguishes AI-assisted development from the app itself: ThreadWriter does not use AI to generate, rewrite, or transmit the user's writing to an AI model.
+- Runtime, asset URLs, and offline cache are bumped to **v0.12.8**.
 
 ## v0.12.7 — First-run welcome
 

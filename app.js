@@ -1,5 +1,5 @@
 (() => {
-  const APP_VERSION = '0.12.7';
+  const APP_VERSION = '0.12.8';
   const LEGACY_STORAGE_KEY = 'threadwriter.project.v1';
   const LIBRARY_KEY = 'threadwriter.library.v1';
   const DOCUMENT_PREFIX = 'threadwriter.document.v1.';
@@ -90,6 +90,10 @@
     fileMenu: document.getElementById('fileMenu'),
     exportMenuBtn: document.getElementById('exportMenuBtn'),
     exportMenu: document.getElementById('exportMenu'),
+    aboutBtn: document.getElementById('aboutBtn'),
+    aboutDialog: document.getElementById('aboutDialog'),
+    aboutVersion: document.getElementById('aboutVersion'),
+    closeAboutDialogBtn: document.getElementById('closeAboutDialogBtn'),
     participantsBtn: document.getElementById('participantsBtn'),
     headerBtn: document.getElementById('headerBtn'),
     narrativeBtn: document.getElementById('narrativeBtn'),
@@ -322,6 +326,13 @@
     if (event.key === 'Escape') closeTopMenus();
   });
 
+  els.aboutBtn?.addEventListener('click', () => {
+    closeTopMenus();
+    if (els.aboutVersion) els.aboutVersion.textContent = `v${APP_VERSION}`;
+    els.aboutDialog?.showModal();
+  });
+  els.closeAboutDialogBtn?.addEventListener('click', () => els.aboutDialog?.close());
+
   function openMediaDb() {
     if (!('indexedDB' in window)) return Promise.reject(new Error('This browser does not support local image storage.'));
     if (mediaDbPromise) return mediaDbPromise;
@@ -354,9 +365,35 @@
     return mediaRequest('readwrite', store => store.put(record));
   }
 
-  function getMediaRecord(id) {
-    if (!id) return Promise.resolve(null);
-    return mediaRequest('readonly', store => store.get(id)).then(result => result || null).catch(() => null);
+  function firstRunMediaRecord(id) {
+    const entry = FIRST_RUN_MEDIA.find(item => item?.id === id);
+    if (!entry?.dataUrl) return null;
+    try {
+      const blob = dataUrlToBlob(entry.dataUrl);
+      return {
+        id: entry.id,
+        name: entry.name || 'image',
+        mime: entry.mime || blob.type || 'image/png',
+        width: Math.max(1, Number(entry.width) || 1),
+        height: Math.max(1, Number(entry.height) || 1),
+        size: Math.max(0, Number(entry.size) || blob.size || 0),
+        blob,
+        createdAt: 'embedded-first-run'
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  async function getMediaRecord(id) {
+    if (!id) return null;
+    try {
+      const result = await mediaRequest('readonly', store => store.get(id));
+      if (result?.blob) return result;
+    } catch {}
+    // The built-in welcome artwork must remain usable even when IndexedDB is
+    // unavailable or ephemeral (notably some private-browsing environments).
+    return firstRunMediaRecord(id);
   }
 
   function deleteMediaRecord(id) {
@@ -6611,7 +6648,7 @@ ${imageRels}
   });
 
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-    navigator.serviceWorker.register('./sw.js?v=0.12.7').catch(() => {});
+    navigator.serviceWorker.register('./sw.js?v=0.12.8').catch(() => {});
   }
 
   if (els.runtimeVersion) els.runtimeVersion.textContent = `v${APP_VERSION}`;
@@ -6620,9 +6657,11 @@ ${imageRels}
     autoSizeComposer();
   };
   if (firstRunMediaPending) {
+    // Render immediately from the embedded fallback. Installing a cached copy into
+    // IndexedDB is best-effort only, so private browsing can never block onboarding.
+    finishInitialRender();
     restoreEmbeddedMedia(FIRST_RUN_MEDIA)
-      .catch(error => console.warn('Could not install first-run welcome images.', error))
-      .finally(finishInitialRender);
+      .catch(error => console.warn('Could not cache first-run welcome images.', error));
   } else {
     finishInitialRender();
   }
