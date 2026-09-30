@@ -4,10 +4,10 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#f4f4f7" />
-  <title>ThreadWriter v0.12.5</title>
-  <link rel="manifest" href="manifest.webmanifest?v=0.12.5" />
-  <link rel="icon" href="icon.svg?v=0.12.5" type="image/svg+xml" />
-  <link rel="stylesheet" href="styles.css?v=0.12.5" />
+  <title>ThreadWriter v0.12.6</title>
+  <link rel="manifest" href="manifest.webmanifest?v=0.12.6" />
+  <link rel="icon" href="icon.svg?v=0.12.6" type="image/svg+xml" />
+  <link rel="stylesheet" href="styles.css?v=0.12.6" />
 </head>
 <body>
   <div class="app-shell">
@@ -282,10 +282,14 @@
             <option value="grayscale">Grayscale</option>
           </select>
         </label>
+        <label id="imageExportMaxHeightField">
+          <span>Maximum part height (pixels)</span>
+          <input id="imageExportMaxHeight" type="number" min="640" max="12000" step="100" value="3000" />
+        </label>
       </div>
       <label class="image-export-split-option">
         <input id="imageExportSplit" type="checkbox" checked />
-        <span><strong>Split long exports automatically</strong><small>Keeps messages and narrative blocks together when possible and stays under browser-safe image dimensions.</small></span>
+        <span><strong>Split long exports automatically</strong><small>Uses the maximum part height above, keeping messages and narrative blocks together when possible. Browser-safe limits still apply.</small></span>
       </label>
       <div id="imageExportSummary" class="image-export-summary"></div>
       <div class="timestamp-actions">
@@ -701,6 +705,6 @@
     </div>
   </template>
 
-  <script src="app.js?v=0.12.5"></script>
+  <script src="app.js?v=0.12.6"></script>
 </body>
 </html>

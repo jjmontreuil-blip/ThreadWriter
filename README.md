@@ -1,4 +1,13 @@
-# ThreadWriter v0.12.5
+# ThreadWriter v0.12.6
+
+## v0.12.6 — Alpha polish: speaker controls and image splitting
+
+- Composer participant chips now mirror each participant’s actual message bubble color **and bubble text color**, so custom/high-contrast palettes remain legible in the speaker strip.
+- The active participant gets an explicit checkmark plus a strong selection ring, making the current speaker clear even when multiple participants intentionally share the same colors.
+- Image export now exposes a user-editable **Maximum part height** setting, defaulting to **3000 px**, when automatic splitting is enabled.
+- Long PNG/JPEG/TIFF exports split near that requested height at message/narrative boundaries whenever possible while retaining a stricter hidden browser-safe canvas ceiling.
+- Oversized individual content blocks can exceed the preferred height to stay intact when safe; if a single block itself exceeds the hard browser limit, ThreadWriter now makes a necessary hard cut instead of accidentally generating an over-limit canvas.
+- Runtime, asset URLs, and offline cache are bumped to **v0.12.6**.
 
 ## v0.12.5 — Cleaner image and print exports
 

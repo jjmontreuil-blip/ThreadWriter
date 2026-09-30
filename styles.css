@@ -497,12 +497,19 @@ body.reordering { user-select: none; }
   border-radius: 999px;
   padding: 7px 11px;
   background: var(--chip-color, #ddd);
-  color: #111;
+  color: var(--chip-text-color, #111116);
   font-weight: 700;
 }
 .speaker-chip.active {
-  border-color: var(--text);
-  box-shadow: 0 0 0 2px var(--panel);
+  border-color: #4169e1;
+  outline: 2px solid color-mix(in srgb, #4169e1 72%, white);
+  outline-offset: 1px;
+  box-shadow: 0 0 0 3px var(--panel);
+}
+.speaker-chip.active::before {
+  content: "✓";
+  margin-right: 5px;
+  font-weight: 900;
 }
 .composer-row {
   width: min(100%, 820px);

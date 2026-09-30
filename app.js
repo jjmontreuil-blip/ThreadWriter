@@ -1,5 +1,5 @@
 (() => {
-  const APP_VERSION = '0.12.5';
+  const APP_VERSION = '0.12.6';
   const LEGACY_STORAGE_KEY = 'threadwriter.project.v1';
   const LIBRARY_KEY = 'threadwriter.library.v1';
   const DOCUMENT_PREFIX = 'threadwriter.document.v1.';
@@ -210,6 +210,8 @@
     imageExportDpi: document.getElementById('imageExportDpi'),
     imageExportCustomWidth: document.getElementById('imageExportCustomWidth'),
     imageExportColorMode: document.getElementById('imageExportColorMode'),
+    imageExportMaxHeightField: document.getElementById('imageExportMaxHeightField'),
+    imageExportMaxHeight: document.getElementById('imageExportMaxHeight'),
     imageExportSplit: document.getElementById('imageExportSplit'),
     imageExportSummary: document.getElementById('imageExportSummary'),
     runImageExportBtn: document.getElementById('runImageExportBtn'),
@@ -1613,7 +1615,9 @@
       const b = document.createElement('button');
       b.className = 'speaker-chip' + (p.id === state.activeParticipantId ? ' active' : '');
       b.style.setProperty('--chip-color', p.color);
+      b.style.setProperty('--chip-text-color', participantBubbleTextColor(p));
       b.textContent = `${index < 9 ? index + 1 + ' · ' : ''}${p.name}`;
+      if (p.id === state.activeParticipantId) b.setAttribute('aria-current', 'true');
       b.type = 'button';
       b.addEventListener('click', () => setActiveParticipant(p.id));
       els.speakerStrip.appendChild(b);
@@ -4992,6 +4996,7 @@
   els.imageExportDpi.addEventListener('change', updateImageExportDialog);
   els.imageExportCustomWidth.addEventListener('input', updateImageExportDialog);
   els.imageExportColorMode.addEventListener('change', updateImageExportDialog);
+  els.imageExportMaxHeight.addEventListener('input', updateImageExportDialog);
   els.imageExportSplit.addEventListener('change', updateImageExportDialog);
   els.runImageExportBtn.addEventListener('click', exportImageFromDialog);
 
@@ -5616,7 +5621,8 @@
       targetWidth,
       dpi,
       grayscale: els.imageExportColorMode.value === 'grayscale',
-      split: !!els.imageExportSplit.checked
+      split: !!els.imageExportSplit.checked,
+      maxPartHeight: Math.round(clampNumber(els.imageExportMaxHeight.value, 640, 12000, 3000))
     };
   }
 
@@ -5625,13 +5631,17 @@
     els.imageExportPrintWidthField.hidden = mode !== 'print';
     els.imageExportDpiField.hidden = mode !== 'print';
     els.imageExportCustomWidthField.hidden = mode !== 'custom';
+    els.imageExportMaxHeightField.hidden = !els.imageExportSplit.checked;
     const settings = imageExportSettings();
     const formatName = settings.format === 'jpeg' ? 'JPEG' : settings.format.toUpperCase();
     const colorName = settings.grayscale ? 'grayscale' : 'color';
     const sizeNote = mode === 'print'
       ? `${settings.targetWidth.toLocaleString()} px wide at ${settings.dpi} DPI`
       : `${settings.targetWidth.toLocaleString()} px wide`;
-    els.imageExportSummary.textContent = `${formatName} · ${sizeNote} · ${colorName}${settings.split ? ' · long threads split at safe content boundaries' : ' · single image when browser limits allow'}.`;
+    const splitNote = settings.split
+      ? ` · split near ${settings.maxPartHeight.toLocaleString()} px at safe content boundaries`
+      : ' · single image when browser limits allow';
+    els.imageExportSummary.textContent = `${formatName} · ${sizeNote} · ${colorName}${splitNote}.`;
   }
 
   function openImageExportDialog() {
@@ -5803,18 +5813,31 @@
     return blob;
   }
 
-  function buildImageSegments(totalHeight, safeBreaks, maxLogicalHeight) {
-    if (totalHeight <= maxLogicalHeight) return [{ start: 0, end: totalHeight }];
+  function buildImageSegments(totalHeight, safeBreaks, preferredLogicalHeight, hardLogicalHeight = preferredLogicalHeight) {
+    const preferred = Math.max(1, Math.min(preferredLogicalHeight, hardLogicalHeight));
+    const hard = Math.max(preferred, hardLogicalHeight);
+    if (totalHeight <= preferred) return [{ start: 0, end: totalHeight }];
     const candidates = [...new Set(safeBreaks.map(v => Math.round(v)).filter(v => v > 0 && v < totalHeight))].sort((a, b) => a - b);
     candidates.push(totalHeight);
     const parts = [];
     let start = 0;
     let guard = 0;
-    while (start < totalHeight && guard++ < 500) {
-      const target = start + maxLogicalHeight;
-      let end = candidates.filter(v => v > start && v <= target).pop();
-      if (!end) end = candidates.find(v => v > start) || totalHeight;
-      if (end <= start) end = Math.min(totalHeight, start + maxLogicalHeight);
+    while (start < totalHeight && guard++ < 1000) {
+      const preferredTarget = Math.min(totalHeight, start + preferred);
+      const hardTarget = Math.min(totalHeight, start + hard);
+      const beforePreferred = candidates.filter(v => v > start && v <= preferredTarget);
+      let end = beforePreferred.length ? beforePreferred[beforePreferred.length - 1] : null;
+
+      // If the next complete content block is a little taller than the user's
+      // preferred part height, keep it intact as long as it still fits inside
+      // the browser-safe hard canvas budget.
+      if (!end) end = candidates.find(v => v > preferredTarget && v <= hardTarget) || null;
+
+      // A single attachment/message can itself exceed the hard limit. In that
+      // rare case there is no safe boundary available, so make a hard cut rather
+      // than creating a canvas the browser may reject.
+      if (!end) end = hardTarget;
+      if (end <= start) end = Math.min(totalHeight, start + hard);
       parts.push({ start, end });
       start = end;
     }
@@ -5874,9 +5897,12 @@
       const SAFE_MAX_DIMENSION = 12000;
       const SAFE_MAX_PIXELS = 16000000;
       const safePartHeight = Math.max(640, Math.min(SAFE_MAX_DIMENSION, Math.floor(SAFE_MAX_PIXELS / settings.targetWidth)));
+      const preferredPartHeight = Math.min(settings.maxPartHeight, safePartHeight);
       let segments;
       if (settings.split) {
-        segments = buildImageSegments(totalLogicalHeight, safeBreaks, safePartHeight / scale);
+        const preferredLogicalHeight = Math.max(1, Math.floor(preferredPartHeight / scale));
+        const hardLogicalHeight = Math.max(1, Math.floor(safePartHeight / scale));
+        segments = buildImageSegments(totalLogicalHeight, safeBreaks, preferredLogicalHeight, hardLogicalHeight);
       } else {
         if (totalPhysicalHeight > safePartHeight) {
           throw new Error(`This export would exceed the browser-safe canvas budget at ${settings.targetWidth.toLocaleString()} px wide. Turn on automatic splitting or choose a smaller width.`);
@@ -6578,7 +6604,7 @@ ${imageRels}
   });
 
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-    navigator.serviceWorker.register('./sw.js?v=0.12.5').catch(() => {});
+    navigator.serviceWorker.register('./sw.js?v=0.12.6').catch(() => {});
   }
 
   if (els.runtimeVersion) els.runtimeVersion.textContent = `v${APP_VERSION}`;
