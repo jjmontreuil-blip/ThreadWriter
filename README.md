@@ -1,4 +1,12 @@
-# ThreadWriter v0.12.3
+# ThreadWriter v0.12.4
+
+
+## v0.12.4 — High-contrast speaker badge fix
+
+- Fixes high-contrast speaker names drifting outside their dark label pills in raster/image exports, especially with terminal-style presentation.
+- High-contrast labels now size vertically from the actual rendered text metrics instead of a fixed rectangle height.
+- Live and self-contained HTML labels use matching content-sized badge styling.
+- Runtime, asset URLs, and offline cache are bumped to **v0.12.4**.
 
 ## v0.12.3 — Independent avatar colors
 

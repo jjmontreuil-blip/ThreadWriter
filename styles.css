@@ -1559,14 +1559,15 @@ dialog::backdrop { background: rgba(0,0,0,.45); backdrop-filter: blur(3px); }
 
 /* v0.10.5: accessibility-oriented speaker labels and reusable conversation presets */
 .conversation-canvas.high-contrast-labels .speaker-label {
-  display: block;
+  display: inline-flex;
+  align-items: center;
   width: max-content;
   max-width: calc(100% - 20px);
-  padding: 2px 7px;
+  padding: 3px 7px;
   border-radius: 999px;
   background: rgba(0,0,0,.78);
   color: #fff !important;
-  line-height: 1.35;
+  line-height: 1.15;
   box-shadow: 0 0 0 1px rgba(255,255,255,.10);
 }
 .conversation-canvas.high-contrast-labels .message-row.right .speaker-label { margin-left: auto; }
