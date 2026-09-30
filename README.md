@@ -1,4 +1,11 @@
-# ThreadWriter v0.12.6
+# ThreadWriter v0.12.7
+
+## v0.12.7 — First-run welcome
+
+- New installations now open with **ThreadWriter - An Introduction**, a short built-in example conversation instead of a blank document. It demonstrates chat bubbles, narrative/system text, timestamps, annotations, an image attachment, a faux link preview, and bubble tails.
+- The welcome thread and its two small demo images are embedded directly in the app bundle, so ThreadWriter remains portable and does not need separate sample files or a network connection. Existing users and existing Recent documents are untouched; **File → New** still creates a blank thread.
+- Replaces the private Collodi-themed Conversation Preset placeholder with generic examples: **“Judy's iPhone,” “CyberNetWeb Terminal,” “Scottish Play,” etc.**
+- Runtime, asset URLs, and offline cache are bumped to **v0.12.7**.
 
 ## v0.12.6 — Alpha polish: speaker controls and image splitting
 
