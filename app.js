@@ -1,5 +1,5 @@
 (() => {
-  const APP_VERSION = '0.12.2';
+  const APP_VERSION = '0.12.3';
   const LEGACY_STORAGE_KEY = 'threadwriter.project.v1';
   const LIBRARY_KEY = 'threadwriter.library.v1';
   const DOCUMENT_PREFIX = 'threadwriter.document.v1.';
@@ -30,8 +30,8 @@
     bubbleTails: false,
     activeParticipantId: 'p1',
     participants: [
-      { id: 'p1', name: 'Participant 1', side: 'left', color: '#d9e6ff', textColorMode: 'auto', textColor: '#151518', avatarType: 'none', avatarInitials: 'P1', avatarEmoji: '🙂', avatarEmojiBackground: true },
-      { id: 'p2', name: 'Participant 2', side: 'right', color: '#c9f2d0', textColorMode: 'auto', textColor: '#151518', avatarType: 'none', avatarInitials: 'P2', avatarEmoji: '🙂', avatarEmojiBackground: true }
+      { id: 'p1', name: 'Participant 1', side: 'left', color: '#d9e6ff', textColorMode: 'auto', textColor: '#151518', avatarType: 'none', avatarColor: '#d9e6ff', avatarInitials: 'P1', avatarEmoji: '🙂', avatarEmojiBackground: true },
+      { id: 'p2', name: 'Participant 2', side: 'right', color: '#c9f2d0', textColorMode: 'auto', textColor: '#151518', avatarType: 'none', avatarColor: '#c9f2d0', avatarInitials: 'P2', avatarEmoji: '🙂', avatarEmojiBackground: true }
     ],
     messages: []
   });
@@ -972,6 +972,10 @@
     return automaticBubbleTextColor(participant?.color || '#e5e5ea');
   }
 
+  function participantAvatarColor(participant) {
+    return normalizeHex(participant?.avatarColor, normalizeHex(participant?.color, '#e5e5ea'));
+  }
+
   function blankConversationPresetLibrary() {
     return { version: 1, presets: [] };
   }
@@ -988,6 +992,7 @@
         textColorMode: normalizeBubbleTextMode(participant?.textColorMode),
         textColor: normalizeHex(participant?.textColor, '#ff2d55'),
         avatarType: normalizeAvatarType(participant?.avatarType),
+        avatarColor: normalizeHex(participant?.avatarColor, normalizeHex(participant?.color, '#e5e5ea')),
         avatarInitials: normalizeAvatarInitials(participant?.avatarInitials, name),
         avatarEmoji: normalizeAvatarEmoji(participant?.avatarEmoji),
         avatarEmojiBackground: participant?.avatarEmojiBackground !== false
@@ -1150,6 +1155,7 @@
         textColorMode: normalizeBubbleTextMode(p.textColorMode),
         textColor: normalizeHex(p.textColor, '#ff2d55'),
         avatarType: normalizeAvatarType(p.avatarType),
+        avatarColor: normalizeHex(p.avatarColor, /^#?[0-9a-fA-F]{6}$/.test(String(p.color || '')) ? (String(p.color).startsWith('#') ? p.color : `#${p.color}`) : '#e5e5ea'),
         avatarInitials: normalizeAvatarInitials(p.avatarInitials, name),
         avatarEmoji: normalizeAvatarEmoji(p.avatarEmoji),
         avatarEmojiBackground: p.avatarEmojiBackground !== false
@@ -1669,8 +1675,9 @@
     const type = normalizeAvatarType(participant.avatarType);
     const avatar = document.createElement('div');
     avatar.className = `participant-avatar avatar-${normalizeAvatarShape(state.avatarShape)} avatar-${effectiveAvatarSize()} avatar-${type}${extraClass ? ` ${extraClass}` : ''}`;
-    avatar.style.setProperty('--avatar-color', participant.color || '#e5e5ea');
-    avatar.style.setProperty('--avatar-text-color', automaticBubbleTextColor(participant.color || '#e5e5ea'));
+    const avatarColor = participantAvatarColor(participant);
+    avatar.style.setProperty('--avatar-color', avatarColor);
+    avatar.style.setProperty('--avatar-text-color', automaticBubbleTextColor(avatarColor));
     avatar.setAttribute('aria-label', `${participant.name} avatar`);
     avatar.title = participant.name;
 
@@ -2928,6 +2935,7 @@
           textColorMode: normalizeBubbleTextMode(participant.textColorMode),
           textColor: normalizeHex(participant.textColor, '#ff2d55'),
           avatarType: normalizeAvatarType(participant.avatarType),
+          avatarColor: participantAvatarColor(participant),
           avatarInitials: normalizeAvatarInitials(participant.avatarInitials, participant.name),
           avatarEmoji: normalizeAvatarEmoji(participant.avatarEmoji),
           avatarEmojiBackground: participant.avatarEmojiBackground !== false
@@ -3055,6 +3063,7 @@
         textColorMode: normalizeBubbleTextMode(participant.textColorMode),
         textColor: normalizeHex(participant.textColor, '#ff2d55'),
         avatarType: normalizeAvatarType(participant.avatarType),
+        avatarColor: participantAvatarColor(participant),
         avatarInitials: normalizeAvatarInitials(participant.avatarInitials, participant.name),
         avatarEmoji: normalizeAvatarEmoji(participant.avatarEmoji),
         avatarEmojiBackground: participant.avatarEmojiBackground !== false
@@ -3430,13 +3439,15 @@
     const imageTools = row.querySelector('.participant-avatar-image-tools');
     const initialsTools = row.querySelector('.participant-avatar-initials-tools');
     const emojiTools = row.querySelector('.participant-avatar-emoji-tools');
+    const colorTools = row.querySelector('.participant-avatar-color-tools');
     if (imageTools) imageTools.hidden = type !== 'image';
     if (initialsTools) initialsTools.hidden = type !== 'initials';
     if (emojiTools) emojiTools.hidden = type !== 'emoji';
+    if (colorTools) colorTools.hidden = type !== 'initials' && type !== 'emoji';
     if (!preview) return;
 
     const name = row.querySelector('.participant-name')?.value || 'Participant';
-    const color = normalizeHex(row.querySelector('.participant-color')?.value, '#e5e5ea');
+    const color = normalizeHex(row.querySelector('.participant-avatar-color')?.value, normalizeHex(row.querySelector('.participant-color')?.value, '#e5e5ea'));
     preview.innerHTML = '';
     preview.style.borderRadius = normalizeAvatarShape(state.avatarShape) === 'square' ? '8px' : '50%';
     preview.style.background = 'transparent';
@@ -3497,6 +3508,7 @@
       textColorMode: 'auto',
       textColor: '#ff2d55',
       avatarType: 'none',
+      avatarColor: '#e5e5ea',
       avatarInitials: '',
       avatarEmoji: '🙂',
       avatarEmojiBackground: true
@@ -3511,10 +3523,12 @@
     textModeInput.value = normalizeBubbleTextMode(p.textColorMode);
     textColorInput.value = normalizeHex(p.textColor, '#ff2d55');
     const avatarTypeInput = node.querySelector('.participant-avatar-type');
+    const avatarColorInput = node.querySelector('.participant-avatar-color');
     const avatarInitialsInput = node.querySelector('.participant-avatar-initials');
     const avatarEmojiInput = node.querySelector('.participant-avatar-emoji');
     const avatarEmojiBackgroundInput = node.querySelector('.participant-avatar-emoji-background');
     avatarTypeInput.value = normalizeAvatarType(p.avatarType);
+    avatarColorInput.value = participantAvatarColor(p);
     avatarInitialsInput.value = normalizeAvatarInitials(p.avatarInitials, p.name);
     node.dataset.lastAutoInitials = defaultAvatarInitials(p.name);
     avatarEmojiInput.value = normalizeAvatarEmoji(p.avatarEmoji);
@@ -3529,7 +3543,16 @@
       updateParticipantAvatarEditor(node);
     }));
     bubbleColorInput.addEventListener('input', () => updateParticipantAvatarEditor(node));
-    avatarTypeInput.addEventListener('change', () => updateParticipantAvatarEditor(node));
+    avatarColorInput.addEventListener('input', () => {
+      node.dataset.avatarColorTouched = 'true';
+      updateParticipantAvatarEditor(node);
+    });
+    avatarTypeInput.addEventListener('change', () => {
+      if (!node.dataset.avatarColorTouched && avatarTypeInput.value !== 'none' && normalizeAvatarType(p.avatarType) === 'none') {
+        avatarColorInput.value = normalizeHex(bubbleColorInput.value, '#e5e5ea');
+      }
+      updateParticipantAvatarEditor(node);
+    });
     avatarInitialsInput.addEventListener('input', () => updateParticipantAvatarEditor(node));
     avatarEmojiInput.addEventListener('input', () => updateParticipantAvatarEditor(node));
     avatarEmojiBackgroundInput.addEventListener('change', () => updateParticipantAvatarEditor(node));
@@ -3607,6 +3630,7 @@
         textColorMode: normalizeBubbleTextMode(row.querySelector('.participant-text-mode')?.value),
         textColor: normalizeHex(row.querySelector('.participant-text-color')?.value, '#ff2d55'),
         avatarType,
+        avatarColor: normalizeHex(row.querySelector('.participant-avatar-color')?.value, normalizeHex(row.querySelector('.participant-color')?.value, '#e5e5ea')),
         avatarInitials: normalizeAvatarInitials(row.querySelector('.participant-avatar-initials')?.value, name),
         avatarEmoji: normalizeAvatarEmoji(row.querySelector('.participant-avatar-emoji')?.value),
         avatarEmojiBackground: row.querySelector('.participant-avatar-emoji-background')?.checked !== false
@@ -5218,7 +5242,7 @@
     const noEmojiBackground = type === 'emoji' && participant.avatarEmojiBackground === false;
     if (!noEmojiBackground) {
       makeShape();
-      ctx.fillStyle = participant.color || '#e5e5ea';
+      ctx.fillStyle = participantAvatarColor(participant);
       ctx.fill();
     }
     if (type === 'image') {
@@ -5233,7 +5257,7 @@
       }
     }
     const text = type === 'emoji' ? normalizeAvatarEmoji(participant.avatarEmoji) : (type === 'initials' ? normalizeAvatarInitials(participant.avatarInitials, participant.name) : defaultAvatarInitials(participant.name));
-    ctx.fillStyle = type === 'emoji' ? '#111116' : automaticBubbleTextColor(participant.color || '#e5e5ea');
+    ctx.fillStyle = type === 'emoji' ? '#111116' : automaticBubbleTextColor(participantAvatarColor(participant));
     ctx.font = type === 'emoji' ? `400 ${Math.round(size * .58)}px "Apple Color Emoji","Segoe UI Emoji",sans-serif` : `800 ${Math.round(size * .32)}px Arial,sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -5945,7 +5969,8 @@
     if (!participantHasAvatar(participant)) return '';
     const type = normalizeAvatarType(participant.avatarType);
     const classes = `avatar avatar-${normalizeAvatarShape(state.avatarShape)} avatar-${effectiveAvatarSize()} avatar-${type}${participant.avatarEmojiBackground === false && type === 'emoji' ? ' avatar-no-bg' : ''}${extraClass ? ` ${extraClass}` : ''}`;
-    const style = `--avatar:${htmlEscape(participant.color || '#e5e5ea')};--avatar-text:${htmlEscape(automaticBubbleTextColor(participant.color || '#e5e5ea'))}`;
+    const avatarColor = participantAvatarColor(participant);
+    const style = `--avatar:${htmlEscape(avatarColor)};--avatar-text:${htmlEscape(automaticBubbleTextColor(avatarColor))}`;
     if (type === 'image') {
       const image = normalizeImageAttachment(participant.avatarImage);
       const src = image ? mediaMap.get(image.id) || '' : '';
@@ -6556,7 +6581,7 @@ ${imageRels}
   });
 
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-    navigator.serviceWorker.register('./sw.js?v=0.12.2').catch(() => {});
+    navigator.serviceWorker.register('./sw.js?v=0.12.3').catch(() => {});
   }
 
   if (els.runtimeVersion) els.runtimeVersion.textContent = `v${APP_VERSION}`;

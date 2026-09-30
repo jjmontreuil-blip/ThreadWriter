@@ -1,4 +1,12 @@
-# ThreadWriter v0.12.2
+# ThreadWriter v0.12.3
+
+## v0.12.3 — Independent avatar colors
+
+- Separates avatar background color from each participant’s chat bubble color. Initials and colored emoji avatars now have their own **Avatar color** control, so styling an avatar can never overwrite or depend on the message bubble color.
+- Existing documents migrate cleanly: when no avatar color has been stored yet, the participant’s current bubble color is used as the initial avatar color.
+- New avatars initially inherit the current bubble color for convenience, but the two colors are independent after that.
+- The independent avatar color carries through live rendering, conversation presets, Undo/Redo state, raster export, and self-contained HTML export.
+- Runtime, asset URLs, and offline cache are bumped to **v0.12.3**.
 
 ## v0.12.2 — Mobile menu viewport fix
 
@@ -16,8 +24,8 @@
 
 ## v0.12 — Avatars and bubble tails
 
-- Adds optional **participant avatars** for Mobile Chat. Each participant can use an uploaded image, editable initials, a single emoji, or no avatar. Image avatars use a simple cover crop; initials use the participant color with automatic text contrast.
-- Emoji avatars include a compact searchable desktop-friendly picker while still accepting pasted or typed emoji. Emoji can use the participant color as a tile or render without a background.
+- Adds optional **participant avatars** for Mobile Chat. Each participant can use an uploaded image, editable initials, a single emoji, or no avatar. Image avatars use a simple cover crop; initials use an independently editable avatar color with automatic text contrast.
+- Emoji avatars include a compact searchable desktop-friendly picker while still accepting pasted or typed emoji. Emoji can use the independently editable avatar color as a tile or render without a background.
 - Adds conversation-level avatar display controls under **Text → Avatars & bubble tails…**: Off / Initial avatars / Persistent avatars; Above / Alongside placement; side-flush or centered Above alignment; Circle / Square shape; and Small / Large size.
 - Avatar display follows **message bursts**. A burst is a consecutive run from one speaker, and Narrative/System blocks break bursts. Initial avatars appear on that participant's first burst; Persistent avatars appear on the first message of every burst. Continuation messages never repeat the avatar.
 - Adds optional **word-balloon tails** to Mobile Chat. Tails appear only on a single-message burst or on the final bubble of a multi-message burst.
