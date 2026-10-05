@@ -1,5 +1,5 @@
 (() => {
-  const APP_VERSION = '0.12.11';
+  const APP_VERSION = '0.12.12';
   const LEGACY_STORAGE_KEY = 'threadwriter.project.v1';
   const LIBRARY_KEY = 'threadwriter.library.v1';
   const LIBRARY_BACKUP_KEY = 'threadwriter.library.previous.v1';
@@ -32,6 +32,7 @@
     sceneHeader: '',
     headerFont: 'rounded',
     conversationStyle: 'chat',
+    transcriptSpeakerAlignment: 'left',
     conversationWidth: 'wide',
     conversationBackground: { mode: 'default', solid: '#f4f4f7', colors: ['#f4f4f7', '#d9e6ff'], direction: 'vertical' },
     highContrastLabels: false,
@@ -120,6 +121,8 @@
     narrativeBtn: document.getElementById('narrativeBtn'),
     quickNarrativeBtn: document.getElementById('quickNarrativeBtn'),
     conversationStyle: document.getElementById('conversationStyle'),
+    transcriptSpeakerAlignmentField: document.getElementById('transcriptSpeakerAlignmentField'),
+    transcriptSpeakerAlignment: document.getElementById('transcriptSpeakerAlignment'),
     conversationWidth: document.getElementById('conversationWidth'),
     chatAppearanceBtn: document.getElementById('chatAppearanceBtn'),
     chatAppearanceDialog: document.getElementById('chatAppearanceDialog'),
@@ -467,6 +470,10 @@
 
   function normalizeConversationStyle(value) {
     return ['chat', 'transcript', 'theater', 'screen'].includes(value) ? value : 'chat';
+  }
+
+  function normalizeTranscriptSpeakerAlignment(value) {
+    return value === 'center' ? 'center' : 'left';
   }
 
   function normalizeHex(value, fallback = '#f4f4f7') {
@@ -1158,6 +1165,7 @@
       id: typeof value.id === 'string' && value.id ? value.id : `preset-${Date.now()}-${index}-${Math.random().toString(16).slice(2)}`,
       name: typeof value.name === 'string' && value.name.trim() ? value.name.trim() : `Preset ${index + 1}`,
       conversationStyle: normalizeConversationStyle(value.conversationStyle),
+      transcriptSpeakerAlignment: normalizeTranscriptSpeakerAlignment(value.transcriptSpeakerAlignment),
       conversationWidth: normalizeConversationWidth(value.conversationWidth),
       conversationBackground: normalizeConversationBackground(value.conversationBackground),
       highContrastLabels: value.highContrastLabels === true,
@@ -1328,6 +1336,7 @@
       sceneHeader: typeof project.sceneHeader === 'string' ? project.sceneHeader : '',
       headerFont: allowedFonts.has(project.headerFont) ? project.headerFont : 'rounded',
       conversationStyle: normalizeConversationStyle(project.conversationStyle),
+      transcriptSpeakerAlignment: normalizeTranscriptSpeakerAlignment(project.transcriptSpeakerAlignment),
       conversationWidth: normalizeConversationWidth(project.conversationWidth),
       conversationBackground: normalizeConversationBackground(project.conversationBackground),
       highContrastLabels: project.highContrastLabels === true,
@@ -1849,10 +1858,17 @@
     els.conversationCanvas.classList.toggle('width-phone', width === 'phone');
   }
 
+  function updateTranscriptSpeakerAlignmentControl() {
+    const isTranscript = normalizeConversationStyle(state.conversationStyle) === 'transcript';
+    if (els.transcriptSpeakerAlignmentField) els.transcriptSpeakerAlignmentField.hidden = !isTranscript;
+    if (els.transcriptSpeakerAlignment) els.transcriptSpeakerAlignment.value = normalizeTranscriptSpeakerAlignment(state.transcriptSpeakerAlignment);
+  }
+
   function render() {
     ensureActiveParticipant();
     els.title.value = state.title || 'Untitled Thread';
     els.conversationStyle.value = state.conversationStyle || 'chat';
+    updateTranscriptSpeakerAlignmentControl();
     if (els.conversationWidth) els.conversationWidth.value = normalizeConversationWidth(state.conversationWidth);
     applyConversationPresentation();
     renderSpeakers();
@@ -2131,6 +2147,7 @@
     updateUndoControls();
     els.thread.innerHTML = '';
     ['transcript', 'theater', 'screen'].forEach(style => els.thread.classList.toggle(`style-${style}`, state.conversationStyle === style));
+    els.thread.classList.toggle('transcript-speakers-center', state.conversationStyle === 'transcript' && normalizeTranscriptSpeakerAlignment(state.transcriptSpeakerAlignment) === 'center');
 
     if (state.sceneHeader) {
       const header = document.createElement('div');
@@ -3019,6 +3036,16 @@
     if (state.conversationStyle !== nextStyle) pushUndoSnapshot('conversation style change');
     state.conversationStyle = nextStyle;
     scheduleSave();
+    updateTranscriptSpeakerAlignmentControl();
+    renderThread();
+    closeTopMenus();
+  });
+
+  els.transcriptSpeakerAlignment?.addEventListener('change', () => {
+    const nextAlignment = normalizeTranscriptSpeakerAlignment(els.transcriptSpeakerAlignment.value);
+    if (state.transcriptSpeakerAlignment !== nextAlignment) pushUndoSnapshot('transcript speaker alignment change');
+    state.transcriptSpeakerAlignment = nextAlignment;
+    scheduleSave();
     renderThread();
     closeTopMenus();
   });
@@ -3314,6 +3341,7 @@
       id: existing?.id || (crypto.randomUUID ? crypto.randomUUID() : `preset-${Date.now()}-${Math.random().toString(16).slice(2)}`),
       name,
       conversationStyle: state.conversationStyle,
+      transcriptSpeakerAlignment: normalizeTranscriptSpeakerAlignment(state.transcriptSpeakerAlignment),
       conversationWidth: normalizeConversationWidth(state.conversationWidth),
       conversationBackground: cloneState(normalizeConversationBackground(state.conversationBackground)),
       highContrastLabels: state.highContrastLabels === true,
@@ -3444,6 +3472,7 @@
     createSnapshot(currentDocumentId, state, 'Before applying conversation preset', { force: true });
     pushUndoSnapshot('conversation preset');
     state.conversationStyle = preset.conversationStyle;
+    state.transcriptSpeakerAlignment = normalizeTranscriptSpeakerAlignment(preset.transcriptSpeakerAlignment);
     state.conversationWidth = normalizeConversationWidth(preset.conversationWidth);
     state.conversationBackground = cloneState(preset.conversationBackground);
     state.highContrastLabels = preset.highContrastLabels === true;
@@ -5940,6 +5969,7 @@
     const style = normalizeConversationStyle(state.conversationStyle);
     const plainDraft = style !== 'chat';
     const transcript = style === 'transcript';
+    const transcriptSpeakersCentered = transcript && normalizeTranscriptSpeakerAlignment(state.transcriptSpeakerAlignment) === 'center';
     const theater = style === 'theater';
     const screen = style === 'screen';
     const customBackground = normalizeConversationBackground(state.conversationBackground).mode !== 'default';
@@ -6066,8 +6096,8 @@
         ctx.font = plainDraft ? '800 16px Arial, sans-serif' : '600 17px Arial, sans-serif';
         const name = plainDraft ? participant.name.toLocaleUpperCase() : participant.name;
         if (draw) {
-          const labelAlign = theater || screen ? 'center' : (transcript || side === 'left' ? 'left' : 'right');
-          const labelX = theater || screen ? W / 2 : (transcript || side === 'left' ? contentLeft : W - contentRight);
+          const labelAlign = theater || screen || transcriptSpeakersCentered ? 'center' : (transcript || side === 'left' ? 'left' : 'right');
+          const labelX = theater || screen || transcriptSpeakersCentered ? W / 2 : (transcript || side === 'left' ? contentLeft : W - contentRight);
           ctx.textAlign = labelAlign;
           const highContrastLabel = state.highContrastLabels === true;
           if (highContrastLabel) {
@@ -6098,7 +6128,7 @@
         ctx.font = '500 15px Arial, sans-serif';
         if (draw) {
           ctx.fillStyle = darkBackground ? '#d6d6de' : '#777780';
-          if (theater || screen) {
+          if (theater || screen || transcriptSpeakersCentered) {
             ctx.textAlign = 'center';
             ctx.fillText(item.displayTimestamp, W / 2, y);
           } else {
@@ -6657,6 +6687,7 @@
     const documentText = darkBackground ? '#f7f7fa' : '#17171b';
     const documentMuted = darkBackground ? '#dedee6' : '#6d6d78';
     const highContrastLabels = state.highContrastLabels === true;
+    const transcriptAlignmentClass = style === 'transcript' && normalizeTranscriptSpeakerAlignment(state.transcriptSpeakerAlignment) === 'center' ? ' transcript-speakers-center' : '';
     const widthMode = normalizeConversationWidth(state.conversationWidth);
     const documentMaxWidth = widthMode === 'phone' ? 440 : (widthMode === 'tablet' ? 680 : 820);
     const body = [];
@@ -6716,10 +6747,10 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; object-src 'none'">
 <title>${title}</title>
 <style>
-*{box-sizing:border-box}body{margin:0;background:${backgroundCss};color:${documentText};font-family:ui-rounded,"SF Pro Rounded","Segoe UI",system-ui,-apple-system,sans-serif}.document{width:min(100%,${documentMaxWidth}px);margin:0 auto;padding:34px 18px 60px}.scene-header{text-align:center;font-weight:720;font-size:21px;line-height:1.3;margin:0 auto 30px;white-space:pre-wrap}.scene-header.serif{font-family:Georgia,"Times New Roman",serif}.scene-header.mono{font-family:ui-monospace,Consolas,monospace}.chat-thread-header{display:grid;justify-items:center;gap:5px;width:max-content;max-width:86%;margin:2px auto 24px;color:${documentMuted};text-align:center}.chat-header-icons{position:relative;height:48px}.chat-header-avatar{--header-avatar:#e5e5ea;--header-avatar-text:#111116;position:absolute;top:0;width:46px;height:46px;display:grid;place-items:center;overflow:hidden;border:2px solid ${darkBackground ? '#202126' : '#f4f4f7'};border-radius:50%;background:var(--header-avatar);color:var(--header-avatar-text);font-size:13px;font-weight:800;line-height:1}.chat-header-avatar img{width:100%;height:100%;object-fit:cover;display:block}.chat-header-icons.count-1{width:46px}.chat-header-icons.count-1 .chat-header-avatar{left:0}.chat-header-icons.count-2{width:70px}.chat-header-icons.count-2 .chat-header-avatar:nth-child(1){left:0}.chat-header-icons.count-2 .chat-header-avatar:nth-child(2){left:24px}.chat-header-icons.count-3{width:88px}.chat-header-icons.count-3 .chat-header-avatar:nth-child(1){left:0;top:8px}.chat-header-icons.count-3 .chat-header-avatar:nth-child(2){left:21px;top:0}.chat-header-icons.count-3 .chat-header-avatar:nth-child(3){left:42px;top:8px}.chat-header-label{font-size:15px;font-weight:650;line-height:1.2}.message{display:flex;margin:11px 0}.message.continuation{margin-top:-7px}.message.left{justify-content:flex-start}.message.right{justify-content:flex-end}.message-card{max-width:${plainDraft ? '100%' : '67%'}}.message.avatar-alongside-burst{align-items:flex-start;gap:8px}.avatar-slot{flex:0 0 auto;display:flex;justify-content:center}.avatar-slot-small{width:34px}.avatar-slot-large{width:50px}.avatar-slot-xlarge{width:72px}.message.avatar-alongside-burst.speaker-labelled .avatar-slot{margin-top:20px}.message.avatar-tail-anchor .avatar-slot{align-self:flex-end;margin-top:0!important}.avatar{display:grid;place-items:center;overflow:hidden;flex:0 0 auto;background:var(--avatar,#e5e5ea);color:var(--avatar-text,#111116);font-weight:800;line-height:1;box-shadow:0 1px 2px rgba(0,0,0,.08)}.avatar-small{width:34px;height:34px;font-size:13px}.avatar-large{width:50px;height:50px;font-size:17px}.avatar-xlarge{width:72px;height:72px;font-size:23px}.avatar-circle{border-radius:50%}.avatar-square{border-radius:8px}.avatar-emoji{font-size:22px;font-weight:400}.avatar-emoji.avatar-large{font-size:31px}.avatar-emoji.avatar-xlarge{font-size:44px}.avatar-no-bg{background:transparent;box-shadow:none}.avatar img{width:100%;height:100%;object-fit:cover;display:block}.avatar-above{margin-bottom:6px}.left .avatar-above-side{margin-left:0;margin-right:auto}.right .avatar-above-side{margin-left:auto;margin-right:0}.speaker{font-size:12px;color:${documentMuted};margin:0 10px 4px}.high-contrast-labels .speaker{display:block;width:max-content;padding:2px 7px;border-radius:999px;background:rgba(0,0,0,.78);color:#fff!important}.high-contrast-labels .right .speaker{margin-left:auto}.high-contrast-labels.transcript .right .speaker{margin-left:10px;margin-right:10px}.high-contrast-labels.theater .speaker,.high-contrast-labels.screen .speaker{margin-left:auto!important;margin-right:auto!important}.right .speaker,.right .timestamp,.right .annotation,.right figcaption{text-align:right}.timestamp{font-size:10.5px;color:${documentMuted};margin:0 10px 4px}.bubble{position:relative;z-index:0;background:${plainDraft ? 'transparent' : 'var(--bubble,#e5e5ea)'};padding:${plainDraft ? '0' : '10px 13px'};border-radius:${plainDraft ? '0' : '18px'};color:${plainDraft ? documentText : 'var(--bubble-text,#151518)'};line-height:1.42;white-space:pre-wrap;overflow-wrap:anywhere}.has-tail.left .bubble{border-bottom-left-radius:10px}.has-tail.right .bubble{border-bottom-right-radius:10px}.has-tail .bubble:after{content:"";position:absolute;bottom:1px;width:14px;height:14px;background:var(--bubble,#e5e5ea);z-index:-1}.has-tail.left .bubble:after{left:-5px;clip-path:polygon(100% 0,100% 100%,0 100%)}.has-tail.right .bubble:after{right:-5px;clip-path:polygon(0 0,100% 100%,0 100%)}.annotation{margin:7px 10px 0;color:${documentMuted};font-size:12px;font-style:italic;line-height:1.4}.narrative{width:min(78%,680px);margin:24px auto;color:${documentMuted};font:italic 14px/1.5 Georgia,"Times New Roman",serif}.narrative.system{font-family:ui-rounded,"Segoe UI",system-ui,sans-serif;font-style:normal;font-weight:560}.narrative-text{text-align:center}.attachment{margin:9px 0 0;max-width:610px}.attachment.center{margin-left:auto;margin-right:auto}.attachment.right{margin-left:auto}.attachment img{display:block;max-width:100%;max-height:70vh;border-radius:12px}.attachment figcaption{margin-top:6px;color:${documentMuted};font-size:12px;line-height:1.4}.attachment.right img{margin-left:auto}.attachment.center img{margin-left:auto;margin-right:auto}.link-preview{display:flex;gap:12px;margin-top:10px;max-width:620px;padding:12px;border:1px solid #d8d8df;border-radius:14px;background:#f7f7f9;color:#17171b;font-family:ui-rounded,"Segoe UI",system-ui,sans-serif;text-align:left}.link-preview.right{margin-left:auto}.link-preview.center{margin-left:auto;margin-right:auto}.preview-thumb{width:min(31%,150px);object-fit:cover;align-self:stretch;max-height:130px}.preview-copy{min-width:0}.preview-site,.preview-url{font-size:11px;color:#777780}.preview-title{font-size:16px;font-weight:750;line-height:1.28;margin:3px 0}.preview-description{font-size:13px;color:#555560;line-height:1.35;margin:3px 0}.missing-image{padding:20px;background:#e5e5ea;color:#686872;text-align:center;border-radius:12px}.transcript .message,.theater .message,.screen .message{justify-content:flex-start;margin:18px 0}.transcript .message-card,.theater .message-card,.screen .message-card{width:100%;max-width:100%}.transcript .right .speaker,.transcript .right .timestamp,.transcript .right .annotation,.transcript .right figcaption,.theater .right .annotation,.screen .right .annotation{text-align:left}.transcript .attachment.right,.transcript .link-preview.right,.theater .attachment.right,.theater .link-preview.right{margin-left:0;margin-right:auto}.theater .speaker,.screen .speaker{text-align:center!important;text-transform:uppercase;font-weight:800;letter-spacing:.07em}.theater .timestamp,.screen .timestamp{text-align:center!important}.theater .bubble{text-align:left}.theater .narrative{margin-left:8%;margin-right:auto}.theater .narrative-text{text-align:left}.screen .bubble{width:min(62%,520px);margin:0 auto;text-align:left}.screen .annotation{width:min(62%,520px);margin-left:auto;margin-right:auto;text-align:left!important}.screen .narrative{width:min(76%,650px)}.screen .narrative-text{text-align:left}@media(max-width:600px){.document{padding:24px 12px 42px}.message-card{max-width:${plainDraft ? '100%' : '78%'}.attachment,.link-preview{max-width:100%}.screen .bubble,.screen .annotation{width:min(76%,520px)}}@media print{@page{margin:.55in}body{background:#fff!important;color:#17171b}.document{width:100%;padding:0}.message-card,.narrative,.attachment,.link-preview{break-inside:avoid}.narrative{color:#000!important}.bubble{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+*{box-sizing:border-box}body{margin:0;background:${backgroundCss};color:${documentText};font-family:ui-rounded,"SF Pro Rounded","Segoe UI",system-ui,-apple-system,sans-serif}.document{width:min(100%,${documentMaxWidth}px);margin:0 auto;padding:34px 18px 60px}.scene-header{text-align:center;font-weight:720;font-size:21px;line-height:1.3;margin:0 auto 30px;white-space:pre-wrap}.scene-header.serif{font-family:Georgia,"Times New Roman",serif}.scene-header.mono{font-family:ui-monospace,Consolas,monospace}.chat-thread-header{display:grid;justify-items:center;gap:5px;width:max-content;max-width:86%;margin:2px auto 24px;color:${documentMuted};text-align:center}.chat-header-icons{position:relative;height:48px}.chat-header-avatar{--header-avatar:#e5e5ea;--header-avatar-text:#111116;position:absolute;top:0;width:46px;height:46px;display:grid;place-items:center;overflow:hidden;border:2px solid ${darkBackground ? '#202126' : '#f4f4f7'};border-radius:50%;background:var(--header-avatar);color:var(--header-avatar-text);font-size:13px;font-weight:800;line-height:1}.chat-header-avatar img{width:100%;height:100%;object-fit:cover;display:block}.chat-header-icons.count-1{width:46px}.chat-header-icons.count-1 .chat-header-avatar{left:0}.chat-header-icons.count-2{width:70px}.chat-header-icons.count-2 .chat-header-avatar:nth-child(1){left:0}.chat-header-icons.count-2 .chat-header-avatar:nth-child(2){left:24px}.chat-header-icons.count-3{width:88px}.chat-header-icons.count-3 .chat-header-avatar:nth-child(1){left:0;top:8px}.chat-header-icons.count-3 .chat-header-avatar:nth-child(2){left:21px;top:0}.chat-header-icons.count-3 .chat-header-avatar:nth-child(3){left:42px;top:8px}.chat-header-label{font-size:15px;font-weight:650;line-height:1.2}.message{display:flex;margin:11px 0}.message.continuation{margin-top:-7px}.message.left{justify-content:flex-start}.message.right{justify-content:flex-end}.message-card{max-width:${plainDraft ? '100%' : '67%'}}.message.avatar-alongside-burst{align-items:flex-start;gap:8px}.avatar-slot{flex:0 0 auto;display:flex;justify-content:center}.avatar-slot-small{width:34px}.avatar-slot-large{width:50px}.avatar-slot-xlarge{width:72px}.message.avatar-alongside-burst.speaker-labelled .avatar-slot{margin-top:20px}.message.avatar-tail-anchor .avatar-slot{align-self:flex-end;margin-top:0!important}.avatar{display:grid;place-items:center;overflow:hidden;flex:0 0 auto;background:var(--avatar,#e5e5ea);color:var(--avatar-text,#111116);font-weight:800;line-height:1;box-shadow:0 1px 2px rgba(0,0,0,.08)}.avatar-small{width:34px;height:34px;font-size:13px}.avatar-large{width:50px;height:50px;font-size:17px}.avatar-xlarge{width:72px;height:72px;font-size:23px}.avatar-circle{border-radius:50%}.avatar-square{border-radius:8px}.avatar-emoji{font-size:22px;font-weight:400}.avatar-emoji.avatar-large{font-size:31px}.avatar-emoji.avatar-xlarge{font-size:44px}.avatar-no-bg{background:transparent;box-shadow:none}.avatar img{width:100%;height:100%;object-fit:cover;display:block}.avatar-above{margin-bottom:6px}.left .avatar-above-side{margin-left:0;margin-right:auto}.right .avatar-above-side{margin-left:auto;margin-right:0}.speaker{font-size:12px;color:${documentMuted};margin:0 10px 4px}.high-contrast-labels .speaker{display:block;width:max-content;padding:2px 7px;border-radius:999px;background:rgba(0,0,0,.78);color:#fff!important}.high-contrast-labels .right .speaker{margin-left:auto}.high-contrast-labels.transcript .speaker{margin-left:0;margin-right:0}.transcript.transcript-speakers-center .speaker{margin-left:auto!important;margin-right:auto!important;text-align:center!important}.transcript.transcript-speakers-center .timestamp{text-align:center!important}.high-contrast-labels.theater .speaker,.high-contrast-labels.screen .speaker{margin-left:auto!important;margin-right:auto!important}.right .speaker,.right .timestamp,.right .annotation,.right figcaption{text-align:right}.timestamp{font-size:10.5px;color:${documentMuted};margin:0 10px 4px}.bubble{position:relative;z-index:0;background:${plainDraft ? 'transparent' : 'var(--bubble,#e5e5ea)'};padding:${plainDraft ? '0' : '10px 13px'};border-radius:${plainDraft ? '0' : '18px'};color:${plainDraft ? documentText : 'var(--bubble-text,#151518)'};line-height:1.42;white-space:pre-wrap;overflow-wrap:anywhere}.has-tail.left .bubble{border-bottom-left-radius:10px}.has-tail.right .bubble{border-bottom-right-radius:10px}.has-tail .bubble:after{content:"";position:absolute;bottom:1px;width:14px;height:14px;background:var(--bubble,#e5e5ea);z-index:-1}.has-tail.left .bubble:after{left:-5px;clip-path:polygon(100% 0,100% 100%,0 100%)}.has-tail.right .bubble:after{right:-5px;clip-path:polygon(0 0,100% 100%,0 100%)}.annotation{margin:7px 10px 0;color:${documentMuted};font-size:12px;font-style:italic;line-height:1.4}.narrative{width:min(78%,680px);margin:24px auto;color:${documentMuted};font:italic 14px/1.5 Georgia,"Times New Roman",serif}.narrative.system{font-family:ui-rounded,"Segoe UI",system-ui,sans-serif;font-style:normal;font-weight:560}.narrative-text{text-align:center}.attachment{margin:9px 0 0;max-width:610px}.attachment.center{margin-left:auto;margin-right:auto}.attachment.right{margin-left:auto}.attachment img{display:block;max-width:100%;max-height:70vh;border-radius:12px}.attachment figcaption{margin-top:6px;color:${documentMuted};font-size:12px;line-height:1.4}.attachment.right img{margin-left:auto}.attachment.center img{margin-left:auto;margin-right:auto}.link-preview{display:flex;gap:12px;margin-top:10px;max-width:620px;padding:12px;border:1px solid #d8d8df;border-radius:14px;background:#f7f7f9;color:#17171b;font-family:ui-rounded,"Segoe UI",system-ui,sans-serif;text-align:left}.link-preview.right{margin-left:auto}.link-preview.center{margin-left:auto;margin-right:auto}.preview-thumb{width:min(31%,150px);object-fit:cover;align-self:stretch;max-height:130px}.preview-copy{min-width:0}.preview-site,.preview-url{font-size:11px;color:#777780}.preview-title{font-size:16px;font-weight:750;line-height:1.28;margin:3px 0}.preview-description{font-size:13px;color:#555560;line-height:1.35;margin:3px 0}.missing-image{padding:20px;background:#e5e5ea;color:#686872;text-align:center;border-radius:12px}.transcript .message,.theater .message,.screen .message{justify-content:flex-start;margin:18px 0}.transcript .message-card,.theater .message-card,.screen .message-card{width:100%;max-width:100%}.transcript .right .speaker,.transcript .right .timestamp,.transcript .right .annotation,.transcript .right figcaption,.theater .right .annotation,.screen .right .annotation{text-align:left}.transcript .attachment.right,.transcript .link-preview.right,.theater .attachment.right,.theater .link-preview.right{margin-left:0;margin-right:auto}.theater .speaker,.screen .speaker{text-align:center!important;text-transform:uppercase;font-weight:800;letter-spacing:.07em}.theater .timestamp,.screen .timestamp{text-align:center!important}.theater .bubble{text-align:left}.theater .narrative{margin-left:8%;margin-right:auto}.theater .narrative-text{text-align:left}.screen .bubble{width:min(62%,520px);margin:0 auto;text-align:left}.screen .annotation{width:min(62%,520px);margin-left:auto;margin-right:auto;text-align:left!important}.screen .narrative{width:min(76%,650px)}.screen .narrative-text{text-align:left}@media(max-width:600px){.document{padding:24px 12px 42px}.message-card{max-width:${plainDraft ? '100%' : '78%'}.attachment,.link-preview{max-width:100%}.screen .bubble,.screen .annotation{width:min(76%,520px)}}@media print{@page{margin:.55in}body{background:#fff!important;color:#17171b}.document{width:100%;padding:0}.message-card,.narrative,.attachment,.link-preview{break-inside:avoid}.narrative{color:#000!important}.bubble{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
 </style>
 </head>
-<body><main class="document ${style}${highContrastLabels ? ' high-contrast-labels' : ''}">${sceneHeader}${body.join('')}</main></body>
+<body><main class="document ${style}${transcriptAlignmentClass}${highContrastLabels ? ' high-contrast-labels' : ''}">${sceneHeader}${body.join('')}</main></body>
 </html>`;
   }
 
@@ -6870,7 +6901,8 @@ ${imageRels}
       }
       const p = getParticipant(item.speakerId);
       const timestampRun = item.displayTimestamp ? `<w:r><w:rPr><w:i/><w:color w:val="6D6D78"/><w:sz w:val="19"/><w:szCs w:val="19"/></w:rPr><w:t xml:space="preserve">  ${xmlEscape(item.displayTimestamp)}</w:t></w:r>` : '';
-      paragraphs.push(`<w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:rPr><w:b/></w:rPr><w:t>${xmlEscape(p?.name || 'Unknown')}</w:t></w:r>${timestampRun}</w:p>`);
+      const portableCueAlignment = normalizeConversationStyle(state.conversationStyle) === 'transcript' && normalizeTranscriptSpeakerAlignment(state.transcriptSpeakerAlignment) === 'center' ? '<w:jc w:val="center"/>' : '';
+      paragraphs.push(`<w:p><w:pPr>${portableCueAlignment}<w:spacing w:after="0"/></w:pPr><w:r><w:rPr><w:b/></w:rPr><w:t>${xmlEscape(p?.name || 'Unknown')}</w:t></w:r>${timestampRun}</w:p>`);
       paragraphs.push(`<w:p><w:pPr><w:spacing w:after="${item.imageAttachment || item.linkPreview || item.annotation ? 60 : 180}"/></w:pPr>${textRuns(item.text)}</w:p>`);
       paragraphs.push(...wordPortableImageMetadata(item.imageAttachment, 'left', (item.linkPreview || item.annotation) ? 60 : 180));
       paragraphs.push(...wordPortableLinkPreview(item.linkPreview, 'left', item.annotation ? 60 : 180));
@@ -6991,7 +7023,8 @@ ${imageRels}
       ? `<w:r><w:rPr><w:color w:val="7A7A84"/><w:sz w:val="17"/><w:szCs w:val="17"/></w:rPr><w:t xml:space="preserve">  ${xmlEscape(message.displayTimestamp)}</w:t></w:r>`
       : '';
     const annotation = includeAnnotation && message.annotation ? wordAnnotationParagraph(message.annotation, 'left') : '';
-    return `<w:p><w:pPr><w:spacing w:before="180" w:after="45"/></w:pPr><w:r><w:rPr><w:b/><w:smallCaps/><w:color w:val="6D6D78"/><w:sz w:val="18"/><w:szCs w:val="18"/></w:rPr><w:t>${xmlEscape(name)}</w:t></w:r>${timestamp}</w:p>
+    const cueAlignment = normalizeTranscriptSpeakerAlignment(state.transcriptSpeakerAlignment) === 'center' ? '<w:jc w:val="center"/>' : '';
+    return `<w:p><w:pPr>${cueAlignment}<w:spacing w:before="180" w:after="45"/></w:pPr><w:r><w:rPr><w:b/><w:smallCaps/><w:color w:val="6D6D78"/><w:sz w:val="18"/><w:szCs w:val="18"/></w:rPr><w:t>${xmlEscape(name)}</w:t></w:r>${timestamp}</w:p>
 <w:p><w:pPr><w:spacing w:before="0" w:after="${message.annotation ? 35 : 90}"/></w:pPr>${richTextRuns(message.text)}</w:p>${annotation}`;
   }
 
@@ -7265,7 +7298,7 @@ ${imageRels}
   });
 
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-    navigator.serviceWorker.register('./sw.js?v=0.12.11').catch(() => {});
+    navigator.serviceWorker.register('./sw.js?v=0.12.12').catch(() => {});
   }
 
   if (els.runtimeVersion) els.runtimeVersion.textContent = `v${APP_VERSION}`;

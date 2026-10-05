@@ -1,11 +1,20 @@
-# ThreadWriter v0.12.11
+# ThreadWriter v0.12.12
+
+## v0.12.12 — Transcript speaker alignment polish
+
+- Fixes Transcript mode so speaker labels no longer inherit left/right chat-side offsets; every speaker cue is flush-aligned consistently by default.
+- Adds a conditional **Transcript speaker alignment** control under Text when Transcript is selected, with **Left** and **Center** options.
+- Centers Transcript timestamps along with speaker cues when Center is selected.
+- Carries the alignment through raster image exports, self-contained HTML, Print/PDF, DOCX output, Undo/Redo state, saved conversations, and conversation presets.
+- Runtime, asset URLs, and offline cache are bumped to **v0.12.12**.
+
 
 ## v0.12.11 — Participants help-text fix
 
 - Updates the Participants dialog help text to point to **Text → Chat presentation...**, where avatar and bubble-tail controls now live.
 - Runtime, asset URLs, and offline cache are bumped to **v0.12.11**.
 
-## v0.12.11 — Security, privacy, and backup hardening
+## v0.12.10 — Security, privacy, and backup hardening
 
 - Audits the shipped app for telemetry and remote data paths. ThreadWriter contains no analytics, trackers, advertising SDKs, remote APIs, or AI-service calls; authoring data remains browser-local unless the user explicitly exports or shares a file. The service worker only refreshes same-origin application assets.
 - Adds a restrictive **Content Security Policy** and **no-referrer** policy to the app and its self-contained HTML exports. User-authored text continues to render through text nodes / escaped export markup rather than executable HTML.
@@ -14,7 +23,7 @@
 - Imported ThreadWriter/project/backup media IDs are remapped to prevent imported files from colliding with or replacing existing local images. Media cleanup now also preserves images referenced by previous local recovery copies.
 - Adds input-size and decompression limits to ThreadWriter backup/import files and DOCX parsing, rejects unsafe XML declarations, and validates ZIP entry bounds to reduce resource-exhaustion and malformed-file risks. User image uploads are restricted to raster formats and are decoded/re-encoded through canvas; active SVG/document uploads are rejected.
 - Autosave failures now stay visibly marked and warn once immediately; the last successful local copy is left intact so the user can export an external backup. Persistent browser storage is requested on a best-effort basis where supported.
-- Runtime, asset URLs, and offline cache are bumped to **v0.12.11**.
+- Runtime, asset URLs, and offline cache are bumped to **v0.12.10**.
 
 ## v0.12.9 — Viewpoint and chat-header presentation
 
