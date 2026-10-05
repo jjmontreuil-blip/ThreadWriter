@@ -1,5 +1,5 @@
 (() => {
-  const APP_VERSION = '0.12.10';
+  const APP_VERSION = '0.12.11';
   const LEGACY_STORAGE_KEY = 'threadwriter.project.v1';
   const LIBRARY_KEY = 'threadwriter.library.v1';
   const LIBRARY_BACKUP_KEY = 'threadwriter.library.previous.v1';
@@ -7265,7 +7265,7 @@ ${imageRels}
   });
 
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-    navigator.serviceWorker.register('./sw.js?v=0.12.10').catch(() => {});
+    navigator.serviceWorker.register('./sw.js?v=0.12.11').catch(() => {});
   }
 
   if (els.runtimeVersion) els.runtimeVersion.textContent = `v${APP_VERSION}`;
