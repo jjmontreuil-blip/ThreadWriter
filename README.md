@@ -1,4 +1,15 @@
-# ThreadWriter v0.12.9
+# ThreadWriter v0.12.10
+
+## v0.12.10 — Security, privacy, and backup hardening
+
+- Audits the shipped app for telemetry and remote data paths. ThreadWriter contains no analytics, trackers, advertising SDKs, remote APIs, or AI-service calls; authoring data remains browser-local unless the user explicitly exports or shares a file. The service worker only refreshes same-origin application assets.
+- Adds a restrictive **Content Security Policy** and **no-referrer** policy to the app and its self-contained HTML exports. User-authored text continues to render through text nodes / escaped export markup rather than executable HTML.
+- Adds fail-closed **previous local backups** for conversations, retained history, the Recent index, projects, and conversation presets. If a current value cannot be read, ThreadWriter attempts recovery from the previous valid copy and can rebuild missing Recent entries from locally stored conversations.
+- Adds **File → Export Full Backup…** and **Restore Full Backup…**. Full backups include local conversations, retained history snapshots, projects, presets, and media. Restore is merge-only: it generates fresh document/project/media IDs instead of overwriting existing work.
+- Imported ThreadWriter/project/backup media IDs are remapped to prevent imported files from colliding with or replacing existing local images. Media cleanup now also preserves images referenced by previous local recovery copies.
+- Adds input-size and decompression limits to ThreadWriter backup/import files and DOCX parsing, rejects unsafe XML declarations, and validates ZIP entry bounds to reduce resource-exhaustion and malformed-file risks. User image uploads are restricted to raster formats and are decoded/re-encoded through canvas; active SVG/document uploads are rejected.
+- Autosave failures now stay visibly marked and warn once immediately; the last successful local copy is left intact so the user can export an external backup. Persistent browser storage is requested on a best-effort basis where supported.
+- Runtime, asset URLs, and offline cache are bumped to **v0.12.10**.
 
 ## v0.12.9 — Viewpoint and chat-header presentation
 
@@ -102,6 +113,13 @@
 
 
 A small local-first dialogue editor for writing, revising, moving, and publishing conversation-heavy material, with chat, transcript, theater-draft, and screen-draft presentation styles.
+
+### Security & privacy model
+
+- ThreadWriter has **no telemetry, analytics, trackers, remote APIs, or AI calls** in its application code. Conversation text, settings, histories, and image media are stored locally in browser storage unless you explicitly export/share a file.
+- The hosted GitHub Pages build necessarily downloads the application files from its host, so the hosting provider may see ordinary web-request metadata. ThreadWriter does **not** include document text in those requests.
+- Browser storage is isolated by **origin**, not by URL path. ThreadWriter uses strongly namespaced storage keys to avoid accidental conflicts, but another page deliberately running under the exact same origin would technically share the browser's origin storage boundary. A dedicated origin/custom domain provides stronger isolation if that threat matters.
+- Local browser storage is convenient working storage, not infallible archival storage. Use **Export Full Backup…**, project backups, or **Save As…** for work you cannot afford to lose.
 
 ## v0.11
 
