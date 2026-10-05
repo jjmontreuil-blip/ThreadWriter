@@ -1,4 +1,12 @@
-# ThreadWriter v0.12.8
+# ThreadWriter v0.12.9
+
+## v0.12.9 — Viewpoint and chat-header presentation
+
+- Adds **Speaker labels** controls for Mobile Chat: every speaker burst, first burst per participant, or off.
+- Adds an optional **Viewpoint / “Me” participant**. When requested, that participant’s in-thread name and avatar can be suppressed so outgoing messages read more like a real messaging app.
+- Adds an optional centered **conversation header** built from participant avatars/initials plus automatic or custom text. The selected viewpoint participant can be excluded from the header.
+- Carries these presentation choices through live view, image export, self-contained HTML export, Print/PDF, Undo/Redo state, saves, and conversation presets.
+- Runtime, asset URLs, and offline cache are bumped to **v0.12.9**.
 
 ## v0.12.8 — First-run resilience and About
 

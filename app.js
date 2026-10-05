@@ -1,5 +1,5 @@
 (() => {
-  const APP_VERSION = '0.12.8';
+  const APP_VERSION = '0.12.9';
   const LEGACY_STORAGE_KEY = 'threadwriter.project.v1';
   const LIBRARY_KEY = 'threadwriter.library.v1';
   const DOCUMENT_PREFIX = 'threadwriter.document.v1.';
@@ -28,6 +28,12 @@
     avatarShape: 'circle',
     avatarSize: 'small',
     bubbleTails: false,
+    speakerLabelMode: 'every',
+    chatViewpointParticipantId: '',
+    hideViewpointIdentity: false,
+    chatHeaderMode: 'off',
+    chatHeaderText: '',
+    chatHeaderExcludeViewpoint: true,
     activeParticipantId: 'p1',
     participants: [
       { id: 'p1', name: 'Participant 1', side: 'left', color: '#d9e6ff', textColorMode: 'auto', textColor: '#151518', avatarType: 'none', avatarColor: '#d9e6ff', avatarInitials: 'P1', avatarEmoji: '🙂', avatarEmojiBackground: true },
@@ -109,6 +115,13 @@
     avatarAlignment: document.getElementById('avatarAlignment'),
     avatarShape: document.getElementById('avatarShape'),
     avatarSize: document.getElementById('avatarSize'),
+    speakerLabelMode: document.getElementById('speakerLabelMode'),
+    chatViewpointParticipant: document.getElementById('chatViewpointParticipant'),
+    hideViewpointIdentityInput: document.getElementById('hideViewpointIdentityInput'),
+    chatHeaderMode: document.getElementById('chatHeaderMode'),
+    chatHeaderTextField: document.getElementById('chatHeaderTextField'),
+    chatHeaderText: document.getElementById('chatHeaderText'),
+    chatHeaderExcludeViewpointInput: document.getElementById('chatHeaderExcludeViewpointInput'),
     bubbleTailsInput: document.getElementById('bubbleTailsInput'),
     resetChatAppearanceBtn: document.getElementById('resetChatAppearanceBtn'),
     saveChatAppearanceBtn: document.getElementById('saveChatAppearanceBtn'),
@@ -941,6 +954,14 @@
     return value === 'initial' || value === 'persistent' ? value : 'off';
   }
 
+  function normalizeSpeakerLabelMode(value) {
+    return value === 'first' || value === 'off' ? value : 'every';
+  }
+
+  function normalizeChatHeaderMode(value) {
+    return value === 'participants' || value === 'custom' ? value : 'off';
+  }
+
   function normalizeAvatarPlacement(value) {
     return value === 'above' ? 'above' : 'alongside';
   }
@@ -1059,6 +1080,12 @@
       avatarShape: normalizeAvatarShape(value.avatarShape),
       avatarSize: normalizeAvatarSize(value.avatarSize),
       bubbleTails: value.bubbleTails === true,
+      speakerLabelMode: normalizeSpeakerLabelMode(value.speakerLabelMode),
+      viewpointParticipantIndex: Number.isInteger(value.viewpointParticipantIndex) && value.viewpointParticipantIndex >= 0 && value.viewpointParticipantIndex < participants.length ? value.viewpointParticipantIndex : -1,
+      hideViewpointIdentity: value.hideViewpointIdentity === true,
+      chatHeaderMode: normalizeChatHeaderMode(value.chatHeaderMode),
+      chatHeaderText: typeof value.chatHeaderText === 'string' ? value.chatHeaderText.slice(0, 80) : '',
+      chatHeaderExcludeViewpoint: value.chatHeaderExcludeViewpoint !== false,
       participants,
       createdAt: value.createdAt || new Date().toISOString(),
       updatedAt: value.updatedAt || value.createdAt || new Date().toISOString()
@@ -1225,6 +1252,12 @@
       avatarShape: normalizeAvatarShape(project.avatarShape),
       avatarSize: normalizeAvatarSize(project.avatarSize),
       bubbleTails: project.bubbleTails === true,
+      speakerLabelMode: normalizeSpeakerLabelMode(project.speakerLabelMode),
+      chatViewpointParticipantId: participants.some(participant => participant.id === project.chatViewpointParticipantId) ? project.chatViewpointParticipantId : '',
+      hideViewpointIdentity: project.hideViewpointIdentity === true,
+      chatHeaderMode: normalizeChatHeaderMode(project.chatHeaderMode),
+      chatHeaderText: typeof project.chatHeaderText === 'string' ? project.chatHeaderText.slice(0, 80) : '',
+      chatHeaderExcludeViewpoint: project.chatHeaderExcludeViewpoint !== false,
       activeParticipantId: project.activeParticipantId || fallbackSpeakerId,
       participants,
       messages: project.messages.map((m, index) => {
@@ -1668,6 +1701,82 @@
     });
   }
 
+  function chatViewpointParticipantId() {
+    const id = String(state.chatViewpointParticipantId || '');
+    return state.participants.some(participant => participant.id === id) ? id : '';
+  }
+
+  function isHiddenViewpointIdentity(participantId) {
+    return state.conversationStyle === 'chat'
+      && state.hideViewpointIdentity === true
+      && Boolean(chatViewpointParticipantId())
+      && participantId === chatViewpointParticipantId();
+  }
+
+  function chatHeaderParticipants() {
+    if (state.conversationStyle !== 'chat' || normalizeChatHeaderMode(state.chatHeaderMode) === 'off') return [];
+    const viewpointId = chatViewpointParticipantId();
+    return state.participants.filter(participant => !(state.chatHeaderExcludeViewpoint !== false && viewpointId && participant.id === viewpointId));
+  }
+
+  function chatHeaderLabel(participants = chatHeaderParticipants()) {
+    const mode = normalizeChatHeaderMode(state.chatHeaderMode);
+    if (mode === 'off' || !participants.length) return '';
+    if (mode === 'custom') return String(state.chatHeaderText || '').trim() || (participants.length === 1 ? participants[0].name : `${participants.length} People`);
+    return participants.length === 1 ? participants[0].name : `${participants.length} People`;
+  }
+
+  function makeChatHeaderAvatarElement(participant) {
+    const avatar = document.createElement('div');
+    avatar.className = 'chat-thread-header-avatar';
+    const avatarColor = participantAvatarColor(participant);
+    avatar.style.setProperty('--avatar-color', avatarColor);
+    avatar.style.setProperty('--avatar-text-color', automaticBubbleTextColor(avatarColor));
+    avatar.title = participant.name;
+    avatar.setAttribute('aria-label', `${participant.name} header avatar`);
+    const type = normalizeAvatarType(participant.avatarType);
+    if (type === 'image') {
+      const fallback = document.createElement('span');
+      fallback.className = 'participant-avatar-fallback';
+      fallback.textContent = defaultAvatarInitials(participant.name);
+      const img = document.createElement('img');
+      img.alt = '';
+      img.hidden = true;
+      avatar.append(fallback, img);
+      const image = normalizeImageAttachment(participant.avatarImage);
+      if (image) {
+        getMediaObjectUrl(image.id).then(url => {
+          if (!url || !img.isConnected) return;
+          img.src = url;
+          fallback.hidden = true;
+          img.hidden = false;
+        }).catch(() => {});
+      }
+      return avatar;
+    }
+    if (type === 'emoji') avatar.textContent = normalizeAvatarEmoji(participant.avatarEmoji);
+    else if (type === 'initials') avatar.textContent = normalizeAvatarInitials(participant.avatarInitials, participant.name);
+    else avatar.textContent = defaultAvatarInitials(participant.name);
+    return avatar;
+  }
+
+  function makeChatThreadHeaderElement() {
+    const participants = chatHeaderParticipants();
+    const label = chatHeaderLabel(participants);
+    if (!participants.length || !label) return null;
+    const header = document.createElement('div');
+    header.className = 'chat-thread-header';
+    const icons = document.createElement('div');
+    const visible = participants.slice(0, 3);
+    icons.className = `chat-thread-header-icons count-${visible.length}`;
+    visible.forEach(participant => icons.appendChild(makeChatHeaderAvatarElement(participant)));
+    const text = document.createElement('div');
+    text.className = 'chat-thread-header-label';
+    text.textContent = label;
+    header.append(icons, text);
+    return header;
+  }
+
   function participantHasAvatar(participant) {
     const type = normalizeAvatarType(participant?.avatarType);
     if (type === 'none') return false;
@@ -1697,6 +1806,7 @@
         const firstBurst = !seenParticipants.has(item.speakerId);
         seenParticipants.add(item.speakerId);
         const eligible = state.conversationStyle === 'chat'
+          && !isHiddenViewpointIdentity(item.speakerId)
           && participantHasAvatar(participant)
           && (avatarMode === 'persistent' || (avatarMode === 'initial' && firstBurst));
         activeBurst = { speakerId: item.speakerId, avatar: eligible };
@@ -1862,6 +1972,11 @@
       els.thread.appendChild(header);
     }
 
+    if (state.conversationStyle === 'chat') {
+      const chatHeader = makeChatThreadHeaderElement();
+      if (chatHeader) els.thread.appendChild(chatHeader);
+    }
+
     if (!state.messages.length) {
       const empty = document.createElement('div');
       empty.className = 'empty-state';
@@ -1878,6 +1993,7 @@
     const linkPreviewMatchIds = new Set(findState.matches.filter(match => match.field.startsWith('linkPreview')).map(match => match.messageId));
     const currentMatch = findState.matches[findState.current];
     const burstMeta = messageBurstMeta();
+    const labelledParticipants = new Set();
 
     state.messages.forEach((item, index) => {
       if (isNarrative(item)) {
@@ -1987,11 +2103,16 @@
 
       const previous = state.messages[index - 1];
       const continuesSpeaker = isMessage(previous) && previous?.speakerId === item.speakerId;
-      const showSpeakerLabel = state.conversationStyle !== 'chat' || !continuesSpeaker;
       const burst = burstMeta[index] || { burstStart: !continuesSpeaker, burstEnd: true, showAvatar: false, avatarGutter: false, avatarTailAnchor: false };
+      const labelMode = normalizeSpeakerLabelMode(state.speakerLabelMode);
+      const showSpeakerLabel = state.conversationStyle !== 'chat'
+        || (!isHiddenViewpointIdentity(item.speakerId)
+          && burst.burstStart
+          && (labelMode === 'every' || (labelMode === 'first' && !labelledParticipants.has(item.speakerId))));
+      if (state.conversationStyle === 'chat' && burst.burstStart) labelledParticipants.add(item.speakerId);
 
       const row = document.createElement('article');
-      row.className = `message-row ${p.side}${continuesSpeaker ? ' continuation' : ' speaker-start'}${item.displayTimestamp ? ' timestamped' : ''}`;
+      row.className = `message-row ${p.side}${continuesSpeaker ? ' continuation' : ''}${showSpeakerLabel ? ' speaker-start' : ''}${item.displayTimestamp ? ' timestamped' : ''}`;
       if (burst.avatarGutter) row.classList.add('avatar-alongside-burst');
       if (burst.avatarTailAnchor) row.classList.add('avatar-tail-anchor');
       if (state.conversationStyle === 'chat' && state.bubbleTails === true && burst.burstEnd) row.classList.add('has-tail');
@@ -2735,6 +2856,23 @@
     closeTopMenus();
   });
 
+  function populateChatViewpointOptions(selectedId = state.chatViewpointParticipantId) {
+    if (!els.chatViewpointParticipant) return;
+    const current = selectedId || '';
+    els.chatViewpointParticipant.innerHTML = '';
+    const neutral = document.createElement('option');
+    neutral.value = '';
+    neutral.textContent = 'None · neutral conversation';
+    els.chatViewpointParticipant.appendChild(neutral);
+    state.participants.forEach(participant => {
+      const option = document.createElement('option');
+      option.value = participant.id;
+      option.textContent = participant.name;
+      els.chatViewpointParticipant.appendChild(option);
+    });
+    els.chatViewpointParticipant.value = state.participants.some(participant => participant.id === current) ? current : '';
+  }
+
   function updateChatAppearanceDialog() {
     if (!els.chatAppearanceDialog) return;
     const placement = normalizeAvatarPlacement(els.avatarPlacement?.value);
@@ -2767,6 +2905,21 @@
     if (bubbles) bubbles.style.alignSelf = '';
     const tail = preview?.querySelector('.chat-preview-bubbles .with-tail');
     if (tail) tail.classList.toggle('tail-off', !els.bubbleTailsInput?.checked);
+
+    const viewpointId = els.chatViewpointParticipant?.value || '';
+    if (els.hideViewpointIdentityInput) els.hideViewpointIdentityInput.disabled = !viewpointId;
+    const headerMode = normalizeChatHeaderMode(els.chatHeaderMode?.value);
+    if (els.chatHeaderTextField) els.chatHeaderTextField.hidden = headerMode !== 'custom';
+    if (els.chatHeaderExcludeViewpointInput) els.chatHeaderExcludeViewpointInput.disabled = headerMode === 'off' || !viewpointId;
+    const previewHeader = els.chatAppearanceDialog.querySelector('.chat-preview-header');
+    if (previewHeader) {
+      previewHeader.hidden = headerMode === 'off';
+      const recipients = state.participants.filter(participant => !(els.chatHeaderExcludeViewpointInput?.checked && viewpointId && participant.id === viewpointId));
+      const autoLabel = recipients.length === 1 ? recipients[0].name : `${recipients.length} People`;
+      const label = headerMode === 'custom' ? String(els.chatHeaderText?.value || '').trim() || 'Custom header' : autoLabel;
+      const strong = previewHeader.querySelector('strong');
+      if (strong) strong.textContent = label;
+    }
   }
 
   function openChatAppearanceDialog() {
@@ -2775,6 +2928,12 @@
     els.avatarPlacement.value = normalizeAvatarPlacement(state.avatarPlacement);
     els.avatarShape.value = normalizeAvatarShape(state.avatarShape);
     els.avatarSize.value = normalizeAvatarSize(state.avatarSize);
+    els.speakerLabelMode.value = normalizeSpeakerLabelMode(state.speakerLabelMode);
+    populateChatViewpointOptions(state.chatViewpointParticipantId);
+    els.hideViewpointIdentityInput.checked = state.hideViewpointIdentity === true;
+    els.chatHeaderMode.value = normalizeChatHeaderMode(state.chatHeaderMode);
+    els.chatHeaderText.value = state.chatHeaderText || '';
+    els.chatHeaderExcludeViewpointInput.checked = state.chatHeaderExcludeViewpoint !== false;
     els.bubbleTailsInput.checked = state.bubbleTails === true;
     updateChatAppearanceDialog();
     els.chatAppearanceDialog.showModal();
@@ -2791,6 +2950,12 @@
       avatarAlignment: 'side',
       avatarShape: normalizeAvatarShape(els.avatarShape.value),
       avatarSize: normalizeAvatarSize(els.avatarSize.value),
+      speakerLabelMode: normalizeSpeakerLabelMode(els.speakerLabelMode.value),
+      chatViewpointParticipantId: state.participants.some(participant => participant.id === els.chatViewpointParticipant.value) ? els.chatViewpointParticipant.value : '',
+      hideViewpointIdentity: els.hideViewpointIdentityInput.checked === true,
+      chatHeaderMode: normalizeChatHeaderMode(els.chatHeaderMode.value),
+      chatHeaderText: String(els.chatHeaderText.value || '').trim().slice(0, 80),
+      chatHeaderExcludeViewpoint: els.chatHeaderExcludeViewpointInput.checked !== false,
       bubbleTails: els.bubbleTailsInput.checked === true
     };
     const changed = Object.entries(next).some(([key, value]) => state[key] !== value);
@@ -2804,12 +2969,19 @@
   els.chatAppearanceBtn?.addEventListener('click', () => { closeTopMenus(); openChatAppearanceDialog(); });
   els.closeChatAppearanceDialogBtn?.addEventListener('click', closeChatAppearanceDialog);
   els.chatAppearanceDialog?.addEventListener('cancel', event => { event.preventDefault(); closeChatAppearanceDialog(); });
-  [els.avatarMode, els.avatarPlacement, els.avatarShape, els.avatarSize, els.bubbleTailsInput].forEach(control => control?.addEventListener('change', updateChatAppearanceDialog));
+  [els.avatarMode, els.avatarPlacement, els.avatarShape, els.avatarSize, els.speakerLabelMode, els.chatViewpointParticipant, els.hideViewpointIdentityInput, els.chatHeaderMode, els.chatHeaderExcludeViewpointInput, els.bubbleTailsInput].forEach(control => control?.addEventListener('change', updateChatAppearanceDialog));
+  els.chatHeaderText?.addEventListener('input', updateChatAppearanceDialog);
   els.resetChatAppearanceBtn?.addEventListener('click', () => {
     els.avatarMode.value = 'off';
     els.avatarPlacement.value = 'alongside';
     els.avatarShape.value = 'circle';
     els.avatarSize.value = 'small';
+    els.speakerLabelMode.value = 'every';
+    populateChatViewpointOptions('');
+    els.hideViewpointIdentityInput.checked = false;
+    els.chatHeaderMode.value = 'off';
+    els.chatHeaderText.value = '';
+    els.chatHeaderExcludeViewpointInput.checked = true;
     els.bubbleTailsInput.checked = false;
     updateChatAppearanceDialog();
   });
@@ -2975,6 +3147,12 @@
       avatarShape: normalizeAvatarShape(state.avatarShape),
       avatarSize: normalizeAvatarSize(state.avatarSize),
       bubbleTails: state.bubbleTails === true,
+      speakerLabelMode: normalizeSpeakerLabelMode(state.speakerLabelMode),
+      viewpointParticipantIndex: Math.max(-1, state.participants.findIndex(participant => participant.id === state.chatViewpointParticipantId)),
+      hideViewpointIdentity: state.hideViewpointIdentity === true,
+      chatHeaderMode: normalizeChatHeaderMode(state.chatHeaderMode),
+      chatHeaderText: String(state.chatHeaderText || '').slice(0, 80),
+      chatHeaderExcludeViewpoint: state.chatHeaderExcludeViewpoint !== false,
       participants: state.participants.map(participant => {
         const value = {
           name: participant.name,
@@ -3099,6 +3277,11 @@
     state.avatarShape = normalizeAvatarShape(preset.avatarShape);
     state.avatarSize = normalizeAvatarSize(preset.avatarSize);
     state.bubbleTails = preset.bubbleTails === true;
+    state.speakerLabelMode = normalizeSpeakerLabelMode(preset.speakerLabelMode);
+    state.hideViewpointIdentity = preset.hideViewpointIdentity === true;
+    state.chatHeaderMode = normalizeChatHeaderMode(preset.chatHeaderMode);
+    state.chatHeaderText = String(preset.chatHeaderText || '').slice(0, 80);
+    state.chatHeaderExcludeViewpoint = preset.chatHeaderExcludeViewpoint !== false;
 
     const existing = Array.isArray(state.participants) ? state.participants : [];
     const keepExtras = state.messages.some(item => isMessage(item));
@@ -3124,6 +3307,9 @@
       existing.slice(nextParticipants.length).forEach(participant => nextParticipants.push({ ...participant }));
     }
     state.participants = nextParticipants.length ? nextParticipants : existing;
+    state.chatViewpointParticipantId = preset.viewpointParticipantIndex >= 0 && state.participants[preset.viewpointParticipantIndex]
+      ? state.participants[preset.viewpointParticipantIndex].id
+      : '';
     ensureActiveParticipant();
     scheduleSave();
     render();
@@ -3693,6 +3879,7 @@
     const fallbackId = newParticipants[0].id;
     state.messages.forEach(m => { if (isMessage(m) && !validIds.has(m.speakerId)) m.speakerId = fallbackId; });
     state.participants = newParticipants;
+    if (!state.participants.some(participant => participant.id === state.chatViewpointParticipantId)) state.chatViewpointParticipantId = '';
     ensureActiveParticipant();
     scheduleSave();
     render();
@@ -5364,6 +5551,34 @@
     return height;
   }
 
+  function paintCanvasChatHeader(ctx, y, draw = false, imageMap = new Map(), mutedColor = '#6d6d78') {
+    const participants = chatHeaderParticipants();
+    const label = chatHeaderLabel(participants);
+    if (!participants.length || !label || state.conversationStyle !== 'chat') return y;
+    const visible = participants.slice(0, 3);
+    const size = 52;
+    const overlap = 25;
+    const clusterWidth = size + overlap * Math.max(0, visible.length - 1);
+    const startX = (1080 - clusterWidth) / 2;
+    const clusterHeight = visible.length === 3 ? 60 : size;
+    visible.forEach((participant, index) => {
+      const headerParticipant = participantHasAvatar(participant)
+        ? { ...participant, avatarEmojiBackground: true }
+        : { ...participant, avatarType: 'initials', avatarInitials: defaultAvatarInitials(participant.name), avatarColor: participantAvatarColor(participant) };
+      const offsetY = visible.length === 3 && index !== 1 ? 8 : 0;
+      paintCanvasAvatar(ctx, headerParticipant, startX + index * overlap, y + offsetY, size, draw, imageMap);
+    });
+    y += clusterHeight + 7;
+    ctx.font = '600 22px Arial, sans-serif';
+    if (draw) {
+      ctx.fillStyle = mutedColor;
+      ctx.textAlign = 'center';
+      ctx.fillText(label, 540, y);
+      ctx.textAlign = 'left';
+    }
+    return y + 30;
+  }
+
   function paintPngThread(ctx, draw = false, imageMap = new Map(), options = {}) {
     const W = 1080;
     const safeBreaks = Array.isArray(options.safeBreaks) ? options.safeBreaks : null;
@@ -5399,7 +5614,10 @@
       y += headerLines.length * 38 + 34;
     }
 
+    if (style === 'chat') y = paintCanvasChatHeader(ctx, y, draw, imageMap, canvasMuted);
+
     const burstMeta = messageBurstMeta();
+    const labelledParticipants = new Set();
     state.messages.forEach((item, index) => {
       if (isNarrative(item)) {
         if (index > 0) y += 26;
@@ -5463,7 +5681,12 @@
       else if (index > 0) y += plainDraft ? 18 : (continues ? 8 : 18);
 
       const side = participant.side === 'right' ? 'right' : 'left';
-      const showSpeaker = plainDraft || !continues;
+      const labelMode = normalizeSpeakerLabelMode(state.speakerLabelMode);
+      const showSpeaker = plainDraft
+        || (!isHiddenViewpointIdentity(item.speakerId)
+          && burst.burstStart
+          && (labelMode === 'every' || (labelMode === 'first' && !labelledParticipants.has(item.speakerId))));
+      if (!plainDraft && burst.burstStart) labelledParticipants.add(item.speakerId);
       const exportAvatarSize = effectiveAvatarSize();
       const avatarSizePx = exportAvatarSize === 'xlarge' ? 72 : exportAvatarSize === 'large' ? 50 : 34;
       const avatarOffset = !plainDraft && burst.avatarGutter ? avatarSizePx + 8 : 0;
@@ -6049,6 +6272,31 @@
     return `<div class="${classes}" style="${style}">${htmlEscape(content)}</div>`;
   }
 
+  function htmlChatHeaderAvatar(participant, mediaMap) {
+    const type = normalizeAvatarType(participant.avatarType);
+    const avatarColor = participantAvatarColor(participant);
+    const style = `--header-avatar:${htmlEscape(avatarColor)};--header-avatar-text:${htmlEscape(automaticBubbleTextColor(avatarColor))}`;
+    if (type === 'image') {
+      const image = normalizeImageAttachment(participant.avatarImage);
+      const src = image ? mediaMap.get(image.id) || '' : '';
+      if (src) return `<div class="chat-header-avatar" style="${style}"><img src="${src}" alt=""></div>`;
+    }
+    const content = type === 'emoji'
+      ? normalizeAvatarEmoji(participant.avatarEmoji)
+      : type === 'initials'
+        ? normalizeAvatarInitials(participant.avatarInitials, participant.name)
+        : defaultAvatarInitials(participant.name);
+    return `<div class="chat-header-avatar" style="${style}">${htmlEscape(content)}</div>`;
+  }
+
+  function htmlChatThreadHeader(mediaMap) {
+    const participants = chatHeaderParticipants();
+    const label = chatHeaderLabel(participants);
+    if (!participants.length || !label || state.conversationStyle !== 'chat') return '';
+    const visible = participants.slice(0, 3);
+    return `<div class="chat-thread-header"><div class="chat-header-icons count-${visible.length}">${visible.map(participant => htmlChatHeaderAvatar(participant, mediaMap)).join('')}</div><div class="chat-header-label">${htmlEscape(label)}</div></div>`;
+  }
+
   async function buildHtmlExport() {
     const mediaMap = await mediaDataUrlsForState(state);
     const style = normalizeConversationStyle(state.conversationStyle);
@@ -6063,8 +6311,11 @@
     const widthMode = normalizeConversationWidth(state.conversationWidth);
     const documentMaxWidth = widthMode === 'phone' ? 440 : (widthMode === 'tablet' ? 680 : 820);
     const body = [];
+    const chatHeader = htmlChatThreadHeader(mediaMap);
+    if (chatHeader) body.push(chatHeader);
     let previousSpeaker = null;
     const burstMeta = messageBurstMeta();
+    const labelledParticipants = new Set();
     for (let index = 0; index < state.messages.length; index += 1) {
       const item = state.messages[index];
       if (isNarrative(item)) {
@@ -6076,14 +6327,19 @@
       if (!p) continue;
       const continues = previousSpeaker === item.speakerId;
       const side = p.side === 'right' ? 'right' : 'left';
-      const showSpeaker = plainDraft || !continues;
+      const burst = burstMeta[index] || { burstStart: !continues, burstEnd: true, showAvatar: false, avatarGutter: false };
+      const labelMode = normalizeSpeakerLabelMode(state.speakerLabelMode);
+      const showSpeaker = plainDraft
+        || (!isHiddenViewpointIdentity(item.speakerId)
+          && burst.burstStart
+          && (labelMode === 'every' || (labelMode === 'first' && !labelledParticipants.has(item.speakerId))));
+      if (!plainDraft && burst.burstStart) labelledParticipants.add(item.speakerId);
       const speaker = showSpeaker ? `<div class="speaker">${htmlEscape(plainDraft ? p.name.toLocaleUpperCase() : p.name)}</div>` : '';
       const timestamp = item.displayTimestamp ? `<div class="timestamp">${htmlEscape(item.displayTimestamp)}</div>` : '';
       const bubbleStyle = plainDraft ? '' : ` style="--bubble:${htmlEscape(p.color || '#e5e5ea')};--bubble-text:${htmlEscape(participantBubbleTextColor(p))}"`;
       const bubble = `<div class="bubble"${bubbleStyle}>${htmlMultiline(item.text)}</div>`;
       const annotation = item.annotation ? `<div class="annotation">${htmlMultiline(item.annotation)}</div>` : '';
       const mediaAlign = style === 'screen' ? 'center' : (plainDraft ? 'left' : side);
-      const burst = burstMeta[index] || { burstEnd: true, showAvatar: false, avatarGutter: false };
       const tail = !plainDraft && state.bubbleTails === true && burst.burstEnd ? ' has-tail' : '';
       const alongside = burst.avatarGutter ? ' avatar-alongside-burst' : '';
       const aboveAvatar = burst.showAvatar && normalizeAvatarPlacement(state.avatarPlacement) === 'above'
@@ -6094,9 +6350,9 @@
         const slotAvatar = burst.showAvatar ? htmlParticipantAvatar(p, mediaMap, 'avatar-alongside') : '';
         const slot = `<div class="avatar-slot avatar-slot-${effectiveAvatarSize()}">${slotAvatar}</div>`;
         const tailAnchor = burst.avatarTailAnchor ? ' avatar-tail-anchor' : '';
-        body.push(`<section class="message ${side}${continues && !plainDraft ? ' continuation' : ''}${alongside}${tail}${tailAnchor}">${side === 'right' ? `${card}${slot}` : `${slot}${card}`}</section>`);
+        body.push(`<section class="message ${side}${continues && !plainDraft ? ' continuation' : ''}${showSpeaker && !plainDraft ? ' speaker-labelled' : ''}${alongside}${tail}${tailAnchor}">${side === 'right' ? `${card}${slot}` : `${slot}${card}`}</section>`);
       } else {
-        body.push(`<section class="message ${side}${continues && !plainDraft ? ' continuation' : ''}${tail}">${card}</section>`);
+        body.push(`<section class="message ${side}${continues && !plainDraft ? ' continuation' : ''}${showSpeaker && !plainDraft ? ' speaker-labelled' : ''}${tail}">${card}</section>`);
       }
       previousSpeaker = item.speakerId;
     }
@@ -6109,7 +6365,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${title}</title>
 <style>
-*{box-sizing:border-box}body{margin:0;background:${backgroundCss};color:${documentText};font-family:ui-rounded,"SF Pro Rounded","Segoe UI",system-ui,-apple-system,sans-serif}.document{width:min(100%,${documentMaxWidth}px);margin:0 auto;padding:34px 18px 60px}.scene-header{text-align:center;font-weight:720;font-size:21px;line-height:1.3;margin:0 auto 30px;white-space:pre-wrap}.scene-header.serif{font-family:Georgia,"Times New Roman",serif}.scene-header.mono{font-family:ui-monospace,Consolas,monospace}.message{display:flex;margin:11px 0}.message.continuation{margin-top:-7px}.message.left{justify-content:flex-start}.message.right{justify-content:flex-end}.message-card{max-width:${plainDraft ? '100%' : '67%'}}.message.avatar-alongside-burst{align-items:flex-start;gap:8px}.avatar-slot{flex:0 0 auto;display:flex;justify-content:center}.avatar-slot-small{width:34px}.avatar-slot-large{width:50px}.avatar-slot-xlarge{width:72px}.message.avatar-alongside-burst:not(.continuation) .avatar-slot{margin-top:20px}.message.avatar-tail-anchor .avatar-slot{align-self:flex-end;margin-top:0!important}.avatar{display:grid;place-items:center;overflow:hidden;flex:0 0 auto;background:var(--avatar,#e5e5ea);color:var(--avatar-text,#111116);font-weight:800;line-height:1;box-shadow:0 1px 2px rgba(0,0,0,.08)}.avatar-small{width:34px;height:34px;font-size:13px}.avatar-large{width:50px;height:50px;font-size:17px}.avatar-xlarge{width:72px;height:72px;font-size:23px}.avatar-circle{border-radius:50%}.avatar-square{border-radius:8px}.avatar-emoji{font-size:22px;font-weight:400}.avatar-emoji.avatar-large{font-size:31px}.avatar-emoji.avatar-xlarge{font-size:44px}.avatar-no-bg{background:transparent;box-shadow:none}.avatar img{width:100%;height:100%;object-fit:cover;display:block}.avatar-above{margin-bottom:6px}.left .avatar-above-side{margin-left:0;margin-right:auto}.right .avatar-above-side{margin-left:auto;margin-right:0}.speaker{font-size:12px;color:${documentMuted};margin:0 10px 4px}.high-contrast-labels .speaker{display:block;width:max-content;padding:2px 7px;border-radius:999px;background:rgba(0,0,0,.78);color:#fff!important}.high-contrast-labels .right .speaker{margin-left:auto}.high-contrast-labels.transcript .right .speaker{margin-left:10px;margin-right:10px}.high-contrast-labels.theater .speaker,.high-contrast-labels.screen .speaker{margin-left:auto!important;margin-right:auto!important}.right .speaker,.right .timestamp,.right .annotation,.right figcaption{text-align:right}.timestamp{font-size:10.5px;color:${documentMuted};margin:0 10px 4px}.bubble{position:relative;z-index:0;background:${plainDraft ? 'transparent' : 'var(--bubble,#e5e5ea)'};padding:${plainDraft ? '0' : '10px 13px'};border-radius:${plainDraft ? '0' : '18px'};color:${plainDraft ? documentText : 'var(--bubble-text,#151518)'};line-height:1.42;white-space:pre-wrap;overflow-wrap:anywhere}.has-tail.left .bubble{border-bottom-left-radius:10px}.has-tail.right .bubble{border-bottom-right-radius:10px}.has-tail .bubble:after{content:"";position:absolute;bottom:1px;width:14px;height:14px;background:var(--bubble,#e5e5ea);z-index:-1}.has-tail.left .bubble:after{left:-5px;clip-path:polygon(100% 0,100% 100%,0 100%)}.has-tail.right .bubble:after{right:-5px;clip-path:polygon(0 0,100% 100%,0 100%)}.annotation{margin:7px 10px 0;color:${documentMuted};font-size:12px;font-style:italic;line-height:1.4}.narrative{width:min(78%,680px);margin:24px auto;color:${documentMuted};font:italic 14px/1.5 Georgia,"Times New Roman",serif}.narrative.system{font-family:ui-rounded,"Segoe UI",system-ui,sans-serif;font-style:normal;font-weight:560}.narrative-text{text-align:center}.attachment{margin:9px 0 0;max-width:610px}.attachment.center{margin-left:auto;margin-right:auto}.attachment.right{margin-left:auto}.attachment img{display:block;max-width:100%;max-height:70vh;border-radius:12px}.attachment figcaption{margin-top:6px;color:${documentMuted};font-size:12px;line-height:1.4}.attachment.right img{margin-left:auto}.attachment.center img{margin-left:auto;margin-right:auto}.link-preview{display:flex;gap:12px;margin-top:10px;max-width:620px;padding:12px;border:1px solid #d8d8df;border-radius:14px;background:#f7f7f9;color:#17171b;font-family:ui-rounded,"Segoe UI",system-ui,sans-serif;text-align:left}.link-preview.right{margin-left:auto}.link-preview.center{margin-left:auto;margin-right:auto}.preview-thumb{width:min(31%,150px);object-fit:cover;align-self:stretch;max-height:130px}.preview-copy{min-width:0}.preview-site,.preview-url{font-size:11px;color:#777780}.preview-title{font-size:16px;font-weight:750;line-height:1.28;margin:3px 0}.preview-description{font-size:13px;color:#555560;line-height:1.35;margin:3px 0}.missing-image{padding:20px;background:#e5e5ea;color:#686872;text-align:center;border-radius:12px}.transcript .message,.theater .message,.screen .message{justify-content:flex-start;margin:18px 0}.transcript .message-card,.theater .message-card,.screen .message-card{width:100%;max-width:100%}.transcript .right .speaker,.transcript .right .timestamp,.transcript .right .annotation,.transcript .right figcaption,.theater .right .annotation,.screen .right .annotation{text-align:left}.transcript .attachment.right,.transcript .link-preview.right,.theater .attachment.right,.theater .link-preview.right{margin-left:0;margin-right:auto}.theater .speaker,.screen .speaker{text-align:center!important;text-transform:uppercase;font-weight:800;letter-spacing:.07em}.theater .timestamp,.screen .timestamp{text-align:center!important}.theater .bubble{text-align:left}.theater .narrative{margin-left:8%;margin-right:auto}.theater .narrative-text{text-align:left}.screen .bubble{width:min(62%,520px);margin:0 auto;text-align:left}.screen .annotation{width:min(62%,520px);margin-left:auto;margin-right:auto;text-align:left!important}.screen .narrative{width:min(76%,650px)}.screen .narrative-text{text-align:left}@media(max-width:600px){.document{padding:24px 12px 42px}.message-card{max-width:${plainDraft ? '100%' : '78%'}.attachment,.link-preview{max-width:100%}.screen .bubble,.screen .annotation{width:min(76%,520px)}}@media print{@page{margin:.55in}body{background:#fff!important;color:#17171b}.document{width:100%;padding:0}.message-card,.narrative,.attachment,.link-preview{break-inside:avoid}.narrative{color:#000!important}.bubble{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+*{box-sizing:border-box}body{margin:0;background:${backgroundCss};color:${documentText};font-family:ui-rounded,"SF Pro Rounded","Segoe UI",system-ui,-apple-system,sans-serif}.document{width:min(100%,${documentMaxWidth}px);margin:0 auto;padding:34px 18px 60px}.scene-header{text-align:center;font-weight:720;font-size:21px;line-height:1.3;margin:0 auto 30px;white-space:pre-wrap}.scene-header.serif{font-family:Georgia,"Times New Roman",serif}.scene-header.mono{font-family:ui-monospace,Consolas,monospace}.chat-thread-header{display:grid;justify-items:center;gap:5px;width:max-content;max-width:86%;margin:2px auto 24px;color:${documentMuted};text-align:center}.chat-header-icons{position:relative;height:48px}.chat-header-avatar{--header-avatar:#e5e5ea;--header-avatar-text:#111116;position:absolute;top:0;width:46px;height:46px;display:grid;place-items:center;overflow:hidden;border:2px solid ${darkBackground ? '#202126' : '#f4f4f7'};border-radius:50%;background:var(--header-avatar);color:var(--header-avatar-text);font-size:13px;font-weight:800;line-height:1}.chat-header-avatar img{width:100%;height:100%;object-fit:cover;display:block}.chat-header-icons.count-1{width:46px}.chat-header-icons.count-1 .chat-header-avatar{left:0}.chat-header-icons.count-2{width:70px}.chat-header-icons.count-2 .chat-header-avatar:nth-child(1){left:0}.chat-header-icons.count-2 .chat-header-avatar:nth-child(2){left:24px}.chat-header-icons.count-3{width:88px}.chat-header-icons.count-3 .chat-header-avatar:nth-child(1){left:0;top:8px}.chat-header-icons.count-3 .chat-header-avatar:nth-child(2){left:21px;top:0}.chat-header-icons.count-3 .chat-header-avatar:nth-child(3){left:42px;top:8px}.chat-header-label{font-size:15px;font-weight:650;line-height:1.2}.message{display:flex;margin:11px 0}.message.continuation{margin-top:-7px}.message.left{justify-content:flex-start}.message.right{justify-content:flex-end}.message-card{max-width:${plainDraft ? '100%' : '67%'}}.message.avatar-alongside-burst{align-items:flex-start;gap:8px}.avatar-slot{flex:0 0 auto;display:flex;justify-content:center}.avatar-slot-small{width:34px}.avatar-slot-large{width:50px}.avatar-slot-xlarge{width:72px}.message.avatar-alongside-burst.speaker-labelled .avatar-slot{margin-top:20px}.message.avatar-tail-anchor .avatar-slot{align-self:flex-end;margin-top:0!important}.avatar{display:grid;place-items:center;overflow:hidden;flex:0 0 auto;background:var(--avatar,#e5e5ea);color:var(--avatar-text,#111116);font-weight:800;line-height:1;box-shadow:0 1px 2px rgba(0,0,0,.08)}.avatar-small{width:34px;height:34px;font-size:13px}.avatar-large{width:50px;height:50px;font-size:17px}.avatar-xlarge{width:72px;height:72px;font-size:23px}.avatar-circle{border-radius:50%}.avatar-square{border-radius:8px}.avatar-emoji{font-size:22px;font-weight:400}.avatar-emoji.avatar-large{font-size:31px}.avatar-emoji.avatar-xlarge{font-size:44px}.avatar-no-bg{background:transparent;box-shadow:none}.avatar img{width:100%;height:100%;object-fit:cover;display:block}.avatar-above{margin-bottom:6px}.left .avatar-above-side{margin-left:0;margin-right:auto}.right .avatar-above-side{margin-left:auto;margin-right:0}.speaker{font-size:12px;color:${documentMuted};margin:0 10px 4px}.high-contrast-labels .speaker{display:block;width:max-content;padding:2px 7px;border-radius:999px;background:rgba(0,0,0,.78);color:#fff!important}.high-contrast-labels .right .speaker{margin-left:auto}.high-contrast-labels.transcript .right .speaker{margin-left:10px;margin-right:10px}.high-contrast-labels.theater .speaker,.high-contrast-labels.screen .speaker{margin-left:auto!important;margin-right:auto!important}.right .speaker,.right .timestamp,.right .annotation,.right figcaption{text-align:right}.timestamp{font-size:10.5px;color:${documentMuted};margin:0 10px 4px}.bubble{position:relative;z-index:0;background:${plainDraft ? 'transparent' : 'var(--bubble,#e5e5ea)'};padding:${plainDraft ? '0' : '10px 13px'};border-radius:${plainDraft ? '0' : '18px'};color:${plainDraft ? documentText : 'var(--bubble-text,#151518)'};line-height:1.42;white-space:pre-wrap;overflow-wrap:anywhere}.has-tail.left .bubble{border-bottom-left-radius:10px}.has-tail.right .bubble{border-bottom-right-radius:10px}.has-tail .bubble:after{content:"";position:absolute;bottom:1px;width:14px;height:14px;background:var(--bubble,#e5e5ea);z-index:-1}.has-tail.left .bubble:after{left:-5px;clip-path:polygon(100% 0,100% 100%,0 100%)}.has-tail.right .bubble:after{right:-5px;clip-path:polygon(0 0,100% 100%,0 100%)}.annotation{margin:7px 10px 0;color:${documentMuted};font-size:12px;font-style:italic;line-height:1.4}.narrative{width:min(78%,680px);margin:24px auto;color:${documentMuted};font:italic 14px/1.5 Georgia,"Times New Roman",serif}.narrative.system{font-family:ui-rounded,"Segoe UI",system-ui,sans-serif;font-style:normal;font-weight:560}.narrative-text{text-align:center}.attachment{margin:9px 0 0;max-width:610px}.attachment.center{margin-left:auto;margin-right:auto}.attachment.right{margin-left:auto}.attachment img{display:block;max-width:100%;max-height:70vh;border-radius:12px}.attachment figcaption{margin-top:6px;color:${documentMuted};font-size:12px;line-height:1.4}.attachment.right img{margin-left:auto}.attachment.center img{margin-left:auto;margin-right:auto}.link-preview{display:flex;gap:12px;margin-top:10px;max-width:620px;padding:12px;border:1px solid #d8d8df;border-radius:14px;background:#f7f7f9;color:#17171b;font-family:ui-rounded,"Segoe UI",system-ui,sans-serif;text-align:left}.link-preview.right{margin-left:auto}.link-preview.center{margin-left:auto;margin-right:auto}.preview-thumb{width:min(31%,150px);object-fit:cover;align-self:stretch;max-height:130px}.preview-copy{min-width:0}.preview-site,.preview-url{font-size:11px;color:#777780}.preview-title{font-size:16px;font-weight:750;line-height:1.28;margin:3px 0}.preview-description{font-size:13px;color:#555560;line-height:1.35;margin:3px 0}.missing-image{padding:20px;background:#e5e5ea;color:#686872;text-align:center;border-radius:12px}.transcript .message,.theater .message,.screen .message{justify-content:flex-start;margin:18px 0}.transcript .message-card,.theater .message-card,.screen .message-card{width:100%;max-width:100%}.transcript .right .speaker,.transcript .right .timestamp,.transcript .right .annotation,.transcript .right figcaption,.theater .right .annotation,.screen .right .annotation{text-align:left}.transcript .attachment.right,.transcript .link-preview.right,.theater .attachment.right,.theater .link-preview.right{margin-left:0;margin-right:auto}.theater .speaker,.screen .speaker{text-align:center!important;text-transform:uppercase;font-weight:800;letter-spacing:.07em}.theater .timestamp,.screen .timestamp{text-align:center!important}.theater .bubble{text-align:left}.theater .narrative{margin-left:8%;margin-right:auto}.theater .narrative-text{text-align:left}.screen .bubble{width:min(62%,520px);margin:0 auto;text-align:left}.screen .annotation{width:min(62%,520px);margin-left:auto;margin-right:auto;text-align:left!important}.screen .narrative{width:min(76%,650px)}.screen .narrative-text{text-align:left}@media(max-width:600px){.document{padding:24px 12px 42px}.message-card{max-width:${plainDraft ? '100%' : '78%'}.attachment,.link-preview{max-width:100%}.screen .bubble,.screen .annotation{width:min(76%,520px)}}@media print{@page{margin:.55in}body{background:#fff!important;color:#17171b}.document{width:100%;padding:0}.message-card,.narrative,.attachment,.link-preview{break-inside:avoid}.narrative{color:#000!important}.bubble{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
 </style>
 </head>
 <body><main class="document ${style}${highContrastLabels ? ' high-contrast-labels' : ''}">${sceneHeader}${body.join('')}</main></body>
@@ -6648,7 +6904,7 @@ ${imageRels}
   });
 
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-    navigator.serviceWorker.register('./sw.js?v=0.12.8').catch(() => {});
+    navigator.serviceWorker.register('./sw.js?v=0.12.9').catch(() => {});
   }
 
   if (els.runtimeVersion) els.runtimeVersion.textContent = `v${APP_VERSION}`;

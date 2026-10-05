@@ -4,10 +4,10 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#f4f4f7" />
-  <title>ThreadWriter v0.12.8</title>
-  <link rel="manifest" href="manifest.webmanifest?v=0.12.8" />
-  <link rel="icon" href="icon.svg?v=0.12.8" type="image/svg+xml" />
-  <link rel="stylesheet" href="styles.css?v=0.12.8" />
+  <title>ThreadWriter v0.12.9</title>
+  <link rel="manifest" href="manifest.webmanifest?v=0.12.9" />
+  <link rel="icon" href="icon.svg?v=0.12.9" type="image/svg+xml" />
+  <link rel="stylesheet" href="styles.css?v=0.12.9" />
 </head>
 <body>
   <div class="app-shell">
@@ -44,7 +44,7 @@
                 <option value="phone">Phone</option>
               </select>
             </label>
-            <button id="chatAppearanceBtn" type="button">Avatars &amp; bubble tails…</button>
+            <button id="chatAppearanceBtn" type="button">Chat presentation…</button>
             <button id="backgroundBtn" type="button">Conversation background…</button>
             <button id="conversationPresetsBtn" type="button">Conversation presets…</button>
             <button id="findBtn" type="button">Find &amp; Replace</button>
@@ -164,10 +164,10 @@
   <dialog id="chatAppearanceDialog">
     <div class="dialog-card chat-appearance-dialog-card">
       <div class="dialog-head">
-        <h2>Avatars &amp; bubble tails</h2>
+        <h2>Chat presentation</h2>
         <button type="button" id="closeChatAppearanceDialogBtn" class="icon-btn" aria-label="Close">×</button>
       </div>
-      <p class="dialog-copy">Mobile Chat presentation only. Avatars mark the beginning of speaker bursts; Narrative blocks always break a burst.</p>
+      <p class="dialog-copy">Mobile Chat presentation only. Set speaker labels, viewpoint identity, recipient header, avatars, and bubble tails. Narrative blocks always break a burst.</p>
       <div class="chat-appearance-grid">
         <label>
           <span>Avatar frequency</span>
@@ -199,11 +199,51 @@
             <option value="xlarge">Large · above only</option>
           </select>
         </label>
+        <label>
+          <span>Speaker labels</span>
+          <select id="speakerLabelMode">
+            <option value="every">Every speaker burst</option>
+            <option value="first">First burst per participant</option>
+            <option value="off">Off</option>
+          </select>
+        </label>
+        <label>
+          <span>Viewpoint / “Me” participant</span>
+          <select id="chatViewpointParticipant">
+            <option value="">None · neutral conversation</option>
+          </select>
+        </label>
+        <label>
+          <span>Conversation header</span>
+          <select id="chatHeaderMode">
+            <option value="off">Off</option>
+            <option value="participants">Participant icon + automatic text</option>
+            <option value="custom">Participant icon + custom text</option>
+          </select>
+        </label>
+        <label id="chatHeaderTextField" hidden>
+          <span>Custom header text</span>
+          <input id="chatHeaderText" type="text" maxlength="80" placeholder="e.g., 3 People, Mom &amp; Patrick, Night Crew" />
+        </label>
       </div>
-      <label class="background-contrast-option chat-tail-option">
-        <input id="bubbleTailsInput" type="checkbox" />
-        <span><strong>Bubble tails</strong><small>Show a tail only on a single-message burst or the final message of a multi-message burst.</small></span>
-      </label>
+      <div class="chat-identity-options">
+        <label class="background-contrast-option chat-tail-option">
+          <input id="hideViewpointIdentityInput" type="checkbox" />
+          <span><strong>Hide viewpoint identity in messages</strong><small>Suppress the selected “Me” participant’s speaker label and avatar, like an outgoing iOS message.</small></span>
+        </label>
+        <label class="background-contrast-option chat-tail-option">
+          <input id="chatHeaderExcludeViewpointInput" type="checkbox" checked />
+          <span><strong>Leave viewpoint out of the header</strong><small>Build the centered recipient icon/text from everyone except the selected “Me” participant.</small></span>
+        </label>
+        <label class="background-contrast-option chat-tail-option">
+          <input id="bubbleTailsInput" type="checkbox" />
+          <span><strong>Bubble tails</strong><small>Show a tail only on a single-message burst or the final message of a multi-message burst.</small></span>
+        </label>
+      </div>
+      <div class="chat-preview-header" aria-hidden="true" hidden>
+        <div class="chat-preview-header-icons"><span>1</span><span>2</span></div>
+        <strong>2 People</strong>
+      </div>
       <div class="chat-appearance-preview" aria-hidden="true">
         <div class="chat-preview-avatar">TW</div>
         <div class="chat-preview-bubbles"><span></span><span class="with-tail"></span></div>
@@ -641,7 +681,7 @@
   <dialog id="aboutDialog">
     <div class="dialog-card about-dialog-card">
       <div class="dialog-head about-dialog-head">
-        <h2>ThreadWriter <span id="aboutVersion">v0.12.8</span></h2>
+        <h2>ThreadWriter <span id="aboutVersion">v0.12.9</span></h2>
         <button id="closeAboutDialogBtn" class="icon-btn" type="button" aria-label="Close">×</button>
       </div>
       <div class="about-copy">
@@ -724,6 +764,6 @@
     </div>
   </template>
 
-  <script src="app.js?v=0.12.8"></script>
+  <script src="app.js?v=0.12.9"></script>
 </body>
 </html>
